@@ -21,6 +21,8 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+    arrayMove,                 // <— добавить
+
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -394,42 +396,66 @@ const handleDragMove = (evt: DragMoveEvent) => {
 
 
 
-  const handleDragOver = (evt: DragOverEvent) => {
-    const active = String(evt.active.id);
-    const overId = evt.over ? String(evt.over.id) : null;
-    if (!overId) return;
+// ⬇️ заменить ваш handleDragOver целиком
+const handleDragOver = (evt: DragOverEvent) => {
+  const activeId = String(evt.active.id);
+  const overId = evt.over ? String(evt.over.id) : null;
+  if (!overId) return;
 
-    const fromColId = columns.find((c) => c.tasks.some((t) => t.id === active))?.id;
-    const toColId =
-      columns.some((c) => c.id === overId)
-        ? overId
-        : columns.find((c) => c.tasks.some((t) => t.id === overId))?.id;
+  const fromCol = columns.find((c) => c.tasks.some((t) => t.id === activeId));
+  if (!fromCol) return;
 
-    if (!fromColId || !toColId || fromColId === toColId) return;
+  const isOverColumn = columns.some((c) => c.id === overId);
+  const toCol =
+    isOverColumn
+      ? columns.find((c) => c.id === overId)!
+      : columns.find((c) => c.tasks.some((t) => t.id === overId))!;
+  if (!toCol) return;
 
-    // оптимистично переставляем
+  // --- 1) Перестановка внутри той же колонки ---
+  if (fromCol.id === toCol.id) {
+    const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
+    const overIdx = isOverColumn
+      ? Math.max(0, toCol.tasks.length - 1) // если «над колонкой» — считаем конец списка
+      : toCol.tasks.findIndex((t) => t.id === overId);
+
+    if (fromIdx !== -1 && overIdx !== -1 && fromIdx !== overIdx) {
+      setColumns((prev) =>
+        prev.map((c) => {
+          if (c.id !== fromCol.id) return c;
+          const tasks = arrayMove([...c.tasks], fromIdx, overIdx);
+          tasks.forEach((t, i) => (t.order = i));
+          return { ...c, tasks };
+        })
+      );
+    }
+    return;
+  }
+
+  // --- 2) Перенос между колонками ---
+  setColumns((prev) => {
+    const next = prev.map((c) => ({ ...c, tasks: [...c.tasks] }));
+    const src = next.find((c) => c.id === fromCol.id)!;
+    const dst = next.find((c) => c.id === toCol.id)!;
+
+    const fromIndex = src.tasks.findIndex((t) => t.id === activeId);
+    const insertIndex = isOverColumn
+      ? dst.tasks.length
+      : Math.max(0, dst.tasks.findIndex((t) => t.id === overId));
+
+    const [moved] = src.tasks.splice(fromIndex, 1);
+    dst.tasks.splice(insertIndex, 0, moved);
+
+    src.tasks.forEach((t, i) => (t.order = i));
+    dst.tasks.forEach((t, i) => (t.order = i));
+    moved.columnId = dst.id;
+
+    return next;
+  });
+};
 
 
-    
-    setColumns((prev) => {
-      const next = prev.map((c) => ({ ...c, tasks: [...c.tasks] }));
-      const fromCol = next.find((c) => c.id === fromColId)!;
-      const toCol = next.find((c) => c.id === toColId)!;
 
-      const fromIndex = fromCol.tasks.findIndex((t) => t.id === active);
-      const overIndexInTo = toCol.tasks.findIndex((t) => t.id === overId);
-      const insertIndex = overIndexInTo >= 0 ? overIndexInTo : toCol.tasks.length;
-
-      const [moved] = fromCol.tasks.splice(fromIndex, 1);
-      toCol.tasks.splice(insertIndex, 0, moved);
-
-      fromCol.tasks.forEach((t, i) => (t.order = i));
-      toCol.tasks.forEach((t, i) => (t.order = i));
-      moved.columnId = toCol.id;
-
-      return next;
-    });
-  };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragging(false);
