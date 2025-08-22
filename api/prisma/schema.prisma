@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * Колонки канбана. Колонки уникальны в рамках chatId.
+ * Пример: Inbox (0), Doing (1), Done (2)
+ */
+model Column {
+  id        String   @id @default(cuid())
+  chatId    String
+  name      String
+  order     Int
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([chatId, name])
+  @@unique([chatId, order])
+  @@index([chatId])
+}
+
+/**
+ * Задачи. Привязаны к колонке и к chatId (для быстрого фильтра по чату).
+ */
+model Task {
+  id          String   @id @default(cuid())
+  chatId      String
+  text        String
+  order       Int
+  tgMessageId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // связь с колонкой (kanban-стадией)
+  columnId String
+  column   Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@index([columnId, order])
+}
