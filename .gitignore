@@ -1,20 +1,13 @@
-# Node
-node_modules/
-npm-debug.log*
-yarn.lock
-pnpm-lock.yaml
 
 # Webapp
-webapp/node_modules/
-webapp/dist/
+
 webapp/.vite/
 webapp/.cache/
 webapp/.env
-webapp/.DS_Store
+
 
 # API
-api/node_modules/
-api/dist/
+
 api/.env
 api/.DS_Store
 
