@@ -408,6 +408,9 @@ const handleDragMove = (evt: DragMoveEvent) => {
     if (!fromColId || !toColId || fromColId === toColId) return;
 
     // оптимистично переставляем
+
+
+    
     setColumns((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: [...c.tasks] }));
       const fromCol = next.find((c) => c.id === fromColId)!;
