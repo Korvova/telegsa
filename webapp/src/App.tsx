@@ -15,20 +15,23 @@ import {
 } from './api';
 
 import {
-  DndContext, DragOverlay, closestCorners,
-  MouseSensor, TouchSensor, useSensor, useSensors,
-  type DragStartEvent, type DragMoveEvent, type DragOverEvent, type DragEndEvent, useDroppable
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragMoveEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+  useDroppable,
 } from '@dnd-kit/core';
 
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-// вынесенные компоненты
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 
@@ -36,9 +39,7 @@ import GroupTabs from './components/GroupTabs';
 function useChatId() {
   return useMemo(() => {
     const urlChatId = new URLSearchParams(window.location.search).get('from');
-    const sdkChatId = WebApp?.initDataUnsafe?.user?.id
-      ? String(WebApp.initDataUnsafe.user.id)
-      : undefined;
+    const sdkChatId = WebApp?.initDataUnsafe?.user?.id ? String(WebApp.initDataUnsafe.user.id) : undefined;
     const id = urlChatId || sdkChatId || '';
     console.log('[APP] useChatId ->', id);
     return id;
@@ -62,10 +63,7 @@ function TaskCard({
   dragging?: boolean;
   onClick?: () => void;
 }) {
-  const bg =
-    dragging ? '#0e1629' :
-    active   ? '#151b2b' :
-               '#121722';
+  const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
 
   return (
     <div
@@ -99,24 +97,17 @@ function SortableTask({
   onOpenTask: (id: string) => void;
   armed?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: taskId });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: taskId });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    touchAction: (armed || isDragging) ? 'none' : 'auto',
+    touchAction: armed || isDragging ? 'none' : 'auto',
   };
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard
-        text={text}
-        order={order}
-        active={armed}
-        dragging={isDragging}
-        onClick={() => onOpenTask(taskId)}
-      />
+      <TaskCard text={text} order={order} active={armed} dragging={isDragging} onClick={() => onOpenTask(taskId)} />
     </div>
   );
 }
@@ -146,9 +137,12 @@ function AddColumnButton({ chatId, groupId, onAdded }: { chatId: string; groupId
       onClick={click}
       disabled={busy}
       style={{
-        padding: '10px 14px', borderRadius: 12,
-        background: '#203428', color: '#d7ffd7',
-        border: '1px solid #2a3346', cursor: busy ? 'default' : 'pointer'
+        padding: '10px 14px',
+        borderRadius: 12,
+        background: '#203428',
+        color: '#d7ffd7',
+        border: '1px solid #2a3346',
+        cursor: busy ? 'default' : 'pointer',
       }}
     >
       + Колонка
@@ -165,21 +159,21 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
   } as const;
 
   return (
-    <div style={{
-      padding: 16,
-      background: '#1b2030',
-      border: '1px solid #2a3346',
-      borderRadius: 16,
-      minHeight: 240,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      textAlign: 'center'
-    }}>
+    <div
+      style={{
+        padding: 16,
+        background: '#1b2030',
+        border: '1px solid #2a3346',
+        borderRadius: 16,
+        minHeight: 240,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+      }}
+    >
       <div style={{ opacity: 0.85, lineHeight: 1.6 }}>
-        {tab === 'calendar' ? map.calendar
-          : tab === 'notifications' ? map.notifications
-          : map.settings}
+        {tab === 'calendar' ? map.calendar : tab === 'notifications' ? map.notifications : map.settings}
       </div>
     </div>
   );
@@ -193,22 +187,19 @@ export default function App() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<TabKey>('groups'); // нижнее меню
+  const [tab, setTab] = useState<TabKey>('groups');
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
 
-  // мини-роутер для вкладки «Группы»
   const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
 
-  // холст
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const prevTotalDxRef = useRef(0);
 
-  // сенсоры: long-press на таче + мышь
   const sensors = useSensors(
     useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
-    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } })
   );
 
   // убираем белые поля по X
@@ -220,10 +211,12 @@ export default function App() {
     document.body.style.overflowX = 'hidden';
     html.style.background = '#0f1216';
     document.body.style.background = '#0f1216';
-    return () => { html.style.overflowX = prevHtml; document.body.style.overflowX = prevBody; };
+    return () => {
+      html.style.overflowX = prevHtml;
+      document.body.style.overflowX = prevBody;
+    };
   }, []);
 
-  // для авто-скролла при dnd
   const startRef = useRef<{ x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -239,17 +232,17 @@ export default function App() {
   useEffect(() => {
     if (!chatId) return;
     listGroups(chatId)
-      .then(r => {
+      .then((r) => {
         if (r.ok) {
           console.log('[GROUPS] list ->', r.groups);
           setGroups(r.groups);
-          setSelectedGroupId(prev => prev || (r.groups[0]?.id || ''));
+          setSelectedGroupId((prev) => prev || r.groups[0]?.id || '');
         }
       })
       .catch((e) => console.error('[GROUPS] list error', e));
   }, [chatId]);
 
-  // показываем системную кнопку «Назад» в деталях группы
+  // системная кнопка назад
   useEffect(() => {
     if (tab === 'groups' && groupsPage === 'detail') {
       WebApp?.BackButton?.show?.();
@@ -258,14 +251,13 @@ export default function App() {
     }
   }, [tab, groupsPage]);
 
-  const reloadGroups = () =>
-    listGroups(chatId).then(r => { if (r.ok) setGroups(r.groups); });
+  const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
   const goToGroup = (id: string) => {
     console.log('[NAV] goToGroup', { id });
     setSelectedGroupId(id);
-    setColumns([]);      // мгновенно очищаем, чтобы не мигало
-    setLoading(true);    // покажем спиннер до первой загрузки
+    setColumns([]); // мгновенно очищаем, чтобы не мигало
+    setLoading(true); // спиннер до первой загрузки
     setGroupsPage('detail');
     setGroupTab('kanban');
   };
@@ -275,13 +267,10 @@ export default function App() {
     setGroupsPage('list');
   };
 
-  // вычисляем выбранную группу и её "разрешённый" id для API
-  const selectedGroup = groups.find(g => g.id === selectedGroupId);
-  const resolvedGroupId = selectedGroup && selectedGroup.title === 'Моя группа'
-    ? undefined
-    : selectedGroup?.id;
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId);
+  const resolvedGroupId = selectedGroup && selectedGroup.title === 'Моя группа' ? undefined : selectedGroup?.id;
 
-  // загрузка доски (ЕДИНЫЙ эффект)
+  // единая загрузка доски
   const loadBoard = useCallback(async () => {
     if (!chatId) return;
     const shouldLoad = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
@@ -298,7 +287,7 @@ export default function App() {
         tasks: [...c.tasks].sort((a, b) => a.order - b.order),
       }));
       console.log('[BOARD] load OK', {
-        columns: cols.map(c => ({ id: c.id, name: c.name, tasks: c.tasks.length }))
+        columns: cols.map((c) => ({ id: c.id, name: c.name, tasks: c.tasks.length })),
       });
       setColumns(cols);
       setError(null);
@@ -316,7 +305,6 @@ export default function App() {
   }, [loadBoard]);
 
   const reloadBoard = useCallback(async () => {
-    // локальное обновление без спиннера
     try {
       console.log('[BOARD] reloadBoard', { chatId, resolvedGroupId });
       const data = await fetchBoard(chatId, resolvedGroupId);
@@ -341,18 +329,30 @@ export default function App() {
     setTaskId(id);
     WebApp?.BackButton?.show?.();
   };
-  const closeTask = () => {
-    console.log('[TASK] closeTask');
+
+  const closeTask = (groupIdFromTask?: string | null) => {
     const url = new URL(window.location.href);
     url.searchParams.delete('task');
     window.history.replaceState(null, '', url.toString());
     setTaskId('');
     WebApp?.BackButton?.hide?.();
-    // просто перезагружаем доску (без изменения loading)
-    reloadBoard();
+
+    if (typeof groupIdFromTask !== 'undefined') {
+      if (groupIdFromTask) {
+        setSelectedGroupId(groupIdFromTask);
+      } else {
+        const my = groups.find((g) => g.title === 'Моя группа');
+        if (my) setSelectedGroupId(my.id);
+      }
+      setGroupsPage('detail');
+      setColumns([]);
+      setLoading(true);
+    } else {
+      setGroupsPage('list');
+    }
   };
 
-  // A) поднять WebApp
+  // поднять WebApp
   useEffect(() => {
     WebApp?.ready();
     WebApp?.expand();
@@ -363,7 +363,7 @@ export default function App() {
     }
   }, [chatId]);
 
-  /* ---- авто-скролл холста по краям при dnd ---- */
+  /* ---- авто-скролл холста при dnd ---- */
   const scrollByX = (dx: number) => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -421,17 +421,12 @@ export default function App() {
     if (!fromCol) return;
 
     const isOverColumn = columns.some((c) => c.id === overId);
-    const toCol =
-      isOverColumn
-        ? columns.find((c) => c.id === overId)!
-        : columns.find((c) => c.tasks.some((t) => t.id === overId))!;
+    const toCol = isOverColumn ? columns.find((c) => c.id === overId)! : columns.find((c) => c.tasks.some((t) => t.id === overId))!;
     if (!toCol) return;
 
     if (fromCol.id === toCol.id) {
       const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
-      const overIdx = isOverColumn
-        ? Math.max(0, toCol.tasks.length - 1)
-        : toCol.tasks.findIndex((t) => t.id === overId);
+      const overIdx = isOverColumn ? Math.max(0, toCol.tasks.length - 1) : toCol.tasks.findIndex((t) => t.id === overId);
 
       if (fromIdx !== -1 && overIdx !== -1 && fromIdx !== overIdx) {
         setColumns((prev) =>
@@ -452,9 +447,7 @@ export default function App() {
       const dst = next.find((c) => c.id === toCol.id)!;
 
       const fromIndex = src.tasks.findIndex((t) => t.id === activeId);
-      const insertIndex = isOverColumn
-        ? dst.tasks.length
-        : Math.max(0, dst.tasks.findIndex((t) => t.id === overId));
+      const insertIndex = isOverColumn ? dst.tasks.length : Math.max(0, dst.tasks.findIndex((t) => t.id === overId));
 
       const [moved] = src.tasks.splice(fromIndex, 1);
       dst.tasks.splice(insertIndex, 0, moved);
@@ -469,9 +462,13 @@ export default function App() {
 
   const title =
     tab === 'groups'
-      ? (groupsPage === 'list' ? 'Группы' : `Группы • ${selectedGroup?.title || 'Группа'}`)
-      : tab === 'calendar' ? 'Календарь'
-      : tab === 'notifications' ? 'Уведомления'
+      ? groupsPage === 'list'
+        ? 'Группы'
+        : ` ${selectedGroup?.title || 'Группа'}`
+      : tab === 'calendar'
+      ? 'Календарь'
+      : tab === 'notifications'
+      ? 'Уведомления'
       : 'Настройки';
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -484,13 +481,19 @@ export default function App() {
     const overId = event.over ? String(event.over.id) : null;
 
     const finalColId =
-      (overId && columns.some((c) => c.id === overId))
+      overId && columns.some((c) => c.id === overId)
         ? overId
         : columns.find((c) => c.tasks.some((t) => t.id === (overId ?? active)))?.id;
 
-    if (!finalColId) { await reloadBoard(); return; }
+    if (!finalColId) {
+      await reloadBoard();
+      return;
+    }
     const col = columns.find((c) => c.id === finalColId);
-    if (!col) { await reloadBoard(); return; }
+    if (!col) {
+      await reloadBoard();
+      return;
+    }
 
     const toIndex = col.tasks.findIndex((t) => t.id === active);
     try {
@@ -504,19 +507,20 @@ export default function App() {
   /* ---------------- render ---------------- */
   if (taskId) return <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />;
 
-  // Показываем «Загрузка…» только когда реально открыта доска Канбана
   const isBoardView = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
   if (loading && isBoardView) return <div style={{ padding: 16 }}>Загрузка…</div>;
-  if (error)   return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
+  if (error) return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#0f1216',
-      color: '#e8eaed',
-      padding: 16,
-      paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))'
-    }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: '#0f1216',
+        color: '#e8eaed',
+        padding: 16,
+        paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+      }}
+    >
       {/* Шапка */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -524,7 +528,14 @@ export default function App() {
             <button
               onClick={backToGroupsList}
               title="К списку групп"
-              style={{ background: 'transparent', border: '1px solid #2a3346', color: '#e8eaed', borderRadius: 10, padding: '6px 8px', cursor: 'pointer' }}
+              style={{
+                background: 'transparent',
+                border: '1px solid #2a3346',
+                color: '#e8eaed',
+                borderRadius: 10,
+                padding: '6px 8px',
+                cursor: 'pointer',
+              }}
             >
               ⟵ Назад
             </button>
@@ -535,12 +546,7 @@ export default function App() {
 
       {tab === 'groups' ? (
         groupsPage === 'list' ? (
-          <GroupList
-            chatId={chatId}
-            groups={groups}
-            onReload={reloadGroups}
-            onOpen={goToGroup}
-          />
+          <GroupList chatId={chatId} groups={groups} onReload={reloadGroups} onOpen={goToGroup} />
         ) : (
           <>
             <GroupTabs current={groupTab} onChange={setGroupTab} />
@@ -600,23 +606,27 @@ export default function App() {
                 </DndContext>
               </>
             ) : groupTab === 'process' ? (
-              <div style={{
-                padding: 16,
-                background: '#1b2030',
-                border: '1px solid #2a3346',
-                borderRadius: 16,
-                minHeight: 240,
-              }}>
+              <div
+                style={{
+                  padding: 16,
+                  background: '#1b2030',
+                  border: '1px solid #2a3346',
+                  borderRadius: 16,
+                  minHeight: 240,
+                }}
+              >
                 Процесс 🔀: скоро подключим редактор связей (React Flow).
               </div>
             ) : (
-              <div style={{
-                padding: 16,
-                background: '#1b2030',
-                border: '1px solid #2a3346',
-                borderRadius: 16,
-                minHeight: 240,
-              }}>
+              <div
+                style={{
+                  padding: 16,
+                  background: '#1b2030',
+                  border: '1px solid #2a3346',
+                  borderRadius: 16,
+                  minHeight: 240,
+                }}
+              >
                 Участники 👥: список участников и добавление — скоро подключим.
               </div>
             )}
@@ -632,8 +642,9 @@ export default function App() {
         onChange={(t) => {
           console.log('[NAV] bottom change', t);
           setTab(t);
-          try { (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
-          // выход из деталей группы при переключении вкладок
+          try {
+            (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
+          } catch {}
           if (t !== 'groups') setGroupsPage('list');
         }}
       />
@@ -717,7 +728,11 @@ function ColumnView({
 
   const saveName = async () => {
     const newName = name.trim();
-    if (!newName || newName === column.name) { setEditing(false); setName(column.name); return; }
+    if (!newName || newName === column.name) {
+      setEditing(false);
+      setName(column.name);
+      return;
+    }
     try {
       await renameColumn(column.id, newName);
       onRenamed();
@@ -756,7 +771,10 @@ function ColumnView({
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') saveName();
-                if (e.key === 'Escape') { setEditing(false); setName(column.name); }
+                if (e.key === 'Escape') {
+                  setEditing(false);
+                  setName(column.name);
+                }
               }}
               onBlur={saveName}
               style={{
@@ -777,9 +795,7 @@ function ColumnView({
           </>
         ) : (
           <>
-            <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.8, flex: 1 }}>
-              {column.name}
-            </div>
+            <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.8, flex: 1 }}>{column.name}</div>
             <button
               onClick={() => setEditing(true)}
               title="Переименовать"
@@ -805,14 +821,7 @@ function ColumnView({
           }}
         >
           {column.tasks.map((t) => (
-            <SortableTask
-              key={t.id}
-              taskId={t.id}
-              text={t.text}
-              order={t.order}
-              onOpenTask={onOpenTask}
-              armed={activeId === t.id}
-            />
+            <SortableTask key={t.id} taskId={t.id} text={t.text} order={t.order} onOpenTask={onOpenTask} armed={activeId === t.id} />
           ))}
           {column.tasks.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>Пусто</div>}
         </div>

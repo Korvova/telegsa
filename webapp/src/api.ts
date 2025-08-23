@@ -112,3 +112,11 @@ export function deleteGroup(id: string, chatId: string) {
     .delete(`${API_BASE}/groups/${id}`, { searchParams })
     .json<{ ok: boolean }>();
 }
+
+
+
+export function getTaskWithGroup(id: string) {
+  return ky
+    .get(`${API_BASE}/tasks/${id}`)
+    .json<{ ok: boolean; task: Task; groupId: string | null }>();
+}
