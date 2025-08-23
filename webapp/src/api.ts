@@ -1,5 +1,19 @@
 import ky from 'ky';
 
+
+
+
+export type Group = {
+  id: string;
+  title: string;
+  kind: 'own' | 'member'; // свои / где участвую
+};
+
+
+
+
+
+
 export type Task = {
   id: string;
   chatId: string;
@@ -68,4 +82,28 @@ export async function createColumn(chatId: string, name: string) {
 export async function renameColumn(id: string, name: string) {
   return ky.patch(`${API_BASE}/columns/${id}`, { json: { name } })
     .json<{ ok: boolean; column: Column }>();
+}
+
+
+// === Groups API ===
+
+
+export async function listGroups(chatId: string) {
+  return ky.get(`${API_BASE}/groups`, { searchParams: { chatId } })
+    .json<{ ok: boolean; groups: Group[] }>();
+}
+
+export async function createGroup(chatId: string, title: string) {
+  return ky.post(`${API_BASE}/groups`, { json: { chatId, title } })
+    .json<{ ok: boolean; group: Group }>();
+}
+
+export async function renameGroupTitle(id: string, chatId: string, title: string) {
+  return ky.patch(`${API_BASE}/groups/${id}`, { json: { chatId, title } })
+    .json<{ ok: boolean; group: Group }>();
+}
+
+export async function deleteGroup(id: string, chatId: string) {
+  return ky.delete(`${API_BASE}/groups/${id}`, { searchParams: { chatId } })
+    .json<{ ok: boolean }>();
 }

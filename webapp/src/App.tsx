@@ -10,6 +10,11 @@ import {
   createTask,
   createColumn,
   renameColumn,
+  type Group,
+  listGroups,
+  createGroup as createGroupApi,
+  renameGroupTitle,
+  deleteGroup as deleteGroupApi,
 } from './api';
 
 import {
@@ -97,7 +102,6 @@ function SortableTask({
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    // блокируем жесты только у активной/перетаскиваемой карточки
     touchAction: (armed || isDragging) ? 'none' : 'auto',
   };
 
@@ -147,8 +151,6 @@ function AddColumnButton({ chatId, onAdded }: { chatId: string; onAdded: () => v
   );
 }
 
-
-
 /* Заглушка для неготовых вкладок */
 function TabPlaceholder({ tab }: { tab: TabKey }) {
   const map = {
@@ -178,9 +180,7 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
   );
 }
 
-
-
-
+/* Вкладки детальной страницы группы */
 function GroupTabs({
   current,
   onChange,
@@ -231,11 +231,122 @@ function GroupTabs({
   );
 }
 
+/* Список групп — отдельная страница */
+function GroupList({
+  chatId,
+  groups,
+  onReload,
+  onOpen,
+}: {
+  chatId: string;
+  groups: Group[];
+  onReload: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const create = async () => {
+    const title = prompt('Название группы?')?.trim();
+    if (!title) return;
+    try {
+      const r = await createGroupApi(chatId, title);
+      if (r.ok) await onReload();
+    } catch {
+      alert('Не удалось создать группу (возможно, имя занято)');
+    }
+  };
 
+  const rename = async (g: Group) => {
+    const title = prompt('Новое название группы?', g.title)?.trim();
+    if (!title || title === g.title) return;
+    try {
+      await renameGroupTitle(g.id, chatId, title);
+      await onReload();
+    } catch {
+      alert('Имя занято или ошибка');
+    }
+  };
 
+  const remove = async (g: Group) => {
+    if (!confirm(`Удалить группу «${g.title}»?`)) return;
+    try {
+      await deleteGroupApi(g.id, chatId);
+      await onReload();
+    } catch {
+      alert('Не удалось удалить');
+    }
+  };
 
+  return (
+    <div style={{ display: 'grid', gap: 10 }}>
+      {groups.map((g) => {
+        const own = g.kind === 'own';
+        return (
+          <div
+            key={g.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '10px 12px',
+              border: '1px solid #2a3346',
+              borderRadius: 12,
+              background: '#1b2030',
+            }}
+          >
+            <button
+              onClick={() => onOpen(g.id)}
+              style={{
+                flex: 1,
+                textAlign: 'left',
+                background: 'transparent',
+                border: 'none',
+                color: '#e8eaed',
+                cursor: 'pointer',
+                fontSize: 15,
+              }}
+              title="Открыть группу"
+            >
+              {g.title}{g.kind === 'member' ? ' · участвую' : ''}
+            </button>
 
+            {own && (
+              <>
+                <button
+                  onClick={() => rename(g)}
+                  title="Переименовать"
+                  style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={() => remove(g)}
+                  title="Удалить"
+                  style={{ background: 'transparent', border: 'none', color: '#ff9a9a', cursor: 'pointer' }}
+                >
+                  🗑
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })}
 
+      <button
+        onClick={create}
+        style={{
+          padding: '10px 12px',
+          borderRadius: 12,
+          border: '1px solid #2a3346',
+          background: '#203428',
+          color: '#d7ffd7',
+          cursor: 'pointer',
+          width: '100%',
+        }}
+      >
+        + Создать группу
+      </button>
+    </div>
+  );
+}
 
 /* ---------------- App ---------------- */
 export default function App() {
@@ -244,9 +355,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
+
   const [tab, setTab] = useState<TabKey>('groups'); // по умолчанию «Группы»
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
 
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
 
   // холст
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -270,8 +385,6 @@ export default function App() {
     return () => { html.style.overflowX = prevHtml; document.body.style.overflowX = prevBody; };
   }, []);
 
-
-
   // для авто-скролла при dnd
   const startRef = useRef<{ x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -284,8 +397,39 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  // загрузка групп
+  useEffect(() => {
+    if (!chatId) return;
+    listGroups(chatId)
+      .then(r => { if (r.ok) setGroups(r.groups); })
+      .catch(() => {});
+  }, [chatId]);
+
+  // back-кнопка: деталь группы → список групп
+  useEffect(() => {
+    const onBack = () => {
+      if (tab === 'groups' && !taskId && groupsPage === 'detail') {
+        setGroupsPage('list');
+        WebApp?.BackButton?.hide?.();
+      }
+    };
+    WebApp?.BackButton?.onClick?.(onBack);
+    return () => {
+      WebApp?.BackButton?.offClick?.(onBack as any);
+    };
+  }, [tab, taskId, groupsPage]);
+
+  // показывать back только на детальной странице группы
+  useEffect(() => {
+    if (tab === 'groups' && !taskId && groupsPage === 'detail') {
+      WebApp?.BackButton?.show?.();
+    } else if (!taskId) {
+      WebApp?.BackButton?.hide?.();
+    }
+  }, [tab, taskId, groupsPage]);
+
   const reloadBoard = async () => {
-    const data = await fetchBoard(chatId);
+    const data = await fetchBoard(chatId); // позже привяжем к selectedGroupId
     if (data.ok) {
       const cols = data.columns.map((c) => ({
         ...c,
@@ -340,7 +484,6 @@ export default function App() {
     if (!el) return;
     const max = el.scrollWidth - el.clientWidth;
     el.scrollLeft = Math.max(0, Math.min(max, el.scrollLeft + dx));
-
   };
 
   const handleDragStart = (evt: DragStartEvent) => {
@@ -349,7 +492,6 @@ export default function App() {
     setDragging(true);
     if (scrollerRef.current) scrollerRef.current.style.touchAction = 'none';
 
-    // фиксируем стартовые координаты
     const ev: any = evt.activatorEvent;
     const sx = typeof ev?.clientX === 'number' ? ev.clientX : ev?.touches?.[0]?.clientX ?? 0;
     const sy = typeof ev?.clientY === 'number' ? ev.clientY : ev?.touches?.[0]?.clientY ?? 0;
@@ -361,8 +503,8 @@ export default function App() {
   const handleDragMove = (evt: DragMoveEvent) => {
     if (!startRef.current) return;
 
-    const totalDx = evt.delta?.x ?? 0;                // общее смещение
-    const frameDx = totalDx - prevTotalDxRef.current; // смещение за текущий кадр
+    const totalDx = evt.delta?.x ?? 0;
+    const frameDx = totalDx - prevTotalDxRef.current;
     prevTotalDxRef.current = totalDx;
 
     const x = startRef.current.x + totalDx;
@@ -379,7 +521,6 @@ export default function App() {
     if (x < leftEdge) dx = -Math.min(MAX_SPEED, Math.ceil((leftEdge - x) / 50));
     else if (x > rightEdge) dx = Math.min(MAX_SPEED, Math.ceil((x - rightEdge) / 50));
 
-    // двигаем холст только если направление совпадает с текущим движением пальца
     const sgnMove = Math.sign(frameDx);
     if ((dx > 0 && sgnMove < 0) || (dx < 0 && sgnMove > 0)) {
       dx = 0;
@@ -388,7 +529,6 @@ export default function App() {
     if (dx) scrollByX(dx);
   };
 
-  // заменить ваш handleDragOver целиком
   const handleDragOver = (evt: DragOverEvent) => {
     const activeId = String(evt.active.id);
     const overId = evt.over ? String(evt.over.id) : null;
@@ -404,7 +544,6 @@ export default function App() {
         : columns.find((c) => c.tasks.some((t) => t.id === overId))!;
     if (!toCol) return;
 
-    // 1) Перестановка внутри той же колонки
     if (fromCol.id === toCol.id) {
       const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
       const overIdx = isOverColumn
@@ -424,7 +563,6 @@ export default function App() {
       return;
     }
 
-    // 2) Перенос между колонками
     setColumns((prev) => {
       const next = prev.map((c) => ({ ...c, tasks: [...c.tasks] }));
       const src = next.find((c) => c.id === fromCol.id)!;
@@ -446,11 +584,13 @@ export default function App() {
     });
   };
 
+  const currentGroup = groups.find(g => g.id === selectedGroupId);
   const title =
-    tab === 'groups' ? 'Группы • Моя группа'
-  : tab === 'calendar' ? 'Календарь'
-  : tab === 'notifications' ? 'Уведомления'
-  : 'Настройки';
+    tab === 'groups'
+      ? (groupsPage === 'list' ? 'Группы' : `Группы • ${currentGroup?.title || ''}`)
+      : tab === 'calendar' ? 'Календарь'
+      : tab === 'notifications' ? 'Уведомления'
+      : 'Настройки';
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragging(false);
@@ -491,105 +631,119 @@ export default function App() {
       padding: 16,
       paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))'
     }}>
-    
-{/* Шапка */}
-<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-  <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
-</div>
-
-
-{tab === 'groups' ? (
-  <GroupTabs current={groupTab} onChange={setGroupTab} />
-) : null}
-
-
-
-
-{tab === 'groups' ? (
-  groupTab === 'kanban' ? (
-    <>
-      {/* Создание */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <NewTaskBar chatId={chatId} onCreated={reloadBoard} />
-        <AddColumnButton chatId={chatId} onAdded={reloadBoard} />
+      {/* Шапка */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
       </div>
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragMove={handleDragMove}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        autoScroll={false}
-      >
-        {/* Горизонтальный холст */}
-        <div
-          ref={scrollerRef}
-          style={{
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            whiteSpace: 'nowrap',
-            WebkitOverflowScrolling: 'touch',
-            overscrollBehaviorX: 'contain',
-            paddingBottom: 8,
-            touchAction: dragging ? 'none' : 'pan-x',
-          }}
-        >
-          {columns
-            .sort((a, b) => a.order - b.order)
-            .map((col) => (
-              <ColumnView
-                key={col.id}
-                column={col}
-                onOpenTask={openTask}
-                onRenamed={reloadBoard}
-                activeId={activeId}
-                dragging={dragging}
-              />
-            ))}
-        </div>
+      {tab === 'groups' ? (
+        groupsPage === 'list' ? (
+          <GroupList
+            chatId={chatId}
+            groups={groups}
+            onReload={() => listGroups(chatId).then(r => { if (r.ok) setGroups(r.groups); })}
+            onOpen={(id) => {
+              setSelectedGroupId(id);
+              setGroupsPage('detail');
+              WebApp?.BackButton?.show?.();
+              reloadBoard(); // временно та же доска, позже привяжем к groupId
+            }}
+          />
+        ) : (
+          <>
+            <GroupTabs current={groupTab} onChange={setGroupTab} />
 
-        <DragOverlay>
-          {activeId
-            ? (() => {
-                const t = columns.flatMap((c) => c.tasks).find((t) => t.id === activeId);
-                return t ? <TaskCard text={t.text} order={t.order} dragging /> : null;
-              })()
-            : null}
-        </DragOverlay>
-      </DndContext>
-    </>
-  ) : groupTab === 'process' ? (
-    <div style={{
-      padding: 16,
-      background: '#1b2030',
-      border: '1px solid #2a3346',
-      borderRadius: 16,
-      minHeight: 240,
-    }}>
-      Процесс 🔀: скоро подключим редактор связей (React Flow).
-    </div>
-  ) : (
-    <div style={{
-      padding: 16,
-      background: '#1b2030',
-      border: '1px solid #2a3346',
-      borderRadius: 16,
-      minHeight: 240,
-    }}>
-      Участники 👥: список участников и добавление — скоро подключим.
-    </div>
-  )
-) : (
-  <TabPlaceholder tab={tab} />
-)}
+            {groupTab === 'kanban' ? (
+              <>
+                {/* Создание */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <NewTaskBar chatId={chatId} onCreated={reloadBoard} />
+                  <AddColumnButton chatId={chatId} onAdded={reloadBoard} />
+                </div>
+
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCorners}
+                  onDragStart={handleDragStart}
+                  onDragMove={handleDragMove}
+                  onDragOver={handleDragOver}
+                  onDragEnd={handleDragEnd}
+                  autoScroll={false}
+                >
+                  {/* Горизонтальный холст */}
+                  <div
+                    ref={scrollerRef}
+                    style={{
+                      overflowX: 'auto',
+                      overflowY: 'hidden',
+                      whiteSpace: 'nowrap',
+                      WebkitOverflowScrolling: 'touch',
+                      overscrollBehaviorX: 'contain',
+                      paddingBottom: 8,
+                      touchAction: dragging ? 'none' : 'pan-x',
+                    }}
+                  >
+                    {columns
+                      .sort((a, b) => a.order - b.order)
+                      .map((col) => (
+                        <ColumnView
+                          key={col.id}
+                          column={col}
+                          onOpenTask={openTask}
+                          onRenamed={reloadBoard}
+                          activeId={activeId}
+                          dragging={dragging}
+                        />
+                      ))}
+                  </div>
+
+                  <DragOverlay>
+                    {activeId
+                      ? (() => {
+                          const t = columns.flatMap((c) => c.tasks).find((t) => t.id === activeId);
+                          return t ? <TaskCard text={t.text} order={t.order} dragging /> : null;
+                        })()
+                      : null}
+                  </DragOverlay>
+                </DndContext>
+              </>
+            ) : groupTab === 'process' ? (
+              <div style={{
+                padding: 16,
+                background: '#1b2030',
+                border: '1px solid #2a3346',
+                borderRadius: 16,
+                minHeight: 240,
+              }}>
+                Процесс 🔀: скоро подключим редактор связей (React Flow).
+              </div>
+            ) : (
+              <div style={{
+                padding: 16,
+                background: '#1b2030',
+                border: '1px solid #2a3346',
+                borderRadius: 16,
+                minHeight: 240,
+              }}>
+                Участники 👥: список участников и добавление — скоро подключим.
+              </div>
+            )}
+          </>
+        )
+      ) : (
+        <TabPlaceholder tab={tab} />
+      )}
 
       {/* Нижняя панель */}
       <BottomNav
         current={tab}
         onChange={(t) => {
           setTab(t);
+          if (t === 'groups') {
+            setGroupsPage('list');
+            setSelectedGroupId('');
+            if (!taskId) WebApp?.BackButton?.hide?.();
+          }
           try { (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
         }}
       />
@@ -668,7 +822,7 @@ function ColumnView({
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(column.name);
-  const { setNodeRef } = useDroppable({ id: column.id }); // чтобы можно было бросать в пустую колонку
+  const { setNodeRef } = useDroppable({ id: column.id });
 
   const saveName = async () => {
     const newName = name.trim();
@@ -751,7 +905,6 @@ function ColumnView({
             maxHeight: '60vh',
             overflowY: 'auto',
             paddingRight: 4,
-            // позволяем вертикальный скролл в покое; при реальном драге блокируем, чтобы dnd ловил движение
             touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
