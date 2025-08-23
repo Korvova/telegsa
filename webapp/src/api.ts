@@ -1,18 +1,11 @@
 import ky from 'ky';
 
-
-
-
+/* ---------- Types ---------- */
 export type Group = {
   id: string;
   title: string;
-  kind: 'own' | 'member'; // свои / где участвую
+  kind: 'own' | 'member';
 };
-
-
-
-
-
 
 export type Task = {
   id: string;
@@ -35,75 +28,87 @@ export type Column = {
   tasks: Task[];
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+/* ---------- Config ---------- */
+const API_BASE = import.meta.env.VITE_API_BASE || ''; // напр. '/api' или 'https://rms-bot.com/api'
 
-export async function fetchBoard(chatId: string) {
-  const res = await ky.get(`${API_BASE}/tasks`, { searchParams: { chatId } }).json<{
-    ok: boolean;
-    columns: Column[];
-  }>();
-  return res;
+/* ---------- Helpers ---------- */
+const normGroup = (gid?: string) => (gid && gid !== 'default' ? gid : undefined);
+
+function makeParams(obj: Record<string, string | undefined>) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(obj)) if (v) sp.set(k, v);
+  return sp;
 }
 
-
-export async function moveTask(taskId: string, toColumnId: string, toIndex: number) {
-  return ky.patch(`${API_BASE}/tasks/${taskId}/move`, {
-    json: { toColumnId, toIndex },
-  }).json<{ ok: boolean; task: Task }>();
+/* ---------- Board / Tasks ---------- */
+export async function fetchBoard(chatId: string, groupId?: string) {
+  const searchParams = makeParams({ chatId, groupId: normGroup(groupId) });
+  return ky
+    .get(`${API_BASE}/tasks`, { searchParams })
+    .json<{ ok: boolean; columns: Column[] }>();
 }
 
+export function moveTask(taskId: string, toColumnId: string, toIndex: number) {
+  return ky
+    .patch(`${API_BASE}/tasks/${taskId}/move`, { json: { toColumnId, toIndex } })
+    .json<{ ok: boolean; task: Task }>();
+}
 
-export async function getTask(id: string) {
+export function getTask(id: string) {
   return ky.get(`${API_BASE}/tasks/${id}`).json<{ ok: boolean; task: Task }>();
 }
 
-export async function updateTask(id: string, text: string) {
-  return ky.patch(`${API_BASE}/tasks/${id}`, { json: { text } })
+export function updateTask(id: string, text: string) {
+  return ky
+    .patch(`${API_BASE}/tasks/${id}`, { json: { text } })
     .json<{ ok: boolean; task: Task }>();
 }
 
-export async function completeTask(id: string) {
+export function completeTask(id: string) {
   return ky.post(`${API_BASE}/tasks/${id}/complete`).json<{ ok: boolean; task: Task }>();
 }
 
-
-
-export async function createTask(chatId: string, text: string) {
-  return ky.post(`${API_BASE}/tasks`, { json: { chatId, text } })
+export function createTask(chatId: string, text: string, groupId?: string) {
+  return ky
+    .post(`${API_BASE}/tasks`, { json: { chatId, text, groupId: normGroup(groupId) } })
     .json<{ ok: boolean; task: Task }>();
 }
 
-
-export async function createColumn(chatId: string, name: string) {
-  return ky.post(`${API_BASE}/columns`, { json: { chatId, name } })
+export function createColumn(chatId: string, name: string, groupId?: string) {
+  return ky
+    .post(`${API_BASE}/columns`, { json: { chatId, name, groupId: normGroup(groupId) } })
     .json<{ ok: boolean; column: Column }>();
 }
 
-export async function renameColumn(id: string, name: string) {
-  return ky.patch(`${API_BASE}/columns/${id}`, { json: { name } })
+export function renameColumn(id: string, name: string) {
+  return ky
+    .patch(`${API_BASE}/columns/${id}`, { json: { name } })
     .json<{ ok: boolean; column: Column }>();
 }
 
-
-// === Groups API ===
-
-
-export async function listGroups(chatId: string) {
-  return ky.get(`${API_BASE}/groups`, { searchParams: { chatId } })
+/* ---------- Groups ---------- */
+export function listGroups(chatId: string) {
+  const searchParams = makeParams({ chatId });
+  return ky
+    .get(`${API_BASE}/groups`, { searchParams })
     .json<{ ok: boolean; groups: Group[] }>();
 }
 
-export async function createGroup(chatId: string, title: string) {
-  return ky.post(`${API_BASE}/groups`, { json: { chatId, title } })
+export function createGroup(chatId: string, title: string) {
+  return ky
+    .post(`${API_BASE}/groups`, { json: { chatId, title } })
     .json<{ ok: boolean; group: Group }>();
 }
 
-export async function renameGroupTitle(id: string, chatId: string, title: string) {
-  return ky.patch(`${API_BASE}/groups/${id}`, { json: { chatId, title } })
+export function renameGroupTitle(id: string, chatId: string, title: string) {
+  return ky
+    .patch(`${API_BASE}/groups/${id}`, { json: { chatId, title } })
     .json<{ ok: boolean; group: Group }>();
 }
 
-export async function deleteGroup(id: string, chatId: string) {
-  return ky.delete(`${API_BASE}/groups/${id}`, { searchParams: { chatId } })
+export function deleteGroup(id: string, chatId: string) {
+  const searchParams = makeParams({ chatId });
+  return ky
+    .delete(`${API_BASE}/groups/${id}`, { searchParams })
     .json<{ ok: boolean }>();
 }
