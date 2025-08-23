@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
+import BottomNav, { type TabKey } from './BottomNav';
 
 import TaskView from './TaskView';
 import {
@@ -21,8 +22,7 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
-    arrayMove,                 // <— добавить
-
+  arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -147,79 +147,95 @@ function AddColumnButton({ chatId, onAdded }: { chatId: string; onAdded: () => v
   );
 }
 
-/* Стрелки прокрутки холста */
-function ArrowBar({
-  scrollerRef,
-  left,
-}: { scrollerRef: React.RefObject<HTMLDivElement | null>; left: number }) {
-  const STEP = 120;
-  const TICK_EVERY = 24;
 
-  const scrollBy = (dir: -1 | 1) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const max = el.scrollWidth - el.clientWidth;
-    const target = Math.max(0, Math.min(max, el.scrollLeft + dir * STEP));
-    el.scrollTo({ left: target, behavior: 'smooth' });
-  };
 
-  const holdTimer = useRef<number | null>(null);
-  const startHold = (dir: -1 | 1) => () => {
-    stopHold();
-    const tick = () => { scrollBy(dir); holdTimer.current = window.setTimeout(tick, TICK_EVERY); };
-    tick();
-  };
-  const stopHold = () => { if (holdTimer.current != null) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
-
-  useEffect(() => {
-    const stop = () => stopHold();
-    window.addEventListener('mouseup', stop);
-    window.addEventListener('touchend', stop);
-    window.addEventListener('touchcancel', stop);
-    return () => {
-      window.removeEventListener('mouseup', stop);
-      window.removeEventListener('touchend', stop);
-      window.removeEventListener('touchcancel', stop);
-      stopHold();
-    };
-  }, []);
-
-  const btn: React.CSSProperties = {
-    padding: '6px 10px',
-    borderRadius: 10,
-    background: '#1f2a40',
-    border: '1px solid #2a3346',
-    color: '#e8eaed',
-    fontSize: 16,
-    touchAction: 'manipulation',
-  };
-  const pill: React.CSSProperties = {
-    padding: '6px 10px',
-    borderRadius: 10,
-    background: '#0b1020',
-    border: '1px solid #2a3346',
-    color: '#cde',
-    fontSize: 12,
-  };
+/* Заглушка для неготовых вкладок */
+function TabPlaceholder({ tab }: { tab: TabKey }) {
+  const map = {
+    calendar: 'Календарь скоро подключим — события из задач и напоминания ⏰',
+    notifications: 'Уведомления: настройка подписок и история событий',
+    settings: 'Настройки: профиль, язык, тема, донат',
+  } as const;
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <button
-        style={btn}
-        onClick={() => scrollBy(-1)}
-        onMouseDown={startHold(-1)}
-        onTouchStart={(e) => { e.preventDefault(); startHold(-1)(); }}
-      >◀</button>
-      <button
-        style={btn}
-        onClick={() => scrollBy(+1)}
-        onMouseDown={startHold(+1)}
-        onTouchStart={(e) => { e.preventDefault(); startHold(+1)(); }}
-      >▶</button>
-      <div style={pill}>scrollLeft:{Math.round(left)}</div>
+    <div style={{
+      padding: 16,
+      background: '#1b2030',
+      border: '1px solid #2a3346',
+      borderRadius: 16,
+      minHeight: 240,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center'
+    }}>
+      <div style={{ opacity: 0.85, lineHeight: 1.6 }}>
+        {tab === 'calendar' ? map.calendar
+          : tab === 'notifications' ? map.notifications
+          : map.settings}
+      </div>
     </div>
   );
 }
+
+
+
+
+function GroupTabs({
+  current,
+  onChange,
+}: {
+  current: 'kanban' | 'process' | 'members';
+  onChange: (t: 'kanban' | 'process' | 'members') => void;
+}) {
+  const items = [
+    { id: 'kanban' as const, icon: '🧮', label: 'Канбан' },
+    { id: 'process' as const, icon: '🔀', label: 'Процесс' },
+    { id: 'members' as const, icon: '👥', label: 'Участники' },
+  ];
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: 8,
+        marginBottom: 12,
+      }}
+    >
+      {items.map((it) => {
+        const active = current === it.id;
+        return (
+          <button
+            key={it.id}
+            onClick={() => onChange(it.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: '10px 8px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: active ? '#1b2030' : '#121722',
+              color: active ? '#8aa0ff' : '#e8eaed',
+              cursor: 'pointer',
+              fontSize: 14,
+            }}
+          >
+            <span>{it.icon}</span>
+            <span>{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
+
+
+
 
 /* ---------------- App ---------------- */
 export default function App() {
@@ -228,20 +244,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>('groups'); // по умолчанию «Группы»
+  const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
+
 
   // холст
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-
-
-
-const prevTotalDxRef = useRef(0);
-
-
-
-
-
-
-
+  const prevTotalDxRef = useRef(0);
 
   // сенсоры: long-press на таче + мышь
   const sensors = useSensors(
@@ -261,16 +270,7 @@ const prevTotalDxRef = useRef(0);
     return () => { html.style.overflowX = prevHtml; document.body.style.overflowX = prevBody; };
   }, []);
 
-  // отладка scrollLeft
-  const [dbgLeft, setDbgLeft] = useState(0);
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onScroll = () => setDbgLeft(el.scrollLeft);
-    el.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
+
 
   // для авто-скролла при dnd
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -340,12 +340,12 @@ const prevTotalDxRef = useRef(0);
     if (!el) return;
     const max = el.scrollWidth - el.clientWidth;
     el.scrollLeft = Math.max(0, Math.min(max, el.scrollLeft + dx));
-    setDbgLeft(el.scrollLeft);
+
   };
 
   const handleDragStart = (evt: DragStartEvent) => {
     setActiveId(String(evt.active.id));
-    prevTotalDxRef.current = 0; // <— сброс накопленного dx
+    prevTotalDxRef.current = 0;
     setDragging(true);
     if (scrollerRef.current) scrollerRef.current.style.touchAction = 'none';
 
@@ -358,104 +358,99 @@ const prevTotalDxRef = useRef(0);
     WebApp?.HapticFeedback?.impactOccurred?.('light');
   };
 
+  const handleDragMove = (evt: DragMoveEvent) => {
+    if (!startRef.current) return;
 
+    const totalDx = evt.delta?.x ?? 0;                // общее смещение
+    const frameDx = totalDx - prevTotalDxRef.current; // смещение за текущий кадр
+    prevTotalDxRef.current = totalDx;
 
-const handleDragMove = (evt: DragMoveEvent) => {
-  if (!startRef.current) return;
+    const x = startRef.current.x + totalDx;
+    const container = scrollerRef.current;
+    if (!container) return;
 
-  const totalDx = evt.delta?.x ?? 0;                // общее смещение
-  const frameDx = totalDx - prevTotalDxRef.current; // смещение за текущий кадр
-  prevTotalDxRef.current = totalDx;
+    const rect = container.getBoundingClientRect();
+    const EDGE = 120;
+    const leftEdge = rect.left + EDGE;
+    const rightEdge = rect.right - EDGE;
+    const MAX_SPEED = 2;
 
-  // абсолютный X пальца — как было
-  const x = startRef.current.x + totalDx;
+    let dx = 0;
+    if (x < leftEdge) dx = -Math.min(MAX_SPEED, Math.ceil((leftEdge - x) / 50));
+    else if (x > rightEdge) dx = Math.min(MAX_SPEED, Math.ceil((x - rightEdge) / 50));
 
-  const container = scrollerRef.current;
-  if (!container) return;
-
-  const rect = container.getBoundingClientRect();
-  const EDGE = 120;
-  const leftEdge = rect.left + EDGE;
-  const rightEdge = rect.right - EDGE;
-  const MAX_SPEED = 2;
-
-  let dx = 0;
-  if (x < leftEdge) dx = -Math.min(MAX_SPEED, Math.ceil((leftEdge - x) / 50));
-  else if (x > rightEdge) dx = Math.min(MAX_SPEED, Math.ceil((x - rightEdge) / 50));
-
-  // ВАЖНО: двигаем холст только если направление совпадает с текущим движением пальца
-  const sgnMove = Math.sign(frameDx);
-  if ((dx > 0 && sgnMove < 0) || (dx < 0 && sgnMove > 0)) {
-    dx = 0;
-  }
-
-  if (dx) scrollByX(dx);
-};
-
-
-
-
-
-// ⬇️ заменить ваш handleDragOver целиком
-const handleDragOver = (evt: DragOverEvent) => {
-  const activeId = String(evt.active.id);
-  const overId = evt.over ? String(evt.over.id) : null;
-  if (!overId) return;
-
-  const fromCol = columns.find((c) => c.tasks.some((t) => t.id === activeId));
-  if (!fromCol) return;
-
-  const isOverColumn = columns.some((c) => c.id === overId);
-  const toCol =
-    isOverColumn
-      ? columns.find((c) => c.id === overId)!
-      : columns.find((c) => c.tasks.some((t) => t.id === overId))!;
-  if (!toCol) return;
-
-  // --- 1) Перестановка внутри той же колонки ---
-  if (fromCol.id === toCol.id) {
-    const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
-    const overIdx = isOverColumn
-      ? Math.max(0, toCol.tasks.length - 1) // если «над колонкой» — считаем конец списка
-      : toCol.tasks.findIndex((t) => t.id === overId);
-
-    if (fromIdx !== -1 && overIdx !== -1 && fromIdx !== overIdx) {
-      setColumns((prev) =>
-        prev.map((c) => {
-          if (c.id !== fromCol.id) return c;
-          const tasks = arrayMove([...c.tasks], fromIdx, overIdx);
-          tasks.forEach((t, i) => (t.order = i));
-          return { ...c, tasks };
-        })
-      );
+    // двигаем холст только если направление совпадает с текущим движением пальца
+    const sgnMove = Math.sign(frameDx);
+    if ((dx > 0 && sgnMove < 0) || (dx < 0 && sgnMove > 0)) {
+      dx = 0;
     }
-    return;
-  }
 
-  // --- 2) Перенос между колонками ---
-  setColumns((prev) => {
-    const next = prev.map((c) => ({ ...c, tasks: [...c.tasks] }));
-    const src = next.find((c) => c.id === fromCol.id)!;
-    const dst = next.find((c) => c.id === toCol.id)!;
+    if (dx) scrollByX(dx);
+  };
 
-    const fromIndex = src.tasks.findIndex((t) => t.id === activeId);
-    const insertIndex = isOverColumn
-      ? dst.tasks.length
-      : Math.max(0, dst.tasks.findIndex((t) => t.id === overId));
+  // заменить ваш handleDragOver целиком
+  const handleDragOver = (evt: DragOverEvent) => {
+    const activeId = String(evt.active.id);
+    const overId = evt.over ? String(evt.over.id) : null;
+    if (!overId) return;
 
-    const [moved] = src.tasks.splice(fromIndex, 1);
-    dst.tasks.splice(insertIndex, 0, moved);
+    const fromCol = columns.find((c) => c.tasks.some((t) => t.id === activeId));
+    if (!fromCol) return;
 
-    src.tasks.forEach((t, i) => (t.order = i));
-    dst.tasks.forEach((t, i) => (t.order = i));
-    moved.columnId = dst.id;
+    const isOverColumn = columns.some((c) => c.id === overId);
+    const toCol =
+      isOverColumn
+        ? columns.find((c) => c.id === overId)!
+        : columns.find((c) => c.tasks.some((t) => t.id === overId))!;
+    if (!toCol) return;
 
-    return next;
-  });
-};
+    // 1) Перестановка внутри той же колонки
+    if (fromCol.id === toCol.id) {
+      const fromIdx = fromCol.tasks.findIndex((t) => t.id === activeId);
+      const overIdx = isOverColumn
+        ? Math.max(0, toCol.tasks.length - 1)
+        : toCol.tasks.findIndex((t) => t.id === overId);
 
+      if (fromIdx !== -1 && overIdx !== -1 && fromIdx !== overIdx) {
+        setColumns((prev) =>
+          prev.map((c) => {
+            if (c.id !== fromCol.id) return c;
+            const tasks = arrayMove([...c.tasks], fromIdx, overIdx);
+            tasks.forEach((t, i) => (t.order = i));
+            return { ...c, tasks };
+          })
+        );
+      }
+      return;
+    }
 
+    // 2) Перенос между колонками
+    setColumns((prev) => {
+      const next = prev.map((c) => ({ ...c, tasks: [...c.tasks] }));
+      const src = next.find((c) => c.id === fromCol.id)!;
+      const dst = next.find((c) => c.id === toCol.id)!;
 
+      const fromIndex = src.tasks.findIndex((t) => t.id === activeId);
+      const insertIndex = isOverColumn
+        ? dst.tasks.length
+        : Math.max(0, dst.tasks.findIndex((t) => t.id === overId));
+
+      const [moved] = src.tasks.splice(fromIndex, 1);
+      dst.tasks.splice(insertIndex, 0, moved);
+
+      src.tasks.forEach((t, i) => (t.order = i));
+      dst.tasks.forEach((t, i) => (t.order = i));
+      moved.columnId = dst.id;
+
+      return next;
+    });
+  };
+
+  const title =
+    tab === 'groups' ? 'Группы • Моя группа'
+  : tab === 'calendar' ? 'Календарь'
+  : tab === 'notifications' ? 'Уведомления'
+  : 'Настройки';
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragging(false);
@@ -489,13 +484,30 @@ const handleDragOver = (evt: DragOverEvent) => {
   if (error)   return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
-      {/* Шапка */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Kanban</h1>
-        <ArrowBar scrollerRef={scrollerRef} left={dbgLeft} />
-      </div>
+    <div style={{
+      minHeight: '100vh',
+      background: '#0f1216',
+      color: '#e8eaed',
+      padding: 16,
+      paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))'
+    }}>
+    
+{/* Шапка */}
+<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+  <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+</div>
 
+
+{tab === 'groups' ? (
+  <GroupTabs current={groupTab} onChange={setGroupTab} />
+) : null}
+
+
+
+
+{tab === 'groups' ? (
+  groupTab === 'kanban' ? (
+    <>
       {/* Создание */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <NewTaskBar chatId={chatId} onCreated={reloadBoard} />
@@ -547,6 +559,40 @@ const handleDragOver = (evt: DragOverEvent) => {
             : null}
         </DragOverlay>
       </DndContext>
+    </>
+  ) : groupTab === 'process' ? (
+    <div style={{
+      padding: 16,
+      background: '#1b2030',
+      border: '1px solid #2a3346',
+      borderRadius: 16,
+      minHeight: 240,
+    }}>
+      Процесс 🔀: скоро подключим редактор связей (React Flow).
+    </div>
+  ) : (
+    <div style={{
+      padding: 16,
+      background: '#1b2030',
+      border: '1px solid #2a3346',
+      borderRadius: 16,
+      minHeight: 240,
+    }}>
+      Участники 👥: список участников и добавление — скоро подключим.
+    </div>
+  )
+) : (
+  <TabPlaceholder tab={tab} />
+)}
+
+      {/* Нижняя панель */}
+      <BottomNav
+        current={tab}
+        onChange={(t) => {
+          setTab(t);
+          try { (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+        }}
+      />
     </div>
   );
 }
@@ -706,7 +752,7 @@ function ColumnView({
             overflowY: 'auto',
             paddingRight: 4,
             // позволяем вертикальный скролл в покое; при реальном драге блокируем, чтобы dnd ловил движение
-           touchAction: dragging ? 'none' : 'pan-x pan-y',
+            touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
           {column.tasks.map((t) => (
