@@ -21,7 +21,7 @@ model Column {
   updatedAt DateTime @updatedAt
 
   @@unique([chatId, name])
-  @@unique([chatId, order])
+
   @@index([chatId])
 }
 
@@ -44,3 +44,38 @@ model Task {
   @@index([chatId])
   @@index([columnId, order])
 }
+
+
+
+/// === Groups ===
+/// Владелец (ownerChatId) создаёт группу. Участники — через GroupMember.
+model Group {
+  id           String   @id @default(cuid())
+  ownerChatId  String
+  title        String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members      GroupMember[]
+
+  @@unique([ownerChatId, title])
+  @@index([ownerChatId])
+}
+
+/// Членство пользователя (chatId) в группе
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String
+  chatId    String
+  role      String   @default("member")
+  createdAt DateTime @default(now())
+
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, chatId])
+  @@index([chatId])
+}
+
+
+
+
