@@ -300,6 +300,24 @@ export default function App() {
     }
   }, [chatId, resolvedGroupId, tab, groupsPage, groupTab]);
 
+
+
+
+
+// ⬇️ Новый эффект: когда taskId очистился (закрыли карточку) — форсим перезагрузку доски
+useEffect(() => {
+  if (!taskId) {
+    console.log('[TASK] closed → force board reload');
+    loadBoard();
+  }
+}, [taskId, loadBoard]);
+
+
+
+
+
+
+
   useEffect(() => {
     loadBoard();
   }, [loadBoard]);
@@ -330,27 +348,42 @@ export default function App() {
     WebApp?.BackButton?.show?.();
   };
 
-  const closeTask = (groupIdFromTask?: string | null) => {
-    const url = new URL(window.location.href);
-    url.searchParams.delete('task');
-    window.history.replaceState(null, '', url.toString());
-    setTaskId('');
-    WebApp?.BackButton?.hide?.();
 
-    if (typeof groupIdFromTask !== 'undefined') {
-      if (groupIdFromTask) {
-        setSelectedGroupId(groupIdFromTask);
-      } else {
-        const my = groups.find((g) => g.title === 'Моя группа');
-        if (my) setSelectedGroupId(my.id);
-      }
-      setGroupsPage('detail');
-      setColumns([]);
-      setLoading(true);
+
+
+
+
+const closeTask = (groupIdFromTask?: string | null) => {
+  // убрать ?task= из URL
+  const url = new URL(window.location.href);
+  url.searchParams.delete('task');
+  window.history.replaceState(null, '', url.toString());
+  setTaskId('');
+  WebApp?.BackButton?.hide?.();
+
+  // если знаем группу задачи — возвращаемся в её канбан; иначе — в список
+  if (typeof groupIdFromTask !== 'undefined') {
+    if (groupIdFromTask) {
+      setSelectedGroupId(groupIdFromTask);
     } else {
-      setGroupsPage('list');
+      const my = groups.find((g) => g.title === 'Моя группа');
+      if (my) setSelectedGroupId(my.id);
     }
-  };
+    setGroupsPage('detail'); // не трогаем setColumns / setLoading — их поднимет loadBoard()
+  } else {
+    setGroupsPage('list');
+  }
+};
+
+
+
+
+
+
+
+
+
+
 
   // поднять WebApp
   useEffect(() => {

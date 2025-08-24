@@ -18,10 +18,10 @@ export default function TaskView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // сюда положим groupId задачи (null = "Моя группа", undefined = не успели получить)
+  // запоминаем группу задачи, чтобы вернуться в ту же доску
   const groupIdRef = useRef<string | null | undefined>(undefined);
 
-  // Telegram back button -> закрываем с groupId
+  // Telegram back button → onClose c groupId
   useEffect(() => {
     WebApp?.BackButton?.show?.();
     const handler = () => onClose(groupIdRef.current);
@@ -32,38 +32,35 @@ export default function TaskView({
     };
   }, [onClose]);
 
-  // грузим саму задачу (для текста и т.п.)
-  useEffect(() => {
-    setLoading(true);
-    getTask(taskId)
-      .then((r) => {
-        setTask(r.task);
-        setText(r.task.text);
-      })
-      .catch((e) => setError(e?.message || 'Ошибка загрузки'))
-      .finally(() => setLoading(false));
-  }, [taskId]);
-
-  // параллельно подтягиваем её groupId
+  // загрузка задачи и её группы
   useEffect(() => {
     let ignore = false;
-    getTaskWithGroup(taskId)
-      .then((r) => {
-        if (!ignore) groupIdRef.current = r.groupId ?? null;
+    setLoading(true);
+
+    Promise.all([
+      getTask(taskId),
+      getTaskWithGroup(taskId).catch(() => ({ groupId: undefined as string | null | undefined })),
+    ])
+      .then(([tResp, gResp]) => {
+        if (ignore) return;
+        setTask(tResp.task);
+        setText(tResp.task.text);
+        groupIdRef.current = (gResp as any).groupId ?? null; // null = "Моя группа", undefined = не знаем
       })
-      .catch(() => {
-        groupIdRef.current = undefined;
-      });
+      .catch((e) => !ignore && setError(e?.message || 'Ошибка загрузки'))
+      .finally(() => !ignore && setLoading(false));
+
     return () => {
       ignore = true;
     };
   }, [taskId]);
 
   const save = async () => {
-    if (!text.trim()) return;
+    const val = text.trim();
+    if (!val) return;
     setSaving(true);
     try {
-      await updateTask(taskId, text.trim());
+      await updateTask(taskId, val);
       onChanged?.();
       WebApp?.HapticFeedback?.impactOccurred?.('light');
     } catch (e: any) {
@@ -79,7 +76,7 @@ export default function TaskView({
       await completeTask(taskId);
       onChanged?.();
       WebApp?.HapticFeedback?.impactOccurred?.('medium');
-      onClose(groupIdRef.current);
+      onClose(groupIdRef.current); // вернёмся в нужную доску
     } catch (e: any) {
       setError(e?.message || 'Ошибка завершения');
       setSaving(false);
@@ -87,8 +84,8 @@ export default function TaskView({
   };
 
   if (loading) return <div style={{ padding: 16 }}>Загрузка…</div>;
-  if (error) return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
-  if (!task) return <div style={{ padding: 16 }}>Задача не найдена</div>;
+  if (error)   return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
+  if (!task)   return <div style={{ padding: 16 }}>Задача не найдена</div>;
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
