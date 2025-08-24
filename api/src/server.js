@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -43,6 +44,36 @@ function buildShortCodes(ids) {
   for (const id of ids) map[id] = id.slice(0, 12);
   return map;
 }
+
+
+
+
+
+function parseGroupIdFromColumnName(name) {
+  const sep = '::';
+  const i = name.indexOf(sep);
+  return i > 0 ? name.slice(0, i) : null;
+}
+
+async function userIsGroupMemberOrOwner(chatId, groupId) {
+  const g = await prisma.group.findUnique({ where: { id: groupId } });
+  if (!g) return false;
+  if (g.ownerChatId === chatId) return true;
+  const m = await prisma.groupMember.findFirst({ where: { groupId, chatId } });
+  return Boolean(m);
+}
+
+function makeToken() {
+  return crypto.randomBytes(16).toString('base64url'); // компактный токен
+}
+
+
+
+
+
+
+
+
 
 /* ---------- Groups / Columns helpers ---------- */
 const GROUP_SEP = '::';
@@ -154,33 +185,62 @@ async function updateChatCommands(chatId) {
 /* ---------- Health ---------- */
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'telegsar-api' }));
 
+
+
+
+
+
 /* ---------- Board (columns + tasks), group-aware ---------- */
 app.get('/tasks', async (req, res) => {
   try {
-    const chatId = String(req.query.chatId || '');
-    const rawGroupId = String(req.query.groupId || '').trim();
+    const chatId = String(req.query.chatId || '');            // кто открыл
+    const rawGroupId = String(req.query.groupId || '').trim(); // какая группа
     const groupId = rawGroupId && rawGroupId !== 'default' ? rawGroupId : null;
     if (!chatId) return res.status(400).json({ ok: false, error: 'chatId is required' });
 
-    await ensureDefaultColumns(chatId, groupId);
+    // Дефолтная «Моя группа» — личная доска пользователя
+    if (!groupId) {
+      await ensureDefaultColumns(chatId, null);
+      const columns = await prisma.column.findMany({
+        where: { chatId, name: { not: { contains: GROUP_SEP } } },
+        orderBy: { order: 'asc' },
+        include: { tasks: { orderBy: { order: 'asc' } } },
+      });
+      const sanitized = columns.map(c => ({ ...c, name: stripGroupName(c.name) }));
+      return res.json({ ok: true, columns: sanitized });
+    }
 
-    const whereByGroup = groupId
-      ? { chatId, name: { startsWith: `${groupId}${GROUP_SEP}` } }
-      : { chatId, name: { not: { contains: GROUP_SEP } } };
+    // Групповая доска — единая у владельца группы
+    // 1) доступ
+    const allowed = await userIsGroupMemberOrOwner(chatId, groupId);
+    if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
 
+    // 2) владелец
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    const boardChatId = g.ownerChatId;
+
+    // 3) гарантируем колонки у владельца
+    await ensureDefaultColumns(boardChatId, groupId);
+
+    // 4) берём колонки у владельца, префиксованные groupId::
     const columns = await prisma.column.findMany({
-      where: whereByGroup,
+      where: { chatId: boardChatId, name: { startsWith: `${groupId}${GROUP_SEP}` } },
       orderBy: { order: 'asc' },
       include: { tasks: { orderBy: { order: 'asc' } } },
     });
-
     const sanitized = columns.map(c => ({ ...c, name: stripGroupName(c.name) }));
-    res.json({ ok: true, columns: sanitized });
+    return res.json({ ok: true, columns: sanitized });
   } catch (e) {
     console.error('GET /tasks error:', e);
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
+
+
+
+
+
 
 /* ---------- Webhook (ТОЛЬКО через /g) ---------- */
 app.post('/webhook', async (req, res) => {
@@ -348,32 +408,246 @@ app.patch('/tasks/:id/move', async (req, res) => {
 
 app.get('/tasks/:id', async (req, res) => {
   try {
-    const task = await prisma.task.findUnique({ where: { id: String(req.params.id) } });
-    if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
-    res.json({ ok: true, task });
+    const id = String(req.params.id);
+
+   // 1) сама задача
+  const task = await prisma.task.findUnique({ where: { id } });
+  if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
+
+  // 2) groupId из имени колонки "<groupId>::..."
+  let groupId = null;
+  try {
+    const col = await prisma.column.findUnique({ where: { id: task.columnId } });
+    if (col) {
+      const i = col.name.indexOf(GROUP_SEP);
+      groupId = i > 0 ? col.name.slice(0, i) : null;
+    }
+  } catch {}
+
+    // 3) имя ответственного из таблицы Users (см. примечание ниже)
+    let assigneeName = null;
+    if (task.assigneeChatId) {
+      try {
+        const u = await prisma.user.findUnique({ where: { chatId: String(task.assigneeChatId) } });
+        if (u) {
+          assigneeName =
+            [u.firstName, u.lastName].filter(Boolean).join(' ') ||
+            u.username ||
+            String(task.assigneeChatId);
+        }
+      } catch {}
+    }
+
+    res.json({ ok: true, task: { ...task, assigneeName }, groupId });
   } catch (e) {
-    console.error('GET /tasks/:id error:', e);
+    console.error('GET /tasks/:id error', e);
     res.status(500).json({ ok: false });
   }
 });
 
+
+
+
+
+// server.js (ваш Express)
+app.post('/me', async (req, res) => {
+  try {
+    const { chatId, firstName, lastName, username } = req.body || {};
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    await prisma.user.upsert({
+      where: { chatId: String(chatId) },
+      create: {
+        chatId: String(chatId),
+        firstName: firstName || null,
+        lastName: lastName || null,
+        username: username || null,
+      },
+      update: {
+        firstName: firstName || null,
+        lastName: lastName || null,
+        username: username || null,
+      },
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /me error:', e);
+    res.status(500).json({ ok: false });
+  }
+});
+
+
+
+
+
+
+
+
 app.patch('/tasks/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
-    const { text } = req.body || {};
-    if (typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ ok: false, error: 'text is required' });
+    const { text, assigneeChatId } = req.body || {};
+
+    const data = {};
+    if (typeof text === 'string' && text.trim()) data.text = text.trim();
+    if (typeof assigneeChatId === 'string' || assigneeChatId === null) {
+      data.assigneeChatId = assigneeChatId ?? null;
     }
-    const updated = await prisma.task.update({
-      where: { id },
-      data: { text: text.trim() },
-    });
+    if (!Object.keys(data).length) {
+      return res.status(400).json({ ok: false, error: 'nothing_to_update' });
+    }
+
+    const updated = await prisma.task.update({ where: { id }, data });
     res.json({ ok: true, task: updated });
   } catch (e) {
     console.error('PATCH /tasks/:id error:', e);
     res.status(500).json({ ok: false });
   }
 });
+
+
+
+
+
+
+
+// Создать инвайт (TASK | GROUP)
+app.post('/invites', async (req, res) => {
+  try {
+    const { chatId, type, taskId, groupId: rawGroupId } = req.body || {};
+    const inviter = String(chatId || '');
+
+    if (!inviter || (type !== 'task' && type !== 'group')) {
+      return res.status(400).json({ ok: false, error: 'bad_request' });
+    }
+
+    let groupId = String(rawGroupId || '') || null;
+    let task = null;
+
+    if (type === 'task') {
+      if (!taskId) return res.status(400).json({ ok: false, error: 'taskId required' });
+      task = await prisma.task.findUnique({
+        where: { id: String(taskId) },
+        include: { column: true },
+      });
+      if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+      // вычисляем группу из имени колонки (как в канбане)
+      groupId = parseGroupIdFromColumnName(task.column.name);
+      // groupId может быть null => «Моя группа» (дефолт)
+    } else if (type === 'group') {
+      if (!rawGroupId) return res.status(400).json({ ok: false, error: 'groupId required' });
+      groupId = String(rawGroupId);
+    }
+
+    // Права: инвайт может сделать владелец или участник этой группы (если группа есть)
+    if (groupId) {
+      const allowed = await userIsGroupMemberOrOwner(inviter, groupId);
+      if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+    } else {
+      // default (Моя группа) — владелец = сам пользователь
+      // тут можно не проверять отдельно
+    }
+
+    const token = makeToken();
+    const created = await prisma.inviteTicket.create({
+      data: {
+        token,
+        type: type === 'task' ? 'TASK' : 'GROUP',
+        status: 'ACTIVE',
+        groupId: groupId ?? (await prisma.group.findFirst({ where: { ownerChatId: inviter, title: 'Моя группа' } })).id,
+        taskId: type === 'task' ? String(taskId) : null,
+        invitedByChatId: inviter,
+      }
+    });
+
+    // Ссылки startapp: короткий формат
+    let link = '';
+    let shareText = '';
+    if (created.type === 'TASK') {
+      link = `https://t.me/telegsar_bot?startapp=assign__${created.taskId}__${created.token}`;
+      shareText = `Назначаю тебя ответственным по задаче. Открой ссылку:`;
+    } else {
+      link = `https://t.me/telegsar_bot?startapp=join__${created.groupId}__${created.token}`;
+      shareText = `Приглашаю тебя в группу. Открой ссылку:`;
+    }
+
+    return res.json({ ok: true, token, link, shareText });
+  } catch (e) {
+    console.error('POST /invites error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+
+
+// Принять инвайт (из WebApp по start_param)
+app.post('/invites/accept', async (req, res) => {
+  try {
+    const { chatId, token } = req.body || {};
+    const who = String(chatId || '');
+    const tok = String(token || '');
+    if (!who || !tok) return res.status(400).json({ ok: false, error: 'bad_request' });
+
+    const invite = await prisma.inviteTicket.findUnique({ where: { token: tok } });
+    if (!invite || invite.status !== 'ACTIVE') {
+      return res.status(410).json({ ok: false, error: 'invite_invalid' });
+    }
+
+    // добавить в группу, если не участник
+    const isMember = await userIsGroupMemberOrOwner(who, invite.groupId);
+    if (!isMember) {
+      await prisma.groupMember.create({
+        data: { groupId: invite.groupId, chatId: who, role: 'member' }
+      });
+    }
+
+    let assigned = false;
+    if (invite.type === 'TASK' && invite.taskId) {
+      // назначить ответственным
+      await prisma.task.update({
+        where: { id: invite.taskId },
+        data: { assigneeChatId: who }
+      });
+      assigned = true;
+    }
+
+    // погасить инвайт
+    await prisma.inviteTicket.update({
+      where: { token: tok },
+      data: { status: 'USED' }
+    });
+
+    return res.json({ ok: true, groupId: invite.groupId, taskId: invite.taskId ?? null, assigned });
+  } catch (e) {
+    console.error('POST /invites/accept error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+app.post('/me', async (req, res) => {
+  try {
+    const { chatId, firstName, lastName, username } = req.body || {};
+    if (!chatId) return res.status(400).json({ ok: false, error: 'no_chatId' });
+
+    await prisma.user.upsert({
+      where: { chatId: String(chatId) },
+      create: { chatId: String(chatId), firstName, lastName, username },
+      update: { firstName, lastName, username },
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /me error', e);
+    res.status(500).json({ ok: false });
+  }
+});
+
+
 
 app.post('/tasks/:id/complete', async (req, res) => {
   try {
@@ -425,19 +699,36 @@ app.post('/tasks/:id/complete', async (req, res) => {
   }
 });
 
+
+
+
+
 app.post('/tasks', async (req, res) => {
   try {
     const { chatId, text, groupId: rawGroupId } = req.body || {};
     if (!chatId || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ ok: false, error: 'chatId и text обязательны' });
     }
-    const chat = String(chatId).trim();
+    const caller = String(chatId).trim();
     const groupId = resolveGroupId(rawGroupId);
 
-    await ensureDefaultColumns(chat, groupId);
+    // Куда писать задачу:
+    let boardChatId = caller;
+
+    if (groupId) {
+      // проверка прав + определяем владельца
+      const allowed = await userIsGroupMemberOrOwner(caller, groupId);
+      if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+
+      const g = await prisma.group.findUnique({ where: { id: groupId } });
+      if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+      boardChatId = g.ownerChatId; // <- ВСЕ групповые задачи у владельца
+    }
+
+    await ensureDefaultColumns(boardChatId, groupId);
 
     const inboxName = nameWithGroup(groupId, 'Inbox');
-    const inbox = await prisma.column.findFirst({ where: { chatId: chat, name: inboxName } });
+    const inbox = await prisma.column.findFirst({ where: { chatId: boardChatId, name: inboxName } });
     if (!inbox) return res.status(500).json({ ok: false, error: 'inbox_not_found' });
 
     const last = await prisma.task.findFirst({
@@ -448,17 +739,18 @@ app.post('/tasks', async (req, res) => {
     const nextOrder = (last?.order ?? -1) + 1;
 
     const task = await prisma.task.create({
-      data: { chatId: chat, text: text.trim(), order: nextOrder, columnId: inbox.id },
+      data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id },
     });
 
+    // уведомим автора запроса (инициатора), а не владельца
     try {
       await tg('sendMessage', {
-        chat_id: chat,
+        chat_id: caller,
         text: `Новая задача: ${task.text}`,
         disable_notification: true,
         reply_markup: {
           inline_keyboard: [[
-            { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chat}&task=${task.id}` } }
+            { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${caller}&task=${task.id}` } }
           ]]
         }
       });
@@ -472,6 +764,15 @@ app.post('/tasks', async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+
+
+
+
+
+
+
+
+
 
 /* ============ Groups REST ============ */
 app.get('/groups', async (req, res) => {

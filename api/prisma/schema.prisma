@@ -8,8 +8,8 @@ datasource db {
 }
 
 /**
- * Колонки канбана. Колонки уникальны в рамках chatId.
- * Пример: Inbox (0), Doing (1), Done (2)
+ * Колонки канбана. Колонки уникальны в рамках chatId по ИМЕНИ.
+ * Внутри каждой группы имена с префиксом groupId::...
  */
 model Column {
   id        String   @id @default(cuid())
@@ -21,12 +21,11 @@ model Column {
   updatedAt DateTime @updatedAt
 
   @@unique([chatId, name])
-
   @@index([chatId])
 }
 
 /**
- * Задачи. Привязаны к колонке и к chatId (для быстрого фильтра по чату).
+ * Задачи.
  */
 model Task {
   id          String   @id @default(cuid())
@@ -37,32 +36,46 @@ model Task {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // связь с колонкой (kanban-стадией)
   columnId String
-  column   Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  column   Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
+  assigneeChatId String?
+
+  inviteTickets InviteTicket[] @relation("TaskInviteTickets") // ← добавь это
 
   @@index([chatId])
   @@index([columnId, order])
 }
 
-
-
 /// === Groups ===
-/// Владелец (ownerChatId) создаёт группу. Участники — через GroupMember.
 model Group {
-  id           String   @id @default(cuid())
-  ownerChatId  String
-  title        String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  ownerChatId String
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  members      GroupMember[]
+  members       GroupMember[]
+  shortcuts     GroupShortcut[]
+  inviteTickets InviteTicket[]  @relation("GroupInviteTickets") // ← добавь это
 
   @@unique([ownerChatId, title])
   @@index([ownerChatId])
 }
 
-/// Членство пользователя (chatId) в группе
+
+model User {
+  chatId    String   @id
+  username  String?
+  firstName String?
+  lastName  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+
+
 model GroupMember {
   id        String   @id @default(cuid())
   groupId   String
@@ -70,12 +83,58 @@ model GroupMember {
   role      String   @default("member")
   createdAt DateTime @default(now())
 
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, chatId])
   @@index([chatId])
 }
 
+/**
+ * Короткие коды для выбора группы через /g_1, /g_2, ...
+ * Код уникален в рамках чата; у каждой группы в чате — не более одного кода.
+ */
+model GroupShortcut {
+  id        String   @id @default(cuid())
+  chatId    String
+  groupId   String
+  code      String
+  createdAt DateTime @default(now())
 
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
+  @@unique([chatId, code])
+  @@unique([chatId, groupId])
+  @@index([chatId])
+  @@index([groupId])
+}
 
+model InviteTicket {
+  id     String       @id @default(cuid())
+  token  String       @unique
+  type   InviteType
+  status InviteStatus @default(ACTIVE)
+
+  groupId         String
+  taskId          String?
+  invitedByChatId String
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime?
+
+  // === именованные связи ===
+  group Group @relation("GroupInviteTickets", fields: [groupId], references: [id], onDelete: Cascade)
+  task  Task? @relation("TaskInviteTickets", fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@index([taskId])
+}
+
+enum InviteType {
+  TASK
+  GROUP
+}
+
+enum InviteStatus {
+  ACTIVE
+  USED
+  EXPIRED
+}
