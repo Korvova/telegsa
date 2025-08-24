@@ -64,18 +64,28 @@ export default function GroupList({
       {/* Блок: Мои группы */}
       {mine.length > 0 && (
         <Section title="Мои группы">
-          {mine.map((g) => (
-            <GroupRow key={g.id} title={g.title} onClick={() => onOpen(g.id)} />
-          ))}
-        </Section>
-      )}
+         {mine.map((g) => (
+  <GroupRow
+    key={g.id}
+    title={g.title}                // для своих оставляем как есть
+    subtitle={g.ownerName || g.ownerChatId}
+    onClick={() => onOpen(g.id)}
+  />
+))}
 
-      {/* Блок: Где участвую */}
-      {member.length > 0 && (
-        <Section title="Где участвую">
-          {member.map((g) => (
-            <GroupRow key={g.id} title={g.title} onClick={() => onOpen(g.id)} />
-          ))}
+{member.map((g) => {
+  const title = g.title === 'Моя группа'
+    ? `Личная группа ${g.ownerName || ''}`.trim()
+    : g.title;
+  return (
+    <GroupRow
+      key={g.id}
+      title={title}
+      subtitle={g.ownerName || g.ownerChatId}
+      onClick={() => onOpen(g.id)}
+    />
+  );
+})}
         </Section>
       )}
 
@@ -131,30 +141,18 @@ function Section({
   );
 }
 
-function GroupRow({
-  title,
-  onClick,
-}: {
-  title: string;
-  onClick: () => void;
-}) {
+function GroupRow({ title, subtitle, onClick }: { title: string; subtitle?: string; onClick: () => void; }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 14px',
-        borderRadius: 12,
-        background: '#121722',
-        color: '#e8eaed',
-        border: '1px solid #2a3346',
-        cursor: 'pointer',
-      }}
-    >
+    <button onClick={onClick} style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+      gap: 4, padding: '12px 14px', borderRadius: 12, background: '#121722',
+      color: '#e8eaed', border: '1px solid #2a3346', cursor: 'pointer',
+    }}>
       <span style={{ fontSize: 15 }}>{title}</span>
-      <span aria-hidden>⟶</span>
+      {subtitle ? (
+        <span style={{ fontSize: 12, opacity: 0.8 }}>Владелец: {subtitle}</span>
+      ) : null}
     </button>
   );
 }
+

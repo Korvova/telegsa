@@ -3,11 +3,6 @@ import ky from 'ky';
 
 
 /* ---------- Types ---------- */
-export type Group = {
-  id: string;
-  title: string;
-  kind: 'own' | 'member';
-};
 
 export type Task = {
   id: string;
@@ -123,11 +118,6 @@ export function deleteGroup(id: string, chatId: string) {
 
 
 
-export function getTaskWithGroup(id: string) {
-  return ky
-    .get(`${API_BASE}/tasks/${id}`)
-    .json<{ ok: boolean; task: Task; groupId: string | null }>();
-}
 
 
 
@@ -157,4 +147,26 @@ export function createInvite(p: { chatId: string; type: 'task' | 'group'; taskId
 export function deleteTask(id: string) {
   return ky.delete(`${API_BASE}/tasks/${id}`).json<{ ok: boolean; groupId: string | null }>();
 }
+
+
+
+export type Group = {
+  id: string;
+  title: string;
+  kind: 'own' | 'member';
+  ownerChatId?: string;
+  ownerName?: string | null;
+};
+
+export function reopenTask(id: string) {
+  return ky.post(`${API_BASE}/tasks/${id}/reopen`).json<{ ok: boolean; task: Task }>();
+}
+
+export function getTaskWithGroup(id: string) {
+  return ky
+    .get(`${API_BASE}/tasks/${id}`)
+    .json<{ ok: boolean; task: Task; groupId: string | null; phase?: 'Inbox' | 'Doing' | 'Done' | string }>();
+}
+
+
 

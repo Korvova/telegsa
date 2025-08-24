@@ -74,21 +74,26 @@ function TaskCard({
   active,
   dragging,
   onClick,
+  assigneeName,
+  isDone,
 }: {
   text: string;
   order: number;
   active?: boolean;
   dragging?: boolean;
   onClick?: () => void;
+  assigneeName?: string | null;
+  isDone?: boolean;
 }) {
-  const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
+  const bg = dragging ? '#0e1629' : isDone ? '#15251a' : active ? '#151b2b' : '#121722';
+  const border = isDone ? '#2c4a34' : '#2a3346';
 
   return (
     <div
       onClick={onClick}
       style={{
         background: bg,
-        border: '1px solid #2a3346',
+        border: `1px solid ${border}`,
         borderRadius: 12,
         padding: 12,
         userSelect: 'none',
@@ -98,6 +103,11 @@ function TaskCard({
     >
       <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
       <div style={{ fontSize: 15 }}>{text}</div>
+      {assigneeName ? (
+        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
+          Ответственный: <span style={{ opacity: 1 }}>{assigneeName}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -108,12 +118,16 @@ function SortableTask({
   order,
   onOpenTask,
   armed,
+  assigneeName,
+  isDone,
 }: {
   taskId: string;
   text: string;
   order: number;
   onOpenTask: (id: string) => void;
   armed?: boolean;
+  assigneeName?: string | null;
+  isDone?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: taskId });
 
@@ -125,7 +139,15 @@ function SortableTask({
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard text={text} order={order} active={armed} dragging={isDragging} onClick={() => onOpenTask(taskId)} />
+      <TaskCard
+        text={text}
+        order={order}
+        active={armed}
+        dragging={isDragging}
+        onClick={() => onOpenTask(taskId)}
+        assigneeName={assigneeName}
+        isDone={isDone}
+      />
     </div>
   );
 }
@@ -1027,9 +1049,18 @@ function ColumnView({
             touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
-          {column.tasks.map((t) => (
-            <SortableTask key={t.id} taskId={t.id} text={t.text} order={t.order} onOpenTask={onOpenTask} armed={activeId === t.id} />
-          ))}
+       {column.tasks.map((t) => (
+  <SortableTask
+    key={t.id}
+    taskId={t.id}
+    text={t.text}
+    order={t.order}
+    onOpenTask={onOpenTask}
+    armed={activeId === t.id}
+    assigneeName={t.assigneeName}
+    isDone={column.name === 'Done'}
+  />
+))}
           {column.tasks.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>Пусто</div>}
         </div>
       </SortableContext>
