@@ -1,114 +1,160 @@
-import { type Group, createGroup as createGroupApi, renameGroupTitle, deleteGroup as deleteGroupApi } from '../../api';
+import React from 'react';
+import type { Group } from '../../api';
+import { createGroup } from '../../api';
 
-type Props = {
+export default function GroupList({
+  chatId,
+  groups,
+  onReload,
+  onOpen,
+}: {
   chatId: string;
   groups: Group[];
   onReload: () => void;
   onOpen: (id: string) => void;
-};
+}) {
+  const mine = groups.filter((g) => g.kind === 'own');
+  const member = groups.filter((g) => g.kind === 'member');
 
-export default function GroupList({ chatId, groups, onReload, onOpen }: Props) {
-  const create = async () => {
+  const onCreateGroup = async () => {
     const title = prompt('Название группы?')?.trim();
     if (!title) return;
     try {
-      const r = await createGroupApi(chatId, title);
-      if (r.ok) await onReload();
-    } catch {
-      alert('Не удалось создать группу (возможно, имя занято)');
-    }
-  };
-
-  const rename = async (g: Group) => {
-    const title = prompt('Новое название группы?', g.title)?.trim();
-    if (!title || title === g.title) return;
-    try {
-      await renameGroupTitle(g.id, chatId, title);
+      const r = await createGroup(chatId, title);
+      if (!r.ok) throw new Error('create_failed');
       await onReload();
-    } catch {
-      alert('Имя занято или ошибка');
-    }
-  };
-
-  const remove = async (g: Group) => {
-    if (!confirm(`Удалить группу «${g.title}»?`)) return;
-    try {
-      await deleteGroupApi(g.id, chatId);
-      await onReload();
-    } catch {
-      alert('Не удалось удалить');
+    } catch (e) {
+      alert('Не удалось создать группу');
     }
   };
 
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      {groups.map((g) => {
-        const own = g.kind === 'own';
-        return (
-          <div
-            key={g.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 12px',
-              border: '1px solid #2a3346',
-              borderRadius: 12,
-              background: '#1b2030',
-            }}
-          >
-            <button
-              onClick={() => onOpen(g.id)}
-              style={{
-                flex: 1,
-                textAlign: 'left',
-                background: 'transparent',
-                border: 'none',
-                color: '#e8eaed',
-                cursor: 'pointer',
-                fontSize: 15,
-              }}
-              title="Открыть группу"
-            >
-              {g.title}{g.kind === 'member' ? ' · участвую' : ''}
-            </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Кнопки действий */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={onCreateGroup}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: '#202840',
+            color: '#e8eaed',
+            border: '1px solid #2a3346',
+            cursor: 'pointer',
+          }}
+        >
+          + Создать группу
+        </button>
 
-            {own && (
-              <>
-                <button
-                  onClick={() => rename(g)}
-                  title="Переименовать"
-                  style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
-                >
-                  ✎
-                </button>
-                <button
-                  onClick={() => remove(g)}
-                  title="Удалить"
-                  style={{ background: 'transparent', border: 'none', color: '#ff9a9a', cursor: 'pointer' }}
-                >
-                  🗑
-                </button>
-              </>
-            )}
-          </div>
-        );
-      })}
+        <button
+          onClick={onReload}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: '#121a32',
+            color: '#e8eaed',
+            border: '1px solid #2a3346',
+            cursor: 'pointer',
+          }}
+        >
+          Обновить список
+        </button>
+      </div>
 
-      <button
-        onClick={create}
+      {/* Блок: Мои группы */}
+      {mine.length > 0 && (
+        <Section title="Мои группы">
+          {mine.map((g) => (
+            <GroupRow key={g.id} title={g.title} onClick={() => onOpen(g.id)} />
+          ))}
+        </Section>
+      )}
+
+      {/* Блок: Где участвую */}
+      {member.length > 0 && (
+        <Section title="Где участвую">
+          {member.map((g) => (
+            <GroupRow key={g.id} title={g.title} onClick={() => onOpen(g.id)} />
+          ))}
+        </Section>
+      )}
+
+      {/* Пустое состояние */}
+      {mine.length === 0 && member.length === 0 && (
+        <div
+          style={{
+            padding: 16,
+            background: '#1b2030',
+            border: '1px solid #2a3346',
+            borderRadius: 16,
+            textAlign: 'center',
+            opacity: 0.8,
+          }}
+        >
+          Пока нет групп. Создай первую через кнопку выше.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        background: '#1b2030',
+        border: '1px solid #2a3346',
+        borderRadius: 16,
+        padding: 12,
+      }}
+    >
+      <div
         style={{
-          padding: '10px 12px',
-          borderRadius: 12,
-          border: '1px solid #2a3346',
-          background: '#203428',
-          color: '#d7ffd7',
-          cursor: 'pointer',
-          width: '100%',
+          fontSize: 12,
+          textTransform: 'uppercase',
+          opacity: 0.8,
+          marginBottom: 8,
         }}
       >
-        + Создать группу
-      </button>
+        {title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {children}
+      </div>
     </div>
+  );
+}
+
+function GroupRow({
+  title,
+  onClick,
+}: {
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 14px',
+        borderRadius: 12,
+        background: '#121722',
+        color: '#e8eaed',
+        border: '1px solid #2a3346',
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ fontSize: 15 }}>{title}</span>
+      <span aria-hidden>⟶</span>
+    </button>
   );
 }

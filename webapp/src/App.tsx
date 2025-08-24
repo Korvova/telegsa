@@ -12,7 +12,9 @@ import {
   renameColumn,
   type Group,
   listGroups,
+  upsertMe,            // ⬅️ добавь это
 } from './api';
+
 
 import {
   DndContext,
@@ -35,16 +37,32 @@ import { CSS } from '@dnd-kit/utilities';
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 
+
+
+
+
 /* ---------------- helpers ---------------- */
 function useChatId() {
   return useMemo(() => {
-    const urlChatId = new URLSearchParams(window.location.search).get('from');
-    const sdkChatId = WebApp?.initDataUnsafe?.user?.id ? String(WebApp.initDataUnsafe.user.id) : undefined;
-    const id = urlChatId || sdkChatId || '';
-    console.log('[APP] useChatId ->', id);
+    const sdkChatId =
+      WebApp?.initDataUnsafe?.user?.id
+        ? String(WebApp.initDataUnsafe.user.id)
+        : undefined;
+
+    const urlChatId =
+      new URLSearchParams(window.location.search).get('from') || undefined;
+
+    // ✅ СНАЧАЛА SDK, потом из URL
+    const id = sdkChatId || urlChatId || '';
+    console.log('[APP] useChatId ->', id, { sdkChatId, urlChatId });
     return id;
   }, []);
 }
+
+
+
+
+
 function getTaskIdFromURL() {
   return new URLSearchParams(window.location.search).get('task') || '';
 }
@@ -111,6 +129,47 @@ function SortableTask({
     </div>
   );
 }
+
+
+
+
+
+
+
+
+// helpers — рядом с другими хелперами
+function parseStartParam(sp: string) {
+  if (!sp) return null as null | { type: 'assign' | 'join'; id: string; token: string };
+  // 1) Нормальный вид: assign__ID__TOKEN  |  join__ID__TOKEN
+  let m = sp.match(/^(assign|join)__([a-z0-9]+)__([A-Za-z0-9\-_]{10,})$/i);
+  if (m) return { type: m[1] as any, id: m[2], token: m[3] };
+
+  // 2) Компактный вид: assign<ID><TOKEN>  |  join<ID><TOKEN>
+  const head = sp.startsWith('assign') ? 'assign' : (sp.startsWith('join') ? 'join' : null);
+  if (!head) return null;
+
+  const rest = sp.slice(head.length);
+  // наш токен = base64url(16) -> 22 символа
+  const TOKEN_LEN = 22;
+  if (rest.length <= TOKEN_LEN) return null;
+  const token = rest.slice(-TOKEN_LEN);
+  const id = rest.slice(0, -TOKEN_LEN);
+  if (!id) return null;
+  return { type: head as any, id, token };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* + Колонка */
 function AddColumnButton({ chatId, groupId, onAdded }: { chatId: string; groupId?: string; onAdded: () => void }) {
@@ -197,6 +256,11 @@ export default function App() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const prevTotalDxRef = useRef(0);
 
+
+const didConsumeStartParamRef = useRef(false);
+
+
+
   const sensors = useSensors(
     useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } })
@@ -243,13 +307,15 @@ export default function App() {
   }, [chatId]);
 
   // системная кнопка назад
-  useEffect(() => {
-    if (tab === 'groups' && groupsPage === 'detail') {
-      WebApp?.BackButton?.show?.();
-    } else {
-      WebApp?.BackButton?.hide?.();
-    }
-  }, [tab, groupsPage]);
+useEffect(() => {
+  if (taskId) return; // <-- когда TaskView, кнопку контролирует TaskView
+  if (tab === 'groups' && groupsPage === 'detail') {
+    WebApp?.BackButton?.show?.();
+  } else {
+    WebApp?.BackButton?.hide?.();
+  }
+}, [tab, groupsPage, taskId]);
+
 
   const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
@@ -267,8 +333,11 @@ export default function App() {
     setGroupsPage('list');
   };
 
-  const selectedGroup = groups.find((g) => g.id === selectedGroupId);
-  const resolvedGroupId = selectedGroup && selectedGroup.title === 'Моя группа' ? undefined : selectedGroup?.id;
+const selectedGroup = groups.find((g) => g.id === selectedGroupId);
+const resolvedGroupId = selectedGroup
+  ? (selectedGroup.title === 'Моя группа' ? undefined : selectedGroup.id)
+  : (selectedGroupId || undefined); // временный фолбэк, пока groups не обновились
+
 
   // единая загрузка доски
   const loadBoard = useCallback(async () => {
@@ -339,29 +408,104 @@ useEffect(() => {
     }
   }, [chatId, resolvedGroupId]);
 
-  const openTask = (id: string) => {
-    console.log('[TASK] openTask', id);
+
+
+
+useEffect(() => {
+  const qs = new URLSearchParams(location.search);
+  const spFromUrl = qs.get('tgWebAppStartParam') || '';
+  const spFromSdk = WebApp?.initDataUnsafe?.start_param || '';
+  const raw = spFromSdk || spFromUrl;
+  if (!raw || didConsumeStartParamRef.current) return;
+  didConsumeStartParamRef.current = true;
+
+  const parsed = parseStartParam(raw);
+  console.log('[DEEPLINK] start_param =', raw, { spFromSdk, spFromUrl, parsed });
+
+  const sdkId = WebApp?.initDataUnsafe?.user?.id
+    ? String(WebApp.initDataUnsafe.user.id)
+    : undefined;
+  const me = sdkId || chatId; // предпочтём SDK
+
+  if (!parsed) return; // неизвестный формат
+
+  if (parsed.type === 'assign') {
+    // СРАЗУ открываем карточку, чтобы не мигал список
     const url = new URL(window.location.href);
-    url.searchParams.set('task', id);
+    url.searchParams.set('task', parsed.id);
     window.history.replaceState(null, '', url.toString());
-    setTaskId(id);
-    WebApp?.BackButton?.show?.();
+    setTaskId(parsed.id);
+
+    // подтверждаем инвайт фоном — даже если 410, карточка уже открыта
+    fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: me, token: parsed.token }),
+    }).catch(() => {});
+  }
+
+  if (parsed.type === 'join') {
+    fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId: me, token: parsed.token }),
+    })
+      .then(async () => {
+        await reloadGroups();
+        setSelectedGroupId(parsed.id);
+        setGroupsPage('detail');
+        await loadBoard();
+      })
+      .catch(() => {});
+  }
+}, [chatId, reloadGroups, loadBoard]);
+
+
+
+
+
+
+
+useEffect(() => {
+  const onBack = () => {
+    // Если открыта карточка — TaskView уже навесил свой обработчик
+    if (taskId) return;
+
+    // В детальной группе → назад к списку групп
+    if (tab === 'groups' && groupsPage === 'detail') {
+      backToGroupsList();
+      return;
+    }
+
+    // В остальных случаях можно закрыть WebApp (или ничего не делать)
+    try { WebApp?.close(); } catch {}
   };
 
+  WebApp?.onEvent?.('backButtonClicked', onBack);
+  return () => WebApp?.offEvent?.('backButtonClicked', onBack);
+}, [taskId, tab, groupsPage]);
 
 
 
-
-
-const closeTask = (groupIdFromTask?: string | null) => {
-  // убрать ?task= из URL
+// создаём НОВУЮ запись в истории — тогда "назад" уберёт ?task
+const openTask = (id: string) => {
+  console.log('[TASK] openTask', id);
   const url = new URL(window.location.href);
-  url.searchParams.delete('task');
-  window.history.replaceState(null, '', url.toString());
-  setTaskId('');
-  WebApp?.BackButton?.hide?.();
+  url.searchParams.set('task', id);
+  window.history.pushState({ task: id }, '', url.toString());
+  setTaskId(id);
+  WebApp?.BackButton?.show?.();
+};
 
-  // если знаем группу задачи — возвращаемся в её канбан; иначе — в список
+
+
+
+
+
+// Шагаем назад в истории (убираем ?task), а контекст группы ставим сами.
+// Шага назад в интерфейсе без зависимости от history.back()
+const closeTask = (groupIdFromTask?: string | null) => {
+  // Куда возвращаемся:
   if (typeof groupIdFromTask !== 'undefined') {
     if (groupIdFromTask) {
       setSelectedGroupId(groupIdFromTask);
@@ -369,11 +513,22 @@ const closeTask = (groupIdFromTask?: string | null) => {
       const my = groups.find((g) => g.title === 'Моя группа');
       if (my) setSelectedGroupId(my.id);
     }
-    setGroupsPage('detail'); // не трогаем setColumns / setLoading — их поднимет loadBoard()
+    setGroupsPage('detail');
   } else {
+    // deep-link без знания группы → в список групп
     setGroupsPage('list');
   }
+
+  // спрятать системную кнопку
+  WebApp?.BackButton?.hide?.();
+
+  // Всегда убираем ?task вручную — НЕ history.back()
+  const url = new URL(window.location.href);
+  url.searchParams.delete('task');
+  window.history.replaceState(null, '', url.toString());
+  setTaskId('');
 };
+
 
 
 
@@ -395,6 +550,25 @@ const closeTask = (groupIdFromTask?: string | null) => {
       setLoading(false);
     }
   }, [chatId]);
+
+
+
+
+
+useEffect(() => {
+  const u = WebApp?.initDataUnsafe?.user;
+  if (!u?.id) return;
+  // сохраним профиль на бэкенде (для показа ФИО всем)
+  upsertMe({
+    chatId: String(u.id),
+    firstName: u.first_name || '',
+    lastName: u.last_name || '',
+    username: u.username || '',
+  }).catch(() => {});
+}, []);
+
+
+
 
   /* ---- авто-скролл холста при dnd ---- */
   const scrollByX = (dx: number) => {

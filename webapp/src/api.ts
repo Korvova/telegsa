@@ -1,5 +1,7 @@
 import ky from 'ky';
 
+
+
 /* ---------- Types ---------- */
 export type Group = {
   id: string;
@@ -16,7 +18,13 @@ export type Task = {
   columnId: string;
   createdAt: string;
   updatedAt: string;
+
+  // ⤵️ добавляем
+  assigneeChatId?: string | null;
+  assigneeName?: string | null;
 };
+
+
 
 export type Column = {
   id: string;
@@ -120,3 +128,33 @@ export function getTaskWithGroup(id: string) {
     .get(`${API_BASE}/tasks/${id}`)
     .json<{ ok: boolean; task: Task; groupId: string | null }>();
 }
+
+
+
+
+export function acceptInvite(chatId: string, token: string) {
+  return ky
+    .post(`${API_BASE}/invites/accept`, { json: { chatId, token } })
+    .json<{ ok: boolean }>();
+}
+
+
+export function upsertMe(payload: {
+  chatId: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+}) {
+  return ky.post(`${API_BASE}/me`, { json: payload }).json<{ ok: boolean }>();
+}
+
+export function createInvite(p: { chatId: string; type: 'task' | 'group'; taskId?: string; groupId?: string }) {
+  return ky.post(`${API_BASE}/invites`, { json: p }).json<{ ok: boolean; link: string; shareText?: string }>();
+}
+
+
+
+export function deleteTask(id: string) {
+  return ky.delete(`${API_BASE}/tasks/${id}`).json<{ ok: boolean; groupId: string | null }>();
+}
+
