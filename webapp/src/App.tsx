@@ -12,9 +12,8 @@ import {
   renameColumn,
   type Group,
   listGroups,
-  upsertMe,            // ⬅️ добавь это
+  upsertMe,
 } from './api';
-
 
 import {
   DndContext,
@@ -37,10 +36,6 @@ import { CSS } from '@dnd-kit/utilities';
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 
-
-
-
-
 /* ---------------- helpers ---------------- */
 function useChatId() {
   return useMemo(() => {
@@ -58,10 +53,6 @@ function useChatId() {
     return id;
   }, []);
 }
-
-
-
-
 
 function getTaskIdFromURL() {
   return new URLSearchParams(window.location.search).get('task') || '';
@@ -125,16 +116,6 @@ function SortableTask({
   );
 }
 
-
-
-
-
-
-
-
-
-
-
 // helpers — рядом с другими хелперами
 function parseStartParam(sp: string) {
   if (!sp) return null as null | { type: 'assign' | 'join'; id: string; token: string };
@@ -155,19 +136,6 @@ function parseStartParam(sp: string) {
   if (!id) return null;
   return { type: head as any, id, token };
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /* + Колонка */
 function AddColumnButton({ chatId, groupId, onAdded }: { chatId: string; groupId?: string; onAdded: () => void }) {
@@ -216,19 +184,20 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
   } as const;
 
   return (
-    <div
-      style={{
-        padding: 16,
-        background: '#1b2030',
-        border: '1px solid #2a3346',
-        borderRadius: 16,
-        minHeight: 240,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        textAlign: 'center',
-      }}
-    >
+<div
+  style={{
+    padding: 16,
+    background: '#1b2030',
+    border: '1px solid #2a3346',
+    borderRadius: 16,
+    minHeight: 240,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+  }}
+>
+
       <div style={{ opacity: 0.85, lineHeight: 1.6 }}>
         {tab === 'calendar' ? map.calendar : tab === 'notifications' ? map.notifications : map.settings}
       </div>
@@ -238,9 +207,7 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
 
 /* ---------------- App ---------------- */
 export default function App() {
-
-
-const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(false);
+  const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(false);
 
   const chatId = useChatId();
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
@@ -257,11 +224,7 @@ const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(fals
 
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const prevTotalDxRef = useRef(0);
-
-
-const didConsumeStartParamRef = useRef(false);
-
-
+  const didConsumeStartParamRef = useRef(false);
 
   const sensors = useSensors(
     useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
@@ -309,223 +272,192 @@ const didConsumeStartParamRef = useRef(false);
   }, [chatId]);
 
   // системная кнопка назад
-useEffect(() => {
-  if (taskId) return; // <-- когда TaskView, кнопку контролирует TaskView
-  if (tab === 'groups' && groupsPage === 'detail') {
-    WebApp?.BackButton?.show?.();
-  } else {
-    WebApp?.BackButton?.hide?.();
-  }
-}, [tab, groupsPage, taskId]);
-
+  useEffect(() => {
+    if (taskId) return; // <-- когда TaskView, кнопку контролирует TaskView
+    if (tab === 'groups' && groupsPage === 'detail') {
+      WebApp?.BackButton?.show?.();
+    } else {
+      WebApp?.BackButton?.hide?.();
+    }
+  }, [tab, groupsPage, taskId]);
 
   const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
-const goToGroup = (id: string, mineOnly = false) => {
-  setSelectedGroupId(id);
-  setSelectedGroupMineOnly(mineOnly);
-  setColumns([]);
-  setLoading(true);
-  setGroupsPage('detail');
-  setGroupTab('kanban');
-};
-
+  const goToGroup = (id: string, mineOnly = false) => {
+    setSelectedGroupId(id);
+    setSelectedGroupMineOnly(mineOnly);
+    setColumns([]);
+    setLoading(true);
+    setGroupsPage('detail');
+    setGroupTab('kanban');
+  };
 
   const backToGroupsList = () => {
     console.log('[NAV] backToGroupsList');
     setGroupsPage('list');
   };
 
-const selectedGroup = groups.find((g) => g.id === selectedGroupId);
-const resolvedGroupId = selectedGroup
-  ? (selectedGroup.title === 'Моя группа' ? undefined : selectedGroup.id)
-  : (selectedGroupId || undefined); // временный фолбэк, пока groups не обновились
-
+  const selectedGroup = groups.find((g) => g.id === selectedGroupId);
+  const resolvedGroupId = selectedGroup
+    ? (selectedGroup.title === 'Моя группа' ? undefined : selectedGroup.id)
+    : (selectedGroupId || undefined); // временный фолбэк, пока groups не обновились
 
   // единая загрузка доски
-const loadBoard = useCallback(async () => {
-  if (!chatId) return;
-  const shouldLoad = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
-  if (!shouldLoad) return;
+  const loadBoard = useCallback(async () => {
+    if (!chatId) return;
+    const shouldLoad = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
+    if (!shouldLoad) return;
 
-  setLoading(true);
-  try {
-    const data = await fetchBoard(chatId, resolvedGroupId, { onlyMine: selectedGroupMineOnly });
-    if (!data.ok) throw new Error('API error');
-    const cols = data.columns.map((c) => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
-    setColumns(cols);
-    setError(null);
-  } catch (e:any) {
-    setError(e?.message || 'Ошибка загрузки');
-  } finally {
-    setLoading(false);
-  }
-}, [chatId, resolvedGroupId, tab, groupsPage, groupTab, selectedGroupMineOnly]);
+    setLoading(true);
+    try {
+      const data = await fetchBoard(chatId, resolvedGroupId, { onlyMine: selectedGroupMineOnly });
+      if (!data.ok) throw new Error('API error');
+      const cols = data.columns.map((c) => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
+      setColumns(cols);
+      setError(null);
+    } catch (e:any) {
+      setError(e?.message || 'Ошибка загрузки');
+    } finally {
+      setLoading(false);
+    }
+  }, [chatId, resolvedGroupId, tab, groupsPage, groupTab, selectedGroupMineOnly]);
 
-
-
-
-
-
-// ⬇️ Новый эффект: когда taskId очистился (закрыли карточку) — форсим перезагрузку доски
-useEffect(() => {
-  if (!taskId) {
-    console.log('[TASK] closed → force board reload');
-    loadBoard();
-  }
-}, [taskId, loadBoard]);
-
-
-
-
-
-
+  // когда taskId очистился (закрыли карточку) — форсим перезагрузку доски
+  useEffect(() => {
+    if (!taskId) {
+      console.log('[TASK] closed → force board reload');
+      loadBoard();
+    }
+  }, [taskId, loadBoard]);
 
   useEffect(() => {
     loadBoard();
   }, [loadBoard]);
 
-const reloadBoard = useCallback(async () => {
-  try {
-    const data = await fetchBoard(chatId, resolvedGroupId, { onlyMine: selectedGroupMineOnly });
-    if (data.ok) {
-      const cols = data.columns.map(c => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
-      setColumns(cols);
+  const reloadBoard = useCallback(async () => {
+    try {
+      const data = await fetchBoard(chatId, resolvedGroupId, { onlyMine: selectedGroupMineOnly });
+      if (data.ok) {
+        const cols = data.columns.map(c => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
+        setColumns(cols);
+      }
+    } catch (e) {
+      console.error('[BOARD] reload ERROR', e);
     }
-  } catch (e) {
-    console.error('[BOARD] reload ERROR', e);
-  }
-}, [chatId, resolvedGroupId, selectedGroupMineOnly]);
+  }, [chatId, resolvedGroupId, selectedGroupMineOnly]);
 
+  // обработка start_param
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search);
+    const spFromUrl = qs.get('tgWebAppStartParam') || '';
+    const spFromSdk = WebApp?.initDataUnsafe?.start_param || '';
+    const raw = spFromSdk || spFromUrl;
+    if (!raw || didConsumeStartParamRef.current) return;
+    didConsumeStartParamRef.current = true;
 
-
-
-useEffect(() => {
-  const qs = new URLSearchParams(location.search);
-  const spFromUrl = qs.get('tgWebAppStartParam') || '';
-  const spFromSdk = WebApp?.initDataUnsafe?.start_param || '';
-  const raw = spFromSdk || spFromUrl;
-  if (!raw || didConsumeStartParamRef.current) return;
-  didConsumeStartParamRef.current = true;
-
-  const parsed = parseStartParam(raw);
-  console.log('[DEEPLINK] start_param =', raw, { spFromSdk, spFromUrl, parsed });
-
-  const sdkId = WebApp?.initDataUnsafe?.user?.id
-    ? String(WebApp.initDataUnsafe.user.id)
-    : undefined;
-  const me = sdkId || chatId; // предпочтём SDK
-
-  if (!parsed) return; // неизвестный формат
-
-  if (parsed.type === 'assign') {
-    // СРАЗУ открываем карточку, чтобы не мигал список
-    const url = new URL(window.location.href);
-    url.searchParams.set('task', parsed.id);
-    window.history.replaceState(null, '', url.toString());
-    setTaskId(parsed.id);
-
-    // подтверждаем инвайт фоном — даже если 410, карточка уже открыта
-    fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chatId: me, token: parsed.token }),
-    }).catch(() => {});
-  }
-
-  if (parsed.type === 'join') {
-    fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chatId: me, token: parsed.token }),
-    })
-      .then(async () => {
-        await reloadGroups();
-        setSelectedGroupId(parsed.id);
-        setGroupsPage('detail');
-        await loadBoard();
-      })
-      .catch(() => {});
-  }
-}, [chatId, reloadGroups, loadBoard]);
-
-
-
-
-
-
-
-useEffect(() => {
-  const onBack = () => {
-    // Если открыта карточка — TaskView уже навесил свой обработчик
-    if (taskId) return;
-
-    // В детальной группе → назад к списку групп
-    if (tab === 'groups' && groupsPage === 'detail') {
-      backToGroupsList();
+    // 1) Прямой deep link на задачу: task_<ID>
+    if (raw.startsWith('task_')) {
+      const taskIdFromStart = raw.slice('task_'.length);
+      const url = new URL(window.location.href);
+      url.searchParams.set('task', taskIdFromStart);
+      window.history.replaceState(null, '', url.toString());
+      setTaskId(taskIdFromStart);
       return;
     }
 
-    // В остальных случаях можно закрыть WebApp (или ничего не делать)
-    try { WebApp?.close(); } catch {}
+    // 2) Инвайты assign/join
+    const parsed = parseStartParam(raw);
+    console.log('[DEEPLINK] start_param =', raw, { spFromSdk, spFromUrl, parsed });
+
+    const sdkId = WebApp?.initDataUnsafe?.user?.id
+      ? String(WebApp.initDataUnsafe.user.id)
+      : undefined;
+    const me = sdkId || chatId;
+
+    if (!parsed) return;
+
+    if (parsed.type === 'assign') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('task', parsed.id);
+      window.history.replaceState(null, '', url.toString());
+      setTaskId(parsed.id);
+
+      fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: me, token: parsed.token }),
+      }).catch(() => {});
+    }
+
+    if (parsed.type === 'join') {
+      fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: me, token: parsed.token }),
+      })
+        .then(async () => {
+          await reloadGroups();
+          setSelectedGroupId(parsed.id);
+          setGroupsPage('detail');
+          await loadBoard();
+        })
+        .catch(() => {});
+    }
+  }, [chatId, reloadGroups, loadBoard]);
+
+  useEffect(() => {
+    const onBack = () => {
+      // Если открыта карточка — TaskView уже навесил свой обработчик
+      if (taskId) return;
+
+      // В детальной группе → назад к списку групп
+      if (tab === 'groups' && groupsPage === 'detail') {
+        backToGroupsList();
+        return;
+      }
+
+      // В остальных случаях можно закрыть WebApp (или ничего не делать)
+      try { WebApp?.close(); } catch {}
+    };
+
+    WebApp?.onEvent?.('backButtonClicked', onBack);
+    return () => WebApp?.offEvent?.('backButtonClicked', onBack);
+  }, [taskId, tab, groupsPage]);
+
+  // создаём НОВУЮ запись в истории — тогда "назад" уберёт ?task
+  const openTask = (id: string) => {
+    console.log('[TASK] openTask', id);
+    const url = new URL(window.location.href);
+    url.searchParams.set('task', id);
+    window.history.pushState({ task: id }, '', url.toString());
+    setTaskId(id);
+    WebApp?.BackButton?.show?.();
   };
 
-  WebApp?.onEvent?.('backButtonClicked', onBack);
-  return () => WebApp?.offEvent?.('backButtonClicked', onBack);
-}, [taskId, tab, groupsPage]);
-
-
-
-// создаём НОВУЮ запись в истории — тогда "назад" уберёт ?task
-const openTask = (id: string) => {
-  console.log('[TASK] openTask', id);
-  const url = new URL(window.location.href);
-  url.searchParams.set('task', id);
-  window.history.pushState({ task: id }, '', url.toString());
-  setTaskId(id);
-  WebApp?.BackButton?.show?.();
-};
-
-
-
-
-
-
-// Шагаем назад в истории (убираем ?task), а контекст группы ставим сами.
-const closeTask = (groupIdFromTask?: string | null) => {
-  if (typeof groupIdFromTask !== 'undefined') {
-    if (groupIdFromTask) {
-      setSelectedGroupId(groupIdFromTask);
-      const g = groups.find((x) => x.id === groupIdFromTask);
-      setSelectedGroupMineOnly(g?.kind === 'member'); // участник → смотрим только свои
-    } else {
-      const my = groups.find((g) => g.title === 'Моя группа');
-      if (my) {
-        setSelectedGroupId(my.id);
+  // Шагаем назад в истории (убираем ?task), а контекст группы ставим сами.
+  const closeTask = (groupIdFromTask?: string | null) => {
+    if (typeof groupIdFromTask !== 'undefined') {
+      if (groupIdFromTask) {
+        setSelectedGroupId(groupIdFromTask);
+        // раньше: участнику включали только свои задачи; теперь — показываем все
         setSelectedGroupMineOnly(false);
+      } else {
+        const my = groups.find((g) => g.title === 'Моя группа');
+        if (my) {
+          setSelectedGroupId(my.id);
+          setSelectedGroupMineOnly(false);
+        }
       }
+      setGroupsPage('detail');
+    } else {
+      setGroupsPage('list');
     }
-    setGroupsPage('detail');
-  } else {
-    setGroupsPage('list');
-  }
-  WebApp?.BackButton?.hide?.();
-  const url = new URL(window.location.href);
-  url.searchParams.delete('task');
-  window.history.replaceState(null, '', url.toString());
-  setTaskId('');
-};
-
-
-
-
-
-
-
-
-
-
-
+    WebApp?.BackButton?.hide?.();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('task');
+    window.history.replaceState(null, '', url.toString());
+    setTaskId('');
+  };
 
   // поднять WebApp
   useEffect(() => {
@@ -538,24 +470,17 @@ const closeTask = (groupIdFromTask?: string | null) => {
     }
   }, [chatId]);
 
-
-
-
-
-useEffect(() => {
-  const u = WebApp?.initDataUnsafe?.user;
-  if (!u?.id) return;
-  // сохраним профиль на бэкенде (для показа ФИО всем)
-  upsertMe({
-    chatId: String(u.id),
-    firstName: u.first_name || '',
-    lastName: u.last_name || '',
-    username: u.username || '',
-  }).catch(() => {});
-}, []);
-
-
-
+  useEffect(() => {
+    const u = WebApp?.initDataUnsafe?.user;
+    if (!u?.id) return;
+    // сохраним профиль на бэкенде (для показа ФИО всем)
+    upsertMe({
+      chatId: String(u.id),
+      firstName: u.first_name || '',
+      lastName: u.last_name || '',
+      username: u.username || '',
+    }).catch(() => {});
+  }, []);
 
   /* ---- авто-скролл холста при dnd ---- */
   const scrollByX = (dx: number) => {
@@ -740,16 +665,12 @@ useEffect(() => {
 
       {tab === 'groups' ? (
         groupsPage === 'list' ? (
-        
-<GroupList
-  chatId={chatId}
-  groups={groups}
-  onReload={reloadGroups}
-  onOpen={goToGroup}
-/>
-
-
-
+          <GroupList
+            chatId={chatId}
+            groups={groups}
+            onReload={reloadGroups}
+            onOpen={goToGroup}
+          />
         ) : (
           <>
             <GroupTabs current={groupTab} onChange={setGroupTab} />
@@ -1023,17 +944,17 @@ function ColumnView({
             touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
-{column.tasks.map((t) => (
-  <SortableTask
-    key={t.id}
-    taskId={t.id}
-    text={t.text}
-    order={t.order}
-    assigneeName={t.assigneeName}
-    onOpenTask={onOpenTask}
-    armed={activeId === t.id}
-  />
-))}
+          {column.tasks.map((t) => (
+            <SortableTask
+              key={t.id}
+              taskId={t.id}
+              text={t.text}
+              order={t.order}
+              assigneeName={t.assigneeName}
+              onOpenTask={onOpenTask}
+              armed={activeId === t.id}
+            />
+          ))}
 
           {column.tasks.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>Пусто</div>}
         </div>

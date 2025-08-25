@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import type { Task } from './api';
+import { listGroups } from './api';
 import {
   getTask,
   getTaskWithGroup,
@@ -30,8 +31,15 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [phase, setPhase] = useState<string | undefined>(undefined);
   const isDone = phase === 'Done';
 
-  // куда вернуться при закрытии
+  // 🔹 заголовок группы
+  const [groupTitle, setGroupTitle] = useState<string | null>(null);
+  const [groupId, setGroupId] = useState<string | null>(null);
+
+  // куда вернуться при закрытии (источник истины остаётся ref)
   const groupIdRef = useRef<string | null | undefined>(undefined);
+
+  // мягкий «тик» для перезапуска поллинга при надобности
+  const [refreshTick, setRefreshTick] = useState(0);
 
   /* --- системная кнопка "Назад" --- */
   useEffect(() => {
@@ -73,16 +81,19 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         try {
           const gResp = await getTaskWithGroup(taskId);
           groupIdRef.current = gResp?.groupId ?? null;
+          setGroupId(groupIdRef.current);            // 🔹 реактивно
           setPhase(gResp?.phase);
         } catch {
           const gid = new URLSearchParams(location.search).get('group');
           groupIdRef.current = gid || null;
+          setGroupId(groupIdRef.current);            // 🔹 реактивно
           setPhase(undefined);
         }
       })
       .catch(() => {
         const gid = new URLSearchParams(location.search).get('group');
         groupIdRef.current = gid || null;
+        setGroupId(groupIdRef.current);              // 🔹 реактивно
         setTask(null);
       })
       .finally(() => !ignore && setLoading(false));
@@ -91,6 +102,46 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       ignore = true;
     };
   }, [taskId]);
+
+  /* --- название группы по groupId --- */
+  useEffect(() => {
+    if (!groupId) {
+      setGroupTitle(null);
+      return;
+    }
+    const me =
+      WebApp?.initDataUnsafe?.user?.id ||
+      new URLSearchParams(location.search).get('from');
+    if (!me) return;
+
+    listGroups(String(me))
+      .then((r) => {
+        if (r.ok) {
+          const g = r.groups.find((x: any) => x.id === groupId);
+          setGroupTitle(g ? g.title : null);
+        }
+      })
+      .catch(() => {});
+  }, [groupId]);
+
+  /* --- мягкий поллинг, пока карточка открыта (обновление ответственного и т.п.) --- */
+  useEffect(() => {
+    let t: any = null;
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const r = await getTask(taskId);
+        if (!alive) return;
+        setTask(r.task);
+        if (typeof (r as any)?.phase === 'string') setPhase((r as any).phase);
+      } catch {}
+      t = setTimeout(tick, 4000);
+    };
+
+    t = setTimeout(tick, 4000);
+    return () => { alive = false; clearTimeout(t); };
+  }, [taskId, refreshTick]);
 
   /* --- действия --- */
   const save = async () => {
@@ -160,6 +211,23 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(r.link)}&text=${encodeURIComponent(text)}`;
 
       WebApp?.openTelegramLink?.(shareUrl);
+
+      // 🔁 быстрый поллинг в течение ~15 сек, чтобы моментально показать назначение
+      const started = Date.now();
+      const fastPull = async () => {
+        try {
+          const t = await getTask(taskId);
+          setTask(t.task);
+          if (t.task?.assigneeChatId) return;
+        } catch {}
+        if (Date.now() - started < 15000) {
+          setTimeout(fastPull, 1500);
+        } else {
+          setRefreshTick((x) => x + 1);
+        }
+      };
+      fastPull();
+
       WebApp?.HapticFeedback?.notificationOccurred?.('success');
     } catch (e) {
       console.error('[INVITE] error', e);
@@ -200,15 +268,14 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         return alert('Не найден user.id из Telegram WebApp. Открой через Telegram.');
       }
 
-      // сначала пробуем с кнопкой; сервер при неудаче сам откатится на минимальный вариант
-      const { ok, preparedMessageId, error, details, status } = await prepareShareMessage(taskId, {
+      // теперь сервер создаёт TASK-инвайт и кладёт assign__<id>__<token> в кнопку
+      const { ok, preparedMessageId } = await prepareShareMessage(taskId, {
         userId: meId,
         allowGroups: true,
         withButton: true,
       });
 
       if (!ok || !preparedMessageId) {
-        console.error('savePreparedInlineMessage failed:', status, error, details);
         const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
           window.location.href
         )}&text=${encodeURIComponent('Открой мою задачу')}`;
@@ -238,15 +305,26 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   /* --- UI --- */
   if (loading) return <div style={{ padding: 16 }}>Загрузка…</div>;
   if (error) return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
+
+  // Заголовок с «назад» и названием группы (мелким шрифтом)
+  const Header = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <button
+        onClick={() => onClose(groupIdRef.current)}
+        style={{ background: 'transparent', color: '#8aa0ff', border: 'none', cursor: 'pointer', fontSize: 13 }}
+      >
+        ← Назад
+      </button>
+      {groupTitle && (
+        <span style={{ fontSize: 13, opacity: 0.8 }}>{groupTitle}</span>
+      )}
+    </div>
+  );
+
   if (!task) {
     return (
       <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
-        <button
-          onClick={() => onClose(groupIdRef.current)}
-          style={{ marginBottom: 12, background: 'transparent', color: '#8aa0ff', border: 'none', cursor: 'pointer' }}
-        >
-          ← Назад
-        </button>
+        {Header}
 
         <div style={{ background: '#1b2030', border: '1px solid #2a3346', borderRadius: 16, padding: 16 }}>
           <div style={{ fontSize: 18, marginBottom: 8 }}>Задача уже удалена</div>
@@ -274,12 +352,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
-      <button
-        onClick={() => onClose(groupIdRef.current)}
-        style={{ marginBottom: 12, background: 'transparent', color: '#8aa0ff', border: 'none', cursor: 'pointer' }}
-      >
-        ← Назад
-      </button>
+      {Header}
 
       <div
         style={{
@@ -350,6 +423,26 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           >
             Удалить задачу
           </button>
+
+          {/* Постановщик */}
+          {(task as any).creatorName ? (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 12,
+                border: '1px solid #2a3346',
+                background: '#1a2030',
+                color: '#e8eaed',
+                display: 'inline-flex',
+                gap: 8,
+                alignItems: 'center',
+              }}
+              title="Постановщик задачи"
+            >
+              <span style={{ opacity: 0.8 }}>Постановщик:</span>
+              <strong>{(task as any).creatorName}</strong>
+            </div>
+          ) : null}
 
           {/* Ответственный */}
           {task.assigneeChatId ? (

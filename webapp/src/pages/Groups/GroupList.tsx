@@ -51,7 +51,7 @@ export default function GroupList({
               title={g.title}
               ownerName={g.ownerName || '—'}
               kind="own"
-              onClick={() => onOpen(g.id, false)}
+              onClick={() => onOpen(g.id, false)} // показываем ВСЕ задачи
             />
           ))
         )}
@@ -72,7 +72,7 @@ export default function GroupList({
                 title={displayTitle}
                 ownerName={g.ownerName || '—'}
                 kind="member"
-                onClick={() => onOpen(g.id, true)} // mineOnly = true
+                onClick={() => onOpen(g.id, false)} // ⬅️ ВАЖНО: по умолчанию показываем ВСЕ задачи проекта
               />
             );
           })
