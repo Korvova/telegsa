@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import WebApp from '@twa-dev/sdk';
 import BottomNav, { type TabKey } from './BottomNav';
+import GroupEdit from './components/GroupEdit';
 
 import TaskView from './TaskView';
 import {
@@ -184,20 +185,19 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
   } as const;
 
   return (
-<div
-  style={{
-    padding: 16,
-    background: '#1b2030',
-    border: '1px solid #2a3346',
-    borderRadius: 16,
-    minHeight: 240,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    textAlign: 'center',
-  }}
->
-
+    <div
+      style={{
+        padding: 16,
+        background: '#1b2030',
+        border: '1px solid #2a3346',
+        borderRadius: 16,
+        minHeight: 240,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlign: 'center',
+      }}
+    >
       <div style={{ opacity: 0.85, lineHeight: 1.6 }}>
         {tab === 'calendar' ? map.calendar : tab === 'notifications' ? map.notifications : map.settings}
       </div>
@@ -217,7 +217,7 @@ export default function App() {
 
   const [tab, setTab] = useState<TabKey>('groups');
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
-
+  const [showGroupEdit, setShowGroupEdit] = useState(false);
   const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -297,7 +297,15 @@ export default function App() {
     setGroupsPage('list');
   };
 
+  // выбранная группа
   const selectedGroup = groups.find((g) => g.id === selectedGroupId);
+
+  // признак владельца (используем kind, а ownerChatId — через any, чтобы TS не ругался, если поле не в типе)
+  const isOwnerOfSelected =
+    !!selectedGroup &&
+    (selectedGroup.kind === 'own' ||
+      String((selectedGroup as any).ownerChatId) === String(chatId));
+
   const resolvedGroupId = selectedGroup
     ? (selectedGroup.title === 'Моя группа' ? undefined : selectedGroup.id)
     : (selectedGroupId || undefined); // временный фолбэк, пока groups не обновились
@@ -659,7 +667,26 @@ export default function App() {
               ⟵ Назад
             </button>
           ) : null}
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+            {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
+              <button
+                title="Переименовать группу"
+                onClick={() => setShowGroupEdit(true)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#8aa0ff',
+                  cursor: 'pointer',
+                  fontSize: 14,          // мелкий шрифт, как просил
+                  padding: 2,
+                  lineHeight: 1,
+                }}
+              >
+                ✏️
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -772,6 +799,28 @@ export default function App() {
           if (t !== 'groups') setGroupsPage('list');
         }}
       />
+
+      {/* 🔹 Модалка редактирования группы — в корне App */}
+      {showGroupEdit && selectedGroup ? (
+        <GroupEdit
+          group={selectedGroup as any}
+          chatId={chatId}
+          onClose={() => setShowGroupEdit(false)}
+          onRenamed={async (newTitle) => {
+            await reloadGroups();
+            // если это текущая группа — обновим локальный заголовок без перезахода
+            setGroups((prev: Group[]) =>
+              prev.map((g: Group) => g.id === selectedGroup.id ? { ...g, title: newTitle } as Group : g)
+            );
+          }}
+          onDeleted={async () => {
+            await reloadGroups();
+            // после удаления уходим на список групп
+            setGroupsPage('list');
+            setSelectedGroupId('');
+          }}
+        />
+      ) : null}
     </div>
   );
 }
