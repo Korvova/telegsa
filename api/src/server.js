@@ -352,16 +352,30 @@ app.post('/webhook', async (req, res) => {
 
         try {
           const task = await createTaskInGroup({ chatId, groupId, text: rest });
-          await tg('sendMessage', {
-            chat_id: chatId,
-            text: `Задача создана: ${task.text}`,
-            disable_notification: true,
-            reply_markup: {
-              inline_keyboard: [[
-                { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${task.id}&group=${groupId || ''}` } }
-              ]]
-            }
-          });
+
+
+const sent = await tg('sendMessage', {
+  chat_id: chatId,
+  text: `Задача создана: ${task.text}`,
+  disable_notification: true,
+  reply_markup: {
+    inline_keyboard: [[
+      { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${task.id}&group=${groupId || ''}` } }
+    ]]
+  }
+});
+try {
+  if (sent?.ok && sent.result?.message_id) {
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
+    });
+  }
+} catch (e) { console.warn('store source msg failed', e); }
+
+
+
+
         } catch (e) {
           console.error('create by /g_<short> error:', e);
           await tg('sendMessage', { chat_id: chatId, text: 'Не удалось создать задачу.' });
@@ -374,16 +388,25 @@ app.post('/webhook', async (req, res) => {
         try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
       }
       const created = await createTaskInGroup({ chatId, groupId: null, text });
-      await tg('sendMessage', {
-        chat_id: chatId,
-        text: `Задача создана: ${created.text}`,
-        disable_notification: true,
-        reply_markup: {
-          inline_keyboard: [[
-            { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${created.id}&group=` } }
-          ]]
-        }
-      });
+const sent = await tg('sendMessage', {
+  chat_id: chatId,
+  text: `Задача создана: ${created.text}`,
+  disable_notification: true,
+  reply_markup: {
+    inline_keyboard: [[
+      { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${created.id}&group=` } }
+    ]]
+  }
+});
+try {
+  if (sent?.ok && sent.result?.message_id) {
+    await prisma.task.update({
+      where: { id: created.id },
+      data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
+    });
+  }
+} catch (e) { console.warn('store source msg failed', e); }
+
 
       return res.sendStatus(200);
     }
@@ -729,6 +752,156 @@ app.post('/tasks/:id/reopen', async (req, res) => {
   }
 });
 
+
+
+
+
+
+
+
+
+
+
+app.post('/tasks/:id/forward', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { toChatId } = req.body || {};
+    const target = String(toChatId || '').trim();
+    if (!target) return res.status(400).json({ ok: false, error: 'toChatId required' });
+
+    const task = await prisma.task.findUnique({
+      where: { id },
+      include: { column: true },
+    });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    // 1) Есть исходное сообщение — пересылаем его (⚠️ клавиатура НЕ сохранится в forwardMessage)
+    if (task.sourceChatId && task.sourceMessageId) {
+      const resFwd = await tg('forwardMessage', {
+        chat_id: target,
+        from_chat_id: task.sourceChatId,
+        message_id: task.sourceMessageId,
+      });
+      if (!resFwd?.ok) {
+        return res.status(502).json({ ok: false, error: 'forward_failed', details: resFwd?.description || '' });
+      }
+      return res.json({ ok: true, method: 'forward' });
+    }
+
+    // 2) Fallback для старых задач — отправим новое сообщение с кнопкой “Открыть”
+    const groupId = task?.column ? parseGroupIdFromColumnName(task.column.name) : null;
+    const url = `${process.env.PUBLIC_WEBAPP_URL}?from=${target}&task=${task.id}&group=${groupId || ''}`;
+
+    const resCopy = await tg('sendMessage', {
+      chat_id: target,
+      text: `Задача: ${task.text}`,
+      disable_notification: true,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: 'Открыть задачу', web_app: { url } }
+        ]]
+      }
+    });
+    if (!resCopy?.ok) {
+      return res.status(502).json({ ok: false, error: 'send_failed', details: resCopy?.description || '' });
+    }
+    return res.json({ ok: true, method: 'copy' });
+  } catch (e) {
+    console.error('POST /tasks/:id/forward error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+
+// === Prepared Share for Mini Apps (savePreparedInlineMessage) ===
+// POST /tasks/:id/share-prepared
+// body: { userId: number, allowGroups?: boolean, withButton?: boolean }
+app.post('/tasks/:id/share-prepared', async (req, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const { userId, allowGroups = false, withButton = true } = req.body || {};
+    if (!userId) return res.status(400).json({ ok: false, error: 'no_user_id' });
+
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    const botUser  = process.env.BOT_USERNAME;          // без @
+    const appShort = process.env.APP_SHORT_NAME;         // short name mini app
+    const webAppUrl = process.env.PUBLIC_WEBAPP_URL;     // https://rms-bot.com/telegsar
+    if (!botUser || !appShort || !webAppUrl) {
+      console.error('[share-prepared] missing .env', {
+        botUser: !!botUser, appShort: !!appShort, webAppUrl: !!webAppUrl
+      });
+      return res.status(500).json({ ok: false, error: 'missing_bot_env' });
+    }
+
+    const text = `Задача: ${task.text || ''}`.trim().slice(0, 4096);
+    const startapp = `https://t.me/${botUser}/${appShort}?startapp=task_${taskId}`;
+
+    // Сконструируем result (INLINE) — сначала с кнопкой (если просили)
+    const unique = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+    const baseResult = {
+      type: 'article',
+      id: `task_${taskId}_${unique}`.slice(0,64),
+      title: 'Задача',
+      input_message_content: { message_text: text }
+    };
+
+    const withUrlButton = {
+      ...baseResult,
+      reply_markup: { inline_keyboard: [[ { text: 'Открыть задачу', url: startapp } ]] }
+    };
+
+    const payloadBase = {
+      user_id: Number(userId),
+      allow_user_chats: true,
+      allow_group_chats: !!allowGroups,
+      allow_channel_chats: !!allowGroups,
+      allow_bot_chats: false
+    };
+
+    // 1) Пытаемся С КНОПКОЙ (если withButton=true)
+    let payload = { ...payloadBase, result: withButton ? withUrlButton : baseResult };
+    console.log('[share-prepared:req-1]', { taskId, userId, allowGroups, withButton, resultId: payload.result.id, startapp });
+
+    let tgResp = await tg('savePreparedInlineMessage', payload);
+    console.log('[savePreparedInlineMessage:resp-1]', JSON.stringify(tgResp));
+
+    // 2) Если не ок или нет id — пробуем БЕЗ КНОПКИ (как в твоём curl)
+    if (!tgResp?.ok || !(tgResp?.result?.id || tgResp?.result?.prepared_message_id)) {
+      payload = { ...payloadBase, result: baseResult };
+      console.warn('[share-prepared:retry-minimal]', { resultId: payload.result.id });
+      tgResp = await tg('savePreparedInlineMessage', payload);
+      console.log('[savePreparedInlineMessage:resp-2]', JSON.stringify(tgResp));
+    }
+
+    const preparedId =
+      tgResp?.result?.id ||
+      tgResp?.result?.prepared_message_id ||
+      tgResp?.prepared_message_id ||
+      null;
+
+    if (!tgResp?.ok || !preparedId) {
+      return res.status(502).json({
+        ok: false,
+        error: 'tg_save_prepared_failed',
+        details: tgResp?.description || JSON.stringify(tgResp)
+      });
+    }
+
+    return res.json({ ok: true, preparedMessageId: preparedId, minimized: !withButton && true });
+  } catch (e) {
+    console.error('POST /tasks/:id/share-prepared error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+
+
+
+
 /* ---------- Создание задачи (личная/групповая) ---------- */
 app.post('/tasks', async (req, res) => {
   try {
@@ -768,19 +941,27 @@ app.post('/tasks', async (req, res) => {
     });
 
     try {
-      await tg('sendMessage', {
-        chat_id: caller,
-        text: `Новая задача: ${task.text}`,
-        disable_notification: true,
-        reply_markup: {
-          inline_keyboard: [[
-            { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${caller}&task=${task.id}&group=${groupId || ''}` } }
-          ]]
-        }
-      });
-    } catch (e) {
-      console.warn('sendMessage failed:', e?.description || e);
+  const sent = await tg('sendMessage', {
+    chat_id: caller,
+    text: `Новая задача: ${task.text}`,
+    disable_notification: true,
+    reply_markup: {
+      inline_keyboard: [[
+        { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${caller}&task=${task.id}&group=${groupId || ''}` } }
+      ]]
     }
+  });
+  try {
+    if (sent?.ok && sent.result?.message_id) {
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { sourceChatId: caller, sourceMessageId: sent.result.message_id }
+      });
+    }
+  } catch (e2) { console.warn('store source msg failed', e2); }
+} catch (e) {
+  console.warn('sendMessage failed:', e?.description || e);
+}
 
     res.status(201).json({ ok: true, task });
   } catch (e) {

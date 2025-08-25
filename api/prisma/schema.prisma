@@ -45,6 +45,10 @@ model Task {
 
   @@index([chatId])
   @@index([columnId, order])
+
+  sourceChatId     String?  // куда отправили исходное уведомление
+  sourceMessageId  Int?     // message_id исходного уведомления
+
 }
 
 /// === Groups ===

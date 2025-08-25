@@ -1,7 +1,5 @@
 import ky from 'ky';
 
-
-
 /* ---------- Types ---------- */
 
 export type Task = {
@@ -19,8 +17,6 @@ export type Task = {
   assigneeName?: string | null;
 };
 
-
-
 export type Column = {
   id: string;
   chatId: string;
@@ -31,8 +27,15 @@ export type Column = {
   tasks: Task[];
 };
 
+export type Group = {
+  id: string;
+  title: string;
+  kind: 'own' | 'member';
+  ownerName?: string | null; // ⬅️ новое поле
+};
+
 /* ---------- Config ---------- */
-const API_BASE = import.meta.env.VITE_API_BASE || ''; // напр. '/api' или 'https://rms-bot.com/api'
+const API_BASE = import.meta.env.VITE_API_BASE || ''; // напр. '/telegsar-api' или '/api'
 
 /* ---------- Helpers ---------- */
 const normGroup = (gid?: string) => (gid && gid !== 'default' ? gid : undefined);
@@ -44,7 +47,6 @@ function makeParams(obj: Record<string, string | undefined>) {
 }
 
 /* ---------- Board / Tasks ---------- */
-
 
 export async function fetchBoard(
   chatId: string,
@@ -59,10 +61,6 @@ export async function fetchBoard(
   return ky.get(`${API_BASE}/tasks`, { searchParams })
     .json<{ ok: boolean; columns: Column[] }>();
 }
-
-
-
-
 
 export function moveTask(taskId: string, toColumnId: string, toIndex: number) {
   return ky
@@ -103,6 +101,7 @@ export function renameColumn(id: string, name: string) {
 }
 
 /* ---------- Groups ---------- */
+
 export function listGroups(chatId: string) {
   const searchParams = makeParams({ chatId });
   return ky
@@ -129,18 +128,13 @@ export function deleteGroup(id: string, chatId: string) {
     .json<{ ok: boolean }>();
 }
 
-
-
-
-
-
+/* ---------- Invites / Me ---------- */
 
 export function acceptInvite(chatId: string, token: string) {
   return ky
     .post(`${API_BASE}/invites/accept`, { json: { chatId, token } })
     .json<{ ok: boolean }>();
 }
-
 
 export function upsertMe(payload: {
   chatId: string;
@@ -155,19 +149,9 @@ export function createInvite(p: { chatId: string; type: 'task' | 'group'; taskId
   return ky.post(`${API_BASE}/invites`, { json: p }).json<{ ok: boolean; link: string; shareText?: string }>();
 }
 
-
-
 export function deleteTask(id: string) {
   return ky.delete(`${API_BASE}/tasks/${id}`).json<{ ok: boolean; groupId: string | null }>();
 }
-
-
-export type Group = {
-  id: string;
-  title: string;
-  kind: 'own' | 'member';
-  ownerName?: string | null; // ⬅️ новое поле
-};
 
 export function reopenTask(id: string) {
   return ky.post(`${API_BASE}/tasks/${id}/reopen`).json<{ ok: boolean; task: Task }>();
@@ -179,6 +163,53 @@ export function getTaskWithGroup(id: string) {
     .json<{ ok: boolean; task: Task; groupId: string | null; phase?: 'Inbox' | 'Doing' | 'Done' | string }>();
 }
 
+/* ---------- Forward ---------- */
 
+export async function forwardTask(taskId: string, toChatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/forward`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toChatId })
+  });
+  return r.json();
+}
 
+/* ---------- Share (Mini App) ---------- */
 
+// savePreparedInlineMessage → shareMessage (встроенный диалог)
+export async function prepareShareMessage(
+  taskId: string,
+  body: { userId: number; allowGroups?: boolean; withButton?: boolean }
+) {
+  const r = await fetch(`${API_BASE}/tasks/${taskId}/share-prepared`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, ...data } as {
+    status: number;
+    ok?: boolean;
+    preparedMessageId?: string;
+    minimized?: boolean;
+    error?: string;
+    details?: string;
+  };
+}
+
+// опционально: отправить «превью себе» обычным sendMessage (для отладки)
+export async function sendSelfPreview(taskId: string, body: { userId: number }) {
+  const r = await fetch(`${API_BASE}/tasks/${taskId}/send-self-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  return { status: r.status, ...data } as {
+    status: number;
+    ok?: boolean;
+    messageId?: number;
+    error?: string;
+    details?: string;
+  };
+}
