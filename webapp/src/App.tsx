@@ -3,6 +3,8 @@ import WebApp from '@twa-dev/sdk';
 import BottomNav, { type TabKey } from './BottomNav';
 import GroupEdit from './components/GroupEdit';
 
+import GroupMembers from './components/GroupMembers';
+
 import TaskView from './TaskView';
 import {
   fetchBoard,
@@ -768,19 +770,33 @@ export default function App() {
               >
                 Процесс 🔀: скоро подключим редактор связей (React Flow).
               </div>
-            ) : (
-              <div
-                style={{
-                  padding: 16,
-                  background: '#1b2030',
-                  border: '1px solid #2a3346',
-                  borderRadius: 16,
-                  minHeight: 240,
-                }}
-              >
-                Участники 👥: список участников и добавление — скоро подключим.
-              </div>
-            )}
+
+
+
+
+      ) : (
+<GroupMembers
+  group={selectedGroup as any}
+  chatId={chatId}
+  isOwner={isOwnerOfSelected}
+  onChanged={async () => {
+    await reloadGroups();
+    // Без проверки — loadBoard сам ничего не сделает, если сейчас не kanban
+    await loadBoard();
+  }}
+  onLeftGroup={() => {
+    setGroupsPage('list');
+    setSelectedGroupId('');
+    reloadGroups();
+  }}
+/>
+
+)
+
+            
+            
+            
+            }
           </>
         )
       ) : (

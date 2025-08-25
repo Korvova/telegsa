@@ -213,3 +213,60 @@ export async function sendSelfPreview(taskId: string, body: { userId: number }) 
     details?: string;
   };
 }
+
+
+// src/api.ts (добавь рядом с остальными типами/функциями)
+
+export type GroupMember = {
+  chatId: string;
+  name?: string | null;
+  role?: 'owner' | 'member' | 'invited';
+  assignedCount?: number; // сколько задач на участнике в этой группе
+};
+
+export async function getGroupMembers(groupId: string): Promise<{
+  ok: boolean;
+  owner?: GroupMember;
+  members: GroupMember[];
+}> {
+  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${groupId}/members`, {
+    credentials: 'include',
+  });
+  if (!r.ok) return { ok: false, members: [] };
+  return r.json();
+}
+
+export async function createGroupInvite(params: { chatId: string; groupId: string }): Promise<{
+  ok: boolean;
+  link?: string;
+  shareText?: string;
+}> {
+  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${params.groupId}/invite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId: params.chatId }),
+  });
+  if (!r.ok) return { ok: false };
+  return r.json();
+}
+
+export async function removeGroupMember(groupId: string, memberChatId: string, byChatId: string): Promise<{ ok: boolean }> {
+  const r = await fetch(
+    `${import.meta.env.VITE_API_BASE}/groups/${groupId}/members/${memberChatId}?byChatId=${encodeURIComponent(byChatId)}`,
+    { method: 'DELETE' }
+  );
+  return { ok: r.ok };
+}
+
+
+
+
+
+export async function leaveGroup(groupId: string, chatId: string): Promise<{ ok: boolean }> {
+  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${groupId}/leave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId }),
+  });
+  return { ok: r.ok };
+}

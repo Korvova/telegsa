@@ -10,12 +10,7 @@ app.use(express.json());
 
 /* ---------- Telegram helper ---------- */
 async function tg(method, payload) {
-
-
-const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
-
-
-
+  const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -358,34 +353,24 @@ app.post('/webhook', async (req, res) => {
         try {
           const task = await createTaskInGroup({ chatId, groupId, text: rest });
 
-
-const sent = await tg('sendMessage', {
-  chat_id: chatId,
-  text: `Задача создана: ${task.text}`,
-  disable_notification: true,
-
-
-
-reply_markup: {
-  inline_keyboard: [[
-    { text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}/${process.env.APP_SHORT_NAME}?startapp=task_${task.id}` }
-  ]]
-}
-
-
-
-});
-try {
-  if (sent?.ok && sent.result?.message_id) {
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
-    });
-  }
-} catch (e) { console.warn('store source msg failed', e); }
-
-
-
+          const sent = await tg('sendMessage', {
+            chat_id: chatId,
+            text: `Задача создана: ${task.text}`,
+            disable_notification: true,
+            reply_markup: {
+              inline_keyboard: [[
+                { text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}/${process.env.APP_SHORT_NAME}?startapp=task_${task.id}` }
+              ]]
+            }
+          });
+          try {
+            if (sent?.ok && sent.result?.message_id) {
+              await prisma.task.update({
+                where: { id: task.id },
+                data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
+              });
+            }
+          } catch (e) { console.warn('store source msg failed', e); }
 
         } catch (e) {
           console.error('create by /g_<short> error:', e);
@@ -399,33 +384,25 @@ try {
         try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
       }
       const created = await createTaskInGroup({ chatId, groupId: null, text });
-const sent = await tg('sendMessage', {
-  chat_id: chatId,
-  text: `Задача создана: ${created.text}`,
-  disable_notification: true,
-
-
-
-reply_markup: {
-  inline_keyboard: [[
-    { text: 'Открыть задачу',
-      url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }
-  ]]
-}
-
-
-
-
-});
-try {
-  if (sent?.ok && sent.result?.message_id) {
-    await prisma.task.update({
-      where: { id: created.id },
-      data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
-    });
-  }
-} catch (e) { console.warn('store source msg failed', e); }
-
+      const sent = await tg('sendMessage', {
+        chat_id: chatId,
+        text: `Задача создана: ${created.text}`,
+        disable_notification: true,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: 'Открыть задачу',
+              url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }
+          ]]
+        }
+      });
+      try {
+        if (sent?.ok && sent.result?.message_id) {
+          await prisma.task.update({
+            where: { id: created.id },
+            data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
+          });
+        }
+      } catch (e) { console.warn('store source msg failed', e); }
 
       return res.sendStatus(200);
     }
@@ -528,7 +505,19 @@ app.get('/tasks/:id', async (req, res) => {
       } catch {}
     }
 
-    res.json({ ok: true, task: { ...task, assigneeName }, groupId, phase });
+    // NEW: постановщик (creator) по sourceChatId (или createdByChatId, если добавишь поле)
+    let creatorName = null;
+    try {
+      const creatorId = task.sourceChatId ? String(task.sourceChatId) : null;
+      if (creatorId) {
+        const u = await prisma.user.findUnique({ where: { chatId: creatorId } });
+        if (u) {
+          creatorName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || creatorId;
+        }
+      }
+    } catch {}
+
+    res.json({ ok: true, task: { ...task, assigneeName, creatorName }, groupId, phase });
   } catch (e) {
     console.error('GET /tasks/:id error', e);
     res.status(500).json({ ok: false });
@@ -771,16 +760,6 @@ app.post('/tasks/:id/reopen', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-
-
-
 app.post('/tasks/:id/forward', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -807,27 +786,21 @@ app.post('/tasks/:id/forward', async (req, res) => {
       return res.json({ ok: true, method: 'forward' });
     }
 
+    // 2) Fallback — отправим новое сообщение с кнопкой “Открыть”
+    const botUser = process.env.BOT_USERNAME;
+    const taskId = id;
+    const startappUrl = `https://t.me/${botUser}?startapp=task_${taskId}`;
 
-
-
-
-
-    // 2) Fallback для старых задач — отправим новое сообщение с кнопкой “Открыть”
-const startappUrl =
-  `https://t.me/${botUser}?startapp=task_${taskId}`;
-
-const resCopy = await tg('sendMessage', {
-  chat_id: target,
-  text: `Задача: ${task.text}`,
-  disable_notification: true,
-  reply_markup: {
-    inline_keyboard: [[
-      { text: 'Открыть задачу', url: startappUrl }
-    ]]
-  }
-});
-
-
+    const resCopy = await tg('sendMessage', {
+      chat_id: target,
+      text: `Задача: ${task.text}`,
+      disable_notification: true,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: 'Открыть задачу', url: startappUrl }
+        ]]
+      }
+    });
 
     if (!resCopy?.ok) {
       return res.status(502).json({ ok: false, error: 'send_failed', details: resCopy?.description || '' });
@@ -839,10 +812,6 @@ const resCopy = await tg('sendMessage', {
   }
 });
 
-
-
-
-// === Prepared Share for Mini Apps (savePreparedInlineMessage) ===
 // === Prepared Share for Mini Apps (savePreparedInlineMessage) ===
 // POST /tasks/:id/share-prepared
 // body: { userId: number, allowGroups?: boolean, withButton?: boolean }
@@ -852,19 +821,40 @@ app.post('/tasks/:id/share-prepared', async (req, res) => {
     const { userId, allowGroups = true, withButton = true } = req.body || {};
     if (!userId) return res.status(400).json({ ok: false, error: 'no_user_id' });
 
-    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { column: true },
+    });
     if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
 
-    const botUser  = process.env.BOT_USERNAME;      // без @ (пример: telegsar_bot)
-    const appShort = process.env.APP_SHORT_NAME;     // короткое имя Mini App из BotFather
+    const botUser  = process.env.BOT_USERNAME;      // без @
+    const appShort = process.env.APP_SHORT_NAME;    // короткое имя Mini App из BotFather
     if (!botUser || !appShort) {
       console.error('[share-prepared] missing .env', { botUser: !!botUser, appShort: !!appShort });
       return res.status(500).json({ ok: false, error: 'missing_bot_env' });
     }
 
+    // NEW: создаём инвайт TASK и шлём ссылку assign__<taskId>__<token>
+    const inviter = String(userId);
+    const parsedGroupId = task?.column ? parseGroupIdFromColumnName(task.column.name) : null;
+    const fallbackGroup = await prisma.group.findFirst({
+      where: { ownerChatId: task.chatId, title: 'Моя группа' }
+    });
+    const groupIdFinal = parsedGroupId ?? fallbackGroup?.id ?? null;
+
+    const invite = await prisma.inviteTicket.create({
+      data: {
+        token: makeToken(),
+        type: 'TASK',
+        status: 'ACTIVE',
+        groupId: groupIdFinal,
+        taskId: taskId,
+        invitedByChatId: inviter,
+      }
+    });
+
     const text = `Задача: ${task.text || ''}`.trim().slice(0, 4096);
-  const startappUrl =
-  `https://t.me/${botUser}?startapp=task_${taskId}`;
+    const startappUrl = `https://t.me/${botUser}?startapp=assign__${taskId}__${invite.token}`;
 
     const unique = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
     const baseResult = {
@@ -896,7 +886,7 @@ app.post('/tasks/:id/share-prepared', async (req, res) => {
     let tgResp = await tg('savePreparedInlineMessage', payload);
     console.log('[share-prepared:resp]', JSON.stringify(tgResp));
 
-    // Фолбэк на "минимальный" вариант (как у тебя в curl), если вдруг Telegram откажет
+    // Фолбэк на "минимальный" вариант, если TG откажет
     if (!tgResp?.ok || !(tgResp?.result?.id || tgResp?.result?.prepared_message_id)) {
       const fallback = { ...payload, result: baseResult };
       console.warn('[share-prepared:fallback-minimal]', { resultId: fallback.result.id });
@@ -924,10 +914,6 @@ app.post('/tasks/:id/share-prepared', async (req, res) => {
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
-
-
-
-
 
 /* ---------- Создание задачи (личная/групповая) ---------- */
 app.post('/tasks', async (req, res) => {
@@ -968,34 +954,29 @@ app.post('/tasks', async (req, res) => {
     });
 
     try {
-  const sent = await tg('sendMessage', {
-    chat_id: caller,
-    text: `Новая задача: ${task.text}`,
-    disable_notification: true,
-
-
-reply_markup: {
-  inline_keyboard: [[
- { text: 'Открыть задачу',
-  url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }
-  ]]
-}
-
-  });
-
-
-
-  try {
-    if (sent?.ok && sent.result?.message_id) {
-      await prisma.task.update({
-        where: { id: task.id },
-        data: { sourceChatId: caller, sourceMessageId: sent.result.message_id }
+      const sent = await tg('sendMessage', {
+        chat_id: caller,
+        text: `Новая задача: ${task.text}`,
+        disable_notification: true,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: 'Открыть задачу',
+              url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }
+          ]]
+        }
       });
+
+      try {
+        if (sent?.ok && sent.result?.message_id) {
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { sourceChatId: caller, sourceMessageId: sent.result.message_id }
+          });
+        }
+      } catch (e2) { console.warn('store source msg failed', e2); }
+    } catch (e) {
+      console.warn('sendMessage failed:', e?.description || e);
     }
-  } catch (e2) { console.warn('store source msg failed', e2); }
-} catch (e) {
-  console.warn('sendMessage failed:', e?.description || e);
-}
 
     res.status(201).json({ ok: true, task });
   } catch (e) {
@@ -1098,17 +1079,37 @@ app.patch('/groups/:id', async (req, res) => {
   }
 });
 
+
+
 app.delete('/groups/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
     const chatId = String(req.query.chatId || '');
     if (!chatId) return res.status(400).json({ ok: false, error: 'chatId required' });
+
     const grp = await prisma.group.findUnique({ where: { id } });
     if (!grp) return res.status(404).json({ ok: false, error: 'not found' });
     if (grp.ownerChatId !== chatId) return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    await prisma.group.delete({ where: { id } });
+    // Собираем ВСЕ колонки этой группы у всех пользователей (на всякий случай),
+    // но по идее после adoptGroupColumnsToOwner все уже у владельца.
+    const cols = await prisma.column.findMany({
+      where: { name: { startsWith: `${id}${GROUP_SEP}` } },
+      select: { id: true },
+    });
+    const colIds = cols.map(c => c.id);
 
+    await prisma.$transaction(async (tx) => {
+      if (colIds.length) {
+        await tx.task.deleteMany({ where: { columnId: { in: colIds } } });
+        await tx.column.deleteMany({ where: { id: { in: colIds } } });
+      }
+      await tx.groupMember.deleteMany({ where: { groupId: id } });
+      await tx.inviteTicket.deleteMany({ where: { groupId: id } });
+      await tx.group.delete({ where: { id } });
+    });
+
+    // Обновим команды для владельца
     updateChatCommands(String(chatId)).catch(console.error);
 
     res.json({ ok: true });
@@ -1117,6 +1118,240 @@ app.delete('/groups/:id', async (req, res) => {
     res.status(500).json({ ok: false });
   }
 });
+
+
+
+
+
+
+/* ============ Group Members (list/invite/remove/leave) ============ */
+
+// Подсчитать задачи участника в рамках конкретной группы
+async function countUserTasksInGroup({ groupId, ownerChatId, assigneeChatId }) {
+  return prisma.task.count({
+    where: {
+      assigneeChatId: String(assigneeChatId),
+      column: {
+        chatId: String(ownerChatId),
+        name: { startsWith: `${groupId}${GROUP_SEP}` },
+      },
+    },
+  });
+}
+
+// GET /groups/:id/members
+// Возвращает: { ok, owner: {chatId, name}, members: [{chatId, name, assignedCount}] }
+// В members — все участники (GroupMember), все ответственные из задач, и "приглашённые" (активные инвайты)
+app.get('/groups/:id/members', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+
+    // Владелец
+    const ownerUser = await prisma.user.findUnique({ where: { chatId: String(g.ownerChatId) } });
+    const ownerName = ownerUser
+      ? [ownerUser.firstName, ownerUser.lastName].filter(Boolean).join(' ') || ownerUser.username || ownerUser.chatId
+      : String(g.ownerChatId);
+
+    // Участники по таблице GroupMember
+    const links = await prisma.groupMember.findMany({ where: { groupId }, select: { chatId: true } });
+    const linkIds = links.map(l => String(l.chatId));
+
+    // Ассайни из задач в колонках группы (у владельца)
+    const cols = await prisma.column.findMany({
+      where: { chatId: String(g.ownerChatId), name: { startsWith: `${groupId}${GROUP_SEP}` } },
+      select: { id: true },
+    });
+    const colIds = cols.map(c => c.id);
+    let assignees = [];
+    if (colIds.length) {
+      const tasks = await prisma.task.findMany({
+        where: { columnId: { in: colIds }, assigneeChatId: { not: null } },
+        select: { assigneeChatId: true },
+      });
+      assignees = Array.from(new Set(tasks.map(t => String(t.assigneeChatId))));
+    }
+
+    // "Приглашённые" — активные инвайты в группу
+    const invites = await prisma.inviteTicket.findMany({
+      where: { groupId, type: 'GROUP', status: 'ACTIVE' },
+      select: { invitedByChatId: true }, // конкретного «кого приглашать» нет — ссылка общая
+    });
+    const invitedPlaceholders = invites.length ? ['invited'] : []; // маркер, покажем запись «Приглашённые (ожидают принятия)»
+
+    // Соберём уникальные chatId (кроме владельца)
+    const memberIds = Array.from(new Set([
+      ...linkIds,
+      ...assignees,
+    ])).filter(id => id && id !== String(g.ownerChatId));
+
+    // Подтянем имена
+    const users = memberIds.length
+      ? await prisma.user.findMany({ where: { chatId: { in: memberIds } } })
+      : [];
+    const nameByChat = new Map(
+      users.map(u => [
+        u.chatId,
+        [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.chatId
+      ])
+    );
+
+    // Посчитаем "assignedCount" на каждого
+    const membersWithCounts = await Promise.all(memberIds.map(async (mid) => {
+      const assignedCount = await countUserTasksInGroup({
+        groupId,
+        ownerChatId: g.ownerChatId,
+        assigneeChatId: mid,
+      });
+      return { chatId: mid, name: nameByChat.get(mid) || mid, role: 'member', assignedCount };
+    }));
+
+    // Псевдо‑строка о том, что есть активные приглашения (опционально)
+    const invitedRows = invitedPlaceholders.length
+      ? [{ chatId: '—', name: 'Приглашённые (ожидают принятия)', role: 'invited', assignedCount: 0 }]
+      : [];
+
+    return res.json({
+      ok: true,
+      owner: { chatId: String(g.ownerChatId), name: ownerName, role: 'owner', assignedCount: null },
+      members: [...membersWithCounts, ...invitedRows],
+    });
+  } catch (e) {
+    console.error('GET /groups/:id/members error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// POST /groups/:id/invite  body: { chatId }  -> { ok, link, shareText }
+app.post('/groups/:id/invite', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const actor = String(req.body?.chatId || '');
+    if (!actor) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+
+    // Разрешим приглашать владельцу и участникам
+    const allowed = await userIsGroupMemberOrOwner(actor, groupId);
+    if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const token = makeToken();
+    const created = await prisma.inviteTicket.create({
+      data: {
+        token,
+        type: 'GROUP',
+        status: 'ACTIVE',
+        groupId,
+        taskId: null,
+        invitedByChatId: actor,
+      },
+    });
+
+    const link = `https://t.me/${process.env.BOT_USERNAME}?startapp=join__${created.groupId}__${created.token}`;
+    const shareText = `Приглашаю тебя в группу: ${g.title}`;
+
+    res.json({ ok: true, link, shareText });
+  } catch (e) {
+    console.error('POST /groups/:id/invite error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// DELETE /groups/:id/members/:memberChatId?byChatId=<OWNER>
+// Только владелец может удалить участника. Все задачи участника в этой группе переходят на владельца.
+app.delete('/groups/:id/members/:memberChatId', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const memberChatId = String(req.params.memberChatId);
+    const byChatId = String(req.query.byChatId || ''); // владелец
+
+    if (!byChatId) return res.status(400).json({ ok: false, error: 'byChatId_required' });
+
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    if (String(g.ownerChatId) !== byChatId) {
+      return res.status(403).json({ ok: false, error: 'only_owner_allowed' });
+    }
+    if (String(memberChatId) === String(g.ownerChatId)) {
+      return res.status(400).json({ ok: false, error: 'cannot_remove_owner' });
+    }
+
+    // Перевесим задачи участника в колонках этой группы на владельца
+    await prisma.task.updateMany({
+      where: {
+        assigneeChatId: memberChatId,
+        column: {
+          chatId: String(g.ownerChatId),
+          name: { startsWith: `${groupId}${GROUP_SEP}` },
+        },
+      },
+      data: { assigneeChatId: String(g.ownerChatId) },
+    });
+
+    // Удалим участника из GroupMember (если был)
+    await prisma.groupMember.deleteMany({
+      where: { groupId, chatId: memberChatId },
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /groups/:id/members/:memberChatId error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// POST /groups/:id/leave  body: { chatId }
+// Не владелец может выйти из группы. Его задачи переходят на владельца.
+app.post('/groups/:id/leave', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const who = String(req.body?.chatId || '');
+    if (!who) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+
+    if (String(g.ownerChatId) === who) {
+      return res.status(400).json({ ok: false, error: 'owner_cannot_leave' });
+    }
+
+    const isMember = await userIsGroupMemberOrOwner(who, groupId);
+    if (!isMember) return res.status(403).json({ ok: false, error: 'not_member' });
+
+    await prisma.task.updateMany({
+      where: {
+        assigneeChatId: who,
+        column: {
+          chatId: String(g.ownerChatId),
+          name: { startsWith: `${groupId}${GROUP_SEP}` },
+        },
+      },
+      data: { assigneeChatId: String(g.ownerChatId) },
+    });
+
+    await prisma.groupMember.deleteMany({
+      where: { groupId, chatId: who },
+    });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /groups/:id/leave error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
 
 const PORT = process.env.PORT || 3300;
 app.listen(PORT, () => {
