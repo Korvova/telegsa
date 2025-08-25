@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+import { tasksRouter } from './routes/tasks.js';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -21,11 +22,10 @@ async function tg(method, payload) {
 }
 
 /* ---------- Short codes (без БД) ---------- */
-// строим минимально-уникальные префиксы id (начиная с длины 4)
 function buildShortCodes(ids) {
   let len = 4;
   while (len <= 12) {
-    const seen = new Map(); // pref -> id
+    const seen = new Map();
     let ok = true;
     for (const id of ids) {
       const pref = id.slice(0, len);
@@ -39,15 +39,10 @@ function buildShortCodes(ids) {
     }
     len++;
   }
-  // fallback — первые 12 символов
   const map = {};
   for (const id of ids) map[id] = id.slice(0, 12);
   return map;
 }
-
-
-
-
 
 function parseGroupIdFromColumnName(name) {
   const sep = '::';
@@ -64,16 +59,8 @@ async function userIsGroupMemberOrOwner(chatId, groupId) {
 }
 
 function makeToken() {
-  return crypto.randomBytes(16).toString('base64url'); // компактный токен
+  return crypto.randomBytes(16).toString('base64url');
 }
-
-
-
-
-
-
-
-
 
 /* ---------- Groups / Columns helpers ---------- */
 const GROUP_SEP = '::';
@@ -185,62 +172,130 @@ async function updateChatCommands(chatId) {
 /* ---------- Health ---------- */
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'telegsar-api' }));
 
+/* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
+app.use('/tasks', tasksRouter);
 
+/* ---------- helper: имена ответственных в колонках ---------- */
+async function enrichColumnsWithAssignees(columnsRaw) {
+  const ids = Array.from(new Set(
+    columnsRaw.flatMap(c => c.tasks)
+      .map(t => t.assigneeChatId ? String(t.assigneeChatId) : null)
+      .filter(Boolean)
+  ));
+  const users = ids.length ? await prisma.user.findMany({ where: { chatId: { in: ids } } }) : [];
+  const nameByChat = new Map(
+    users.map(u => [
+      u.chatId,
+      [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.chatId
+    ])
+  );
 
+  return columnsRaw.map(c => ({
+    ...c,
+    name: stripGroupName(c.name),
+    tasks: c.tasks.map(t => ({
+      ...t,
+      assigneeName: t.assigneeChatId ? nameByChat.get(String(t.assigneeChatId)) || null : null,
+    })),
+  }));
+}
 
+/* ---------- миграция: перенести колонки группы к владельцу ---------- */
+async function adoptGroupColumnsToOwner(boardChatId, groupId) {
+  const all = await prisma.column.findMany({
+    where: { name: { startsWith: `${groupId}${GROUP_SEP}` } },
+    orderBy: { order: 'asc' },
+    include: { tasks: { orderBy: { order: 'asc' } } },
+  });
 
+  const aliens = all.filter(c => c.chatId !== boardChatId);
+  if (!aliens.length) return;
+
+  await ensureDefaultColumns(boardChatId, groupId);
+
+  const ownerCols = await prisma.column.findMany({
+    where: { chatId: boardChatId, name: { startsWith: `${groupId}${GROUP_SEP}` } },
+    include: { tasks: true },
+  });
+  const ownerByShort = new Map(ownerCols.map(c => [stripGroupName(c.name), c]));
+
+  for (const alien of aliens) {
+    const short = stripGroupName(alien.name);
+    const dst = ownerByShort.get(short);
+    if (!dst) continue;
+
+    await prisma.$transaction(async (tx) => {
+      let base = await tx.task.count({ where: { columnId: dst.id } });
+      for (const t of alien.tasks) {
+        await tx.task.update({
+          where: { id: t.id },
+          data: {
+            chatId: boardChatId,
+            columnId: dst.id,
+            order: base++,
+          },
+        });
+      }
+      await tx.column.delete({ where: { id: alien.id } });
+    });
+  }
+}
 
 /* ---------- Board (columns + tasks), group-aware ---------- */
 app.get('/tasks', async (req, res) => {
   try {
-    const chatId = String(req.query.chatId || '');            // кто открыл
-    const rawGroupId = String(req.query.groupId || '').trim(); // какая группа
+    const chatId = String(req.query.chatId || '');
+    const rawGroupId = String(req.query.groupId || '').trim();
+    const onlyMine = ['1','true','yes'].includes(String(req.query.onlyMine || '').toLowerCase());
     const groupId = rawGroupId && rawGroupId !== 'default' ? rawGroupId : null;
+
     if (!chatId) return res.status(400).json({ ok: false, error: 'chatId is required' });
 
-    // Дефолтная «Моя группа» — личная доска пользователя
+    // ЛИЧНАЯ ДОСКА
     if (!groupId) {
       await ensureDefaultColumns(chatId, null);
-      const columns = await prisma.column.findMany({
+      const columnsRaw = await prisma.column.findMany({
         where: { chatId, name: { not: { contains: GROUP_SEP } } },
         orderBy: { order: 'asc' },
         include: { tasks: { orderBy: { order: 'asc' } } },
       });
-      const sanitized = columns.map(c => ({ ...c, name: stripGroupName(c.name) }));
-      return res.json({ ok: true, columns: sanitized });
+
+      let columns = await enrichColumnsWithAssignees(columnsRaw);
+      if (onlyMine) {
+        columns = columns.map(c => ({ ...c, tasks: c.tasks.filter(t => String(t.assigneeChatId || '') === chatId) }));
+      }
+      return res.json({ ok: true, columns });
     }
 
-    // Групповая доска — единая у владельца группы
-    // 1) доступ
+    // ГРУППОВАЯ ДОСКА (владелец = единый бэклог)
     const allowed = await userIsGroupMemberOrOwner(chatId, groupId);
     if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
 
-    // 2) владелец
     const g = await prisma.group.findUnique({ where: { id: groupId } });
     if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+
     const boardChatId = g.ownerChatId;
 
-    // 3) гарантируем колонки у владельца
+    // гарантируем колонки и подтянем старые из аккаунтов участников
     await ensureDefaultColumns(boardChatId, groupId);
+    await adoptGroupColumnsToOwner(boardChatId, groupId);
 
-    // 4) берём колонки у владельца, префиксованные groupId::
-    const columns = await prisma.column.findMany({
+    const columnsRaw = await prisma.column.findMany({
       where: { chatId: boardChatId, name: { startsWith: `${groupId}${GROUP_SEP}` } },
       orderBy: { order: 'asc' },
       include: { tasks: { orderBy: { order: 'asc' } } },
     });
-    const sanitized = columns.map(c => ({ ...c, name: stripGroupName(c.name) }));
-    return res.json({ ok: true, columns: sanitized });
+
+    let columns = await enrichColumnsWithAssignees(columnsRaw);
+    if (onlyMine) {
+      columns = columns.map(c => ({ ...c, tasks: c.tasks.filter(t => String(t.assigneeChatId || '') === chatId) }));
+    }
+    return res.json({ ok: true, columns });
   } catch (e) {
     console.error('GET /tasks error:', e);
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
-
-
-
-
-
 
 /* ---------- Webhook (ТОЛЬКО через /g) ---------- */
 app.post('/webhook', async (req, res) => {
@@ -255,7 +310,7 @@ app.post('/webhook', async (req, res) => {
       const chatId = String(msg.chat?.id || '');
       const text = String(msg.text).trim();
 
-      // /g — обновить список команд в «/»
+      // /g — обновить список команд
       if (text === '/g' || text === '/group' || text === '/groups' || text === '/refresh') {
         await updateChatCommands(chatId);
         await tg('sendMessage', {
@@ -283,8 +338,7 @@ app.post('/webhook', async (req, res) => {
         if (short !== 'default') {
           const all = await getUserGroups(chatId);
           const nonDefault = all.filter(g => g.title !== 'Моя группа');
-          const shortById = buildShortCodes(nonDefault.map(g => g.id)); // {id: short}
-          // найти id по short
+          const shortById = buildShortCodes(nonDefault.map(g => g.id));
           const hit = Object.entries(shortById).find(([, s]) => s === short);
           if (!hit) {
             await tg('sendMessage', {
@@ -304,7 +358,7 @@ app.post('/webhook', async (req, res) => {
             disable_notification: true,
             reply_markup: {
               inline_keyboard: [[
-                { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${task.id}` } }
+                { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${task.id}&group=${groupId || ''}` } }
               ]]
             }
           });
@@ -315,7 +369,7 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
 
-      // Прежний flow: любое сообщение → задача в дефолтной группе
+      // любое сообщение → задача в дефолтной группе
       if (msg?.chat?.type === 'private') {
         try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
       }
@@ -326,7 +380,7 @@ app.post('/webhook', async (req, res) => {
         disable_notification: true,
         reply_markup: {
           inline_keyboard: [[
-            { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${created.id}` } }
+            { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${created.id}&group=` } }
           ]]
         }
       });
@@ -334,7 +388,6 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // неинтересные апдейты — 200
     res.sendStatus(200);
   } catch (e) {
     console.error('Webhook error:', e);
@@ -410,46 +463,37 @@ app.get('/tasks/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
 
-   // 1) сама задача
-  const task = await prisma.task.findUnique({ where: { id } });
-  if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
+    const task = await prisma.task.findUnique({ where: { id } });
+    if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
 
-  // 2) groupId из имени колонки "<groupId>::..."
-  let groupId = null;
-  try {
-    const col = await prisma.column.findUnique({ where: { id: task.columnId } });
-    if (col) {
-      const i = col.name.indexOf(GROUP_SEP);
-      groupId = i > 0 ? col.name.slice(0, i) : null;
-    }
-  } catch {}
+    let groupId = null;
+    let phase = null;
+    try {
+      const col = await prisma.column.findUnique({ where: { id: task.columnId } });
+      if (col) {
+        const nm = stripGroupName(col.name); // 'Inbox' | 'Doing' | 'Done' | ...
+        phase = nm;
+        const i = col.name.indexOf(GROUP_SEP);
+        groupId = i > 0 ? col.name.slice(0, i) : null;
+      }
+    } catch {}
 
-    // 3) имя ответственного из таблицы Users (см. примечание ниже)
     let assigneeName = null;
     if (task.assigneeChatId) {
       try {
         const u = await prisma.user.findUnique({ where: { chatId: String(task.assigneeChatId) } });
-        if (u) {
-          assigneeName =
-            [u.firstName, u.lastName].filter(Boolean).join(' ') ||
-            u.username ||
-            String(task.assigneeChatId);
-        }
+        if (u) assigneeName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || String(task.assigneeChatId);
       } catch {}
     }
 
-    res.json({ ok: true, task: { ...task, assigneeName }, groupId });
+    res.json({ ok: true, task: { ...task, assigneeName }, groupId, phase });
   } catch (e) {
     console.error('GET /tasks/:id error', e);
     res.status(500).json({ ok: false });
   }
 });
 
-
-
-
-
-// server.js (ваш Express)
+/* ---------- User profile (для ownerName/assigneeName) ---------- */
 app.post('/me', async (req, res) => {
   try {
     const { chatId, firstName, lastName, username } = req.body || {};
@@ -477,13 +521,6 @@ app.post('/me', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
 app.patch('/tasks/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -506,13 +543,7 @@ app.patch('/tasks/:id', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-// Создать инвайт (TASK | GROUP)
+/* ---------- Invites ---------- */
 app.post('/invites', async (req, res) => {
   try {
     const { chatId, type, taskId, groupId: rawGroupId } = req.body || {};
@@ -532,21 +563,15 @@ app.post('/invites', async (req, res) => {
         include: { column: true },
       });
       if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
-      // вычисляем группу из имени колонки (как в канбане)
-      groupId = parseGroupIdFromColumnName(task.column.name);
-      // groupId может быть null => «Моя группа» (дефолт)
+      groupId = parseGroupIdFromColumnName(task.column.name); // может быть null (личная)
     } else if (type === 'group') {
       if (!rawGroupId) return res.status(400).json({ ok: false, error: 'groupId required' });
       groupId = String(rawGroupId);
     }
 
-    // Права: инвайт может сделать владелец или участник этой группы (если группа есть)
     if (groupId) {
       const allowed = await userIsGroupMemberOrOwner(inviter, groupId);
       if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
-    } else {
-      // default (Моя группа) — владелец = сам пользователь
-      // тут можно не проверять отдельно
     }
 
     const token = makeToken();
@@ -561,7 +586,6 @@ app.post('/invites', async (req, res) => {
       }
     });
 
-    // Ссылки startapp: короткий формат
     let link = '';
     let shareText = '';
     if (created.type === 'TASK') {
@@ -579,11 +603,6 @@ app.post('/invites', async (req, res) => {
   }
 });
 
-
-
-
-
-// Принять инвайт (из WebApp по start_param)
 app.post('/invites/accept', async (req, res) => {
   try {
     const { chatId, token } = req.body || {};
@@ -596,7 +615,6 @@ app.post('/invites/accept', async (req, res) => {
       return res.status(410).json({ ok: false, error: 'invite_invalid' });
     }
 
-    // добавить в группу, если не участник
     const isMember = await userIsGroupMemberOrOwner(who, invite.groupId);
     if (!isMember) {
       await prisma.groupMember.create({
@@ -606,7 +624,6 @@ app.post('/invites/accept', async (req, res) => {
 
     let assigned = false;
     if (invite.type === 'TASK' && invite.taskId) {
-      // назначить ответственным
       await prisma.task.update({
         where: { id: invite.taskId },
         data: { assigneeChatId: who }
@@ -614,7 +631,6 @@ app.post('/invites/accept', async (req, res) => {
       assigned = true;
     }
 
-    // погасить инвайт
     await prisma.inviteTicket.update({
       where: { token: tok },
       data: { status: 'USED' }
@@ -627,28 +643,7 @@ app.post('/invites/accept', async (req, res) => {
   }
 });
 
-
-
-app.post('/me', async (req, res) => {
-  try {
-    const { chatId, firstName, lastName, username } = req.body || {};
-    if (!chatId) return res.status(400).json({ ok: false, error: 'no_chatId' });
-
-    await prisma.user.upsert({
-      where: { chatId: String(chatId) },
-      create: { chatId: String(chatId), firstName, lastName, username },
-      update: { firstName, lastName, username },
-    });
-
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('POST /me error', e);
-    res.status(500).json({ ok: false });
-  }
-});
-
-
-
+/* ---------- Complete / Reopen ---------- */
 app.post('/tasks/:id/complete', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -699,10 +694,42 @@ app.post('/tasks/:id/complete', async (req, res) => {
   }
 });
 
+app.post('/tasks/:id/reopen', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const task = await prisma.task.findUnique({ where: { id } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
 
+    const curCol = await prisma.column.findUnique({ where: { id: task.columnId } });
+    if (!curCol) return res.status(500).json({ ok: false, error: 'column_not_found' });
 
+    const i = curCol.name.indexOf(GROUP_SEP);
+    const groupId = i > 0 ? curCol.name.slice(0, i) : null;
 
+    await ensureDefaultColumns(task.chatId, groupId);
+    const doingName = nameWithGroup(groupId, 'Doing');
+    const doing = await prisma.column.findFirst({ where: { chatId: task.chatId, name: doingName } });
+    if (!doing) return res.status(500).json({ ok: false, error: 'Doing column not found' });
 
+    const toIndex = await prisma.task.count({ where: { columnId: doing.id } });
+    const fromColumnId = task.columnId;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.task.updateMany({
+        where: { columnId: fromColumnId, order: { gt: task.order } },
+        data: { order: { decrement: 1 } },
+      });
+      return tx.task.update({ where: { id }, data: { columnId: doing.id, order: toIndex } });
+    });
+
+    res.json({ ok: true, task: updated });
+  } catch (e) {
+    console.error('POST /tasks/:id/reopen error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+/* ---------- Создание задачи (личная/групповая) ---------- */
 app.post('/tasks', async (req, res) => {
   try {
     const { chatId, text, groupId: rawGroupId } = req.body || {};
@@ -712,17 +739,15 @@ app.post('/tasks', async (req, res) => {
     const caller = String(chatId).trim();
     const groupId = resolveGroupId(rawGroupId);
 
-    // Куда писать задачу:
     let boardChatId = caller;
 
     if (groupId) {
-      // проверка прав + определяем владельца
       const allowed = await userIsGroupMemberOrOwner(caller, groupId);
       if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
 
       const g = await prisma.group.findUnique({ where: { id: groupId } });
       if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
-      boardChatId = g.ownerChatId; // <- ВСЕ групповые задачи у владельца
+      boardChatId = g.ownerChatId; // все групповые задачи у владельца
     }
 
     await ensureDefaultColumns(boardChatId, groupId);
@@ -742,7 +767,6 @@ app.post('/tasks', async (req, res) => {
       data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id },
     });
 
-    // уведомим автора запроса (инициатора), а не владельца
     try {
       await tg('sendMessage', {
         chat_id: caller,
@@ -750,7 +774,7 @@ app.post('/tasks', async (req, res) => {
         disable_notification: true,
         reply_markup: {
           inline_keyboard: [[
-            { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${caller}&task=${task.id}` } }
+            { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${caller}&task=${task.id}&group=${groupId || ''}` } }
           ]]
         }
       });
@@ -765,15 +789,6 @@ app.post('/tasks', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-
-
 /* ============ Groups REST ============ */
 app.get('/groups', async (req, res) => {
   try {
@@ -782,9 +797,7 @@ app.get('/groups', async (req, res) => {
 
     let myGroups = await prisma.group.findMany({ where: { ownerChatId: chatId } });
     if (myGroups.length === 0) {
-      const created = await prisma.group.create({
-        data: { ownerChatId: chatId, title: 'Моя группа' },
-      });
+      const created = await prisma.group.create({ data: { ownerChatId: chatId, title: 'Моя группа' } });
       myGroups = [created];
     }
 
@@ -793,10 +806,24 @@ app.get('/groups', async (req, res) => {
       include: { group: true },
     });
 
-    const groups = [
-      ...myGroups.map(g => ({ id: g.id, title: g.title, kind: 'own' })),
-      ...memberLinks.map(m => ({ id: m.group.id, title: m.group.title, kind: 'member' })),
+    const raw = [
+      ...myGroups.map(g => ({ id: g.id, title: g.title, ownerChatId: g.ownerChatId, kind: 'own' })),
+      ...memberLinks.map(m => ({ id: m.group.id, title: m.group.title, ownerChatId: m.group.ownerChatId, kind: 'member' })),
     ];
+
+    const ownerIds = Array.from(new Set(raw.map(g => g.ownerChatId)));
+    const owners = await prisma.user.findMany({ where: { chatId: { in: ownerIds } } });
+    const nameByChat = new Map(
+      owners.map(u => [
+        u.chatId,
+        [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.chatId
+      ])
+    );
+
+    const groups = raw.map(g => ({
+      ...g,
+      ownerName: nameByChat.get(g.ownerChatId) || null,
+    }));
 
     res.json({ ok: true, groups });
   } catch (e) {

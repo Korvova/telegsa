@@ -44,12 +44,25 @@ function makeParams(obj: Record<string, string | undefined>) {
 }
 
 /* ---------- Board / Tasks ---------- */
-export async function fetchBoard(chatId: string, groupId?: string) {
-  const searchParams = makeParams({ chatId, groupId: normGroup(groupId) });
-  return ky
-    .get(`${API_BASE}/tasks`, { searchParams })
+
+
+export async function fetchBoard(
+  chatId: string,
+  groupId?: string,
+  opts?: { onlyMine?: boolean }
+) {
+  const searchParams = makeParams({
+    chatId,
+    groupId: normGroup(groupId),
+    onlyMine: opts?.onlyMine ? '1' : undefined,
+  });
+  return ky.get(`${API_BASE}/tasks`, { searchParams })
     .json<{ ok: boolean; columns: Column[] }>();
 }
+
+
+
+
 
 export function moveTask(taskId: string, toColumnId: string, toIndex: number) {
   return ky
@@ -149,13 +162,11 @@ export function deleteTask(id: string) {
 }
 
 
-
 export type Group = {
   id: string;
   title: string;
   kind: 'own' | 'member';
-  ownerChatId?: string;
-  ownerName?: string | null;
+  ownerName?: string | null; // ⬅️ новое поле
 };
 
 export function reopenTask(id: string) {
@@ -167,6 +178,7 @@ export function getTaskWithGroup(id: string) {
     .get(`${API_BASE}/tasks/${id}`)
     .json<{ ok: boolean; task: Task; groupId: string | null; phase?: 'Inbox' | 'Doing' | 'Done' | string }>();
 }
+
 
 
 

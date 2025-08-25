@@ -71,41 +71,29 @@ function getTaskIdFromURL() {
 function TaskCard({
   text,
   order,
+  assigneeName,
   active,
   dragging,
   onClick,
-  assigneeName,
-  isDone,
 }: {
   text: string;
   order: number;
+  assigneeName?: string | null;
   active?: boolean;
   dragging?: boolean;
   onClick?: () => void;
-  assigneeName?: string | null;
-  isDone?: boolean;
 }) {
-  const bg = dragging ? '#0e1629' : isDone ? '#15251a' : active ? '#151b2b' : '#121722';
-  const border = isDone ? '#2c4a34' : '#2a3346';
-
+  const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
   return (
-    <div
-      onClick={onClick}
-      style={{
-        background: bg,
-        border: `1px solid ${border}`,
-        borderRadius: 12,
-        padding: 12,
-        userSelect: 'none',
-        cursor: 'pointer',
-        boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
-      }}
-    >
+    <div onClick={onClick} style={{
+      background: bg, border: '1px solid #2a3346', borderRadius: 12, padding: 12,
+      userSelect: 'none', cursor: 'pointer', boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
+    }}>
       <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
-      <div style={{ fontSize: 15 }}>{text}</div>
+      <div style={{ fontSize: 15, marginBottom: assigneeName ? 6 : 0 }}>{text}</div>
       {assigneeName ? (
-        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-          Ответственный: <span style={{ opacity: 1 }}>{assigneeName}</span>
+        <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>👤</span><span>{assigneeName}</span>
         </div>
       ) : null}
     </div>
@@ -116,41 +104,29 @@ function SortableTask({
   taskId,
   text,
   order,
+  assigneeName,
   onOpenTask,
   armed,
-  assigneeName,
-  isDone,
 }: {
   taskId: string;
   text: string;
   order: number;
+  assigneeName?: string | null;
   onOpenTask: (id: string) => void;
   armed?: boolean;
-  assigneeName?: string | null;
-  isDone?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: taskId });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    touchAction: armed || isDragging ? 'none' : 'auto',
-  };
-
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: taskId });
+  const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, touchAction: armed || isDragging ? 'none' : 'auto' };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard
-        text={text}
-        order={order}
-        active={armed}
-        dragging={isDragging}
-        onClick={() => onOpenTask(taskId)}
-        assigneeName={assigneeName}
-        isDone={isDone}
-      />
+      <TaskCard text={text} order={order} assigneeName={assigneeName} active={armed} dragging={isDragging} onClick={() => onOpenTask(taskId)} />
     </div>
   );
 }
+
+
+
 
 
 
@@ -262,6 +238,10 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
 
 /* ---------------- App ---------------- */
 export default function App() {
+
+
+const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(false);
+
   const chatId = useChatId();
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
   const [loading, setLoading] = useState(true);
@@ -341,14 +321,15 @@ useEffect(() => {
 
   const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
-  const goToGroup = (id: string) => {
-    console.log('[NAV] goToGroup', { id });
-    setSelectedGroupId(id);
-    setColumns([]); // мгновенно очищаем, чтобы не мигало
-    setLoading(true); // спиннер до первой загрузки
-    setGroupsPage('detail');
-    setGroupTab('kanban');
-  };
+const goToGroup = (id: string, mineOnly = false) => {
+  setSelectedGroupId(id);
+  setSelectedGroupMineOnly(mineOnly);
+  setColumns([]);
+  setLoading(true);
+  setGroupsPage('detail');
+  setGroupTab('kanban');
+};
+
 
   const backToGroupsList = () => {
     console.log('[NAV] backToGroupsList');
@@ -362,34 +343,25 @@ const resolvedGroupId = selectedGroup
 
 
   // единая загрузка доски
-  const loadBoard = useCallback(async () => {
-    if (!chatId) return;
-    const shouldLoad = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
-    console.log('[BOARD] loadBoard check ->', { chatId, resolvedGroupId, tab, groupsPage, groupTab, shouldLoad });
-    if (!shouldLoad) return;
+const loadBoard = useCallback(async () => {
+  if (!chatId) return;
+  const shouldLoad = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
+  if (!shouldLoad) return;
 
-    setLoading(true);
-    console.log('[BOARD] load START', { chatId, resolvedGroupId });
-    try {
-      const data = await fetchBoard(chatId, resolvedGroupId);
-      if (!data.ok) throw new Error('API error');
-      const cols = data.columns.map((c) => ({
-        ...c,
-        tasks: [...c.tasks].sort((a, b) => a.order - b.order),
-      }));
-      console.log('[BOARD] load OK', {
-        columns: cols.map((c) => ({ id: c.id, name: c.name, tasks: c.tasks.length })),
-      });
-      setColumns(cols);
-      setError(null);
-    } catch (e: any) {
-      console.error('[BOARD] load ERROR', e);
-      setError(e?.message || 'Ошибка загрузки');
-    } finally {
-      setLoading(false);
-      console.log('[BOARD] load END');
-    }
-  }, [chatId, resolvedGroupId, tab, groupsPage, groupTab]);
+  setLoading(true);
+  try {
+    const data = await fetchBoard(chatId, resolvedGroupId, { onlyMine: selectedGroupMineOnly });
+    if (!data.ok) throw new Error('API error');
+    const cols = data.columns.map((c) => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
+    setColumns(cols);
+    setError(null);
+  } catch (e:any) {
+    setError(e?.message || 'Ошибка загрузки');
+  } finally {
+    setLoading(false);
+  }
+}, [chatId, resolvedGroupId, tab, groupsPage, groupTab, selectedGroupMineOnly]);
+
 
 
 
@@ -413,22 +385,17 @@ useEffect(() => {
     loadBoard();
   }, [loadBoard]);
 
-  const reloadBoard = useCallback(async () => {
-    try {
-      console.log('[BOARD] reloadBoard', { chatId, resolvedGroupId });
-      const data = await fetchBoard(chatId, resolvedGroupId);
-      if (data.ok) {
-        const cols = data.columns.map((c) => ({
-          ...c,
-          tasks: [...c.tasks].sort((a, b) => a.order - b.order),
-        }));
-        setColumns(cols);
-        console.log('[BOARD] reload OK');
-      }
-    } catch (e) {
-      console.error('[BOARD] reload ERROR', e);
+const reloadBoard = useCallback(async () => {
+  try {
+    const data = await fetchBoard(chatId, resolvedGroupId, { onlyMine: selectedGroupMineOnly });
+    if (data.ok) {
+      const cols = data.columns.map(c => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
+      setColumns(cols);
     }
-  }, [chatId, resolvedGroupId]);
+  } catch (e) {
+    console.error('[BOARD] reload ERROR', e);
+  }
+}, [chatId, resolvedGroupId, selectedGroupMineOnly]);
 
 
 
@@ -525,26 +492,24 @@ const openTask = (id: string) => {
 
 
 // Шагаем назад в истории (убираем ?task), а контекст группы ставим сами.
-// Шага назад в интерфейсе без зависимости от history.back()
 const closeTask = (groupIdFromTask?: string | null) => {
-  // Куда возвращаемся:
   if (typeof groupIdFromTask !== 'undefined') {
     if (groupIdFromTask) {
       setSelectedGroupId(groupIdFromTask);
+      const g = groups.find((x) => x.id === groupIdFromTask);
+      setSelectedGroupMineOnly(g?.kind === 'member'); // участник → смотрим только свои
     } else {
       const my = groups.find((g) => g.title === 'Моя группа');
-      if (my) setSelectedGroupId(my.id);
+      if (my) {
+        setSelectedGroupId(my.id);
+        setSelectedGroupMineOnly(false);
+      }
     }
     setGroupsPage('detail');
   } else {
-    // deep-link без знания группы → в список групп
     setGroupsPage('list');
   }
-
-  // спрятать системную кнопку
   WebApp?.BackButton?.hide?.();
-
-  // Всегда убираем ?task вручную — НЕ history.back()
   const url = new URL(window.location.href);
   url.searchParams.delete('task');
   window.history.replaceState(null, '', url.toString());
@@ -775,7 +740,16 @@ useEffect(() => {
 
       {tab === 'groups' ? (
         groupsPage === 'list' ? (
-          <GroupList chatId={chatId} groups={groups} onReload={reloadGroups} onOpen={goToGroup} />
+        
+<GroupList
+  chatId={chatId}
+  groups={groups}
+  onReload={reloadGroups}
+  onOpen={goToGroup}
+/>
+
+
+
         ) : (
           <>
             <GroupTabs current={groupTab} onChange={setGroupTab} />
@@ -1049,18 +1023,18 @@ function ColumnView({
             touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
-       {column.tasks.map((t) => (
+{column.tasks.map((t) => (
   <SortableTask
     key={t.id}
     taskId={t.id}
     text={t.text}
     order={t.order}
+    assigneeName={t.assigneeName}
     onOpenTask={onOpenTask}
     armed={activeId === t.id}
-    assigneeName={t.assigneeName}
-    isDone={column.name === 'Done'}
   />
 ))}
+
           {column.tasks.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>Пусто</div>}
         </div>
       </SortableContext>
