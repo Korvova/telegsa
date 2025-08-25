@@ -10,7 +10,12 @@ app.use(express.json());
 
 /* ---------- Telegram helper ---------- */
 async function tg(method, payload) {
-  const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
+
+
+const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
+
+
+
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -358,11 +363,17 @@ const sent = await tg('sendMessage', {
   chat_id: chatId,
   text: `Задача создана: ${task.text}`,
   disable_notification: true,
-  reply_markup: {
-    inline_keyboard: [[
-      { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${task.id}&group=${groupId || ''}` } }
-    ]]
-  }
+
+
+
+reply_markup: {
+  inline_keyboard: [[
+    { text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}/${process.env.APP_SHORT_NAME}?startapp=task_${task.id}` }
+  ]]
+}
+
+
+
 });
 try {
   if (sent?.ok && sent.result?.message_id) {
@@ -392,11 +403,19 @@ const sent = await tg('sendMessage', {
   chat_id: chatId,
   text: `Задача создана: ${created.text}`,
   disable_notification: true,
-  reply_markup: {
-    inline_keyboard: [[
-      { text: 'Открыть задачу', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${chatId}&task=${created.id}&group=` } }
-    ]]
-  }
+
+
+
+reply_markup: {
+  inline_keyboard: [[
+    { text: 'Открыть задачу',
+      url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }
+  ]]
+}
+
+
+
+
 });
 try {
   if (sent?.ok && sent.result?.message_id) {
@@ -788,20 +807,28 @@ app.post('/tasks/:id/forward', async (req, res) => {
       return res.json({ ok: true, method: 'forward' });
     }
 
-    // 2) Fallback для старых задач — отправим новое сообщение с кнопкой “Открыть”
-    const groupId = task?.column ? parseGroupIdFromColumnName(task.column.name) : null;
-    const url = `${process.env.PUBLIC_WEBAPP_URL}?from=${target}&task=${task.id}&group=${groupId || ''}`;
 
-    const resCopy = await tg('sendMessage', {
-      chat_id: target,
-      text: `Задача: ${task.text}`,
-      disable_notification: true,
-      reply_markup: {
-        inline_keyboard: [[
-          { text: 'Открыть задачу', web_app: { url } }
-        ]]
-      }
-    });
+
+
+
+
+    // 2) Fallback для старых задач — отправим новое сообщение с кнопкой “Открыть”
+const startappUrl =
+  `https://t.me/${botUser}?startapp=task_${taskId}`;
+
+const resCopy = await tg('sendMessage', {
+  chat_id: target,
+  text: `Задача: ${task.text}`,
+  disable_notification: true,
+  reply_markup: {
+    inline_keyboard: [[
+      { text: 'Открыть задачу', url: startappUrl }
+    ]]
+  }
+});
+
+
+
     if (!resCopy?.ok) {
       return res.status(502).json({ ok: false, error: 'send_failed', details: resCopy?.description || '' });
     }
@@ -816,31 +843,29 @@ app.post('/tasks/:id/forward', async (req, res) => {
 
 
 // === Prepared Share for Mini Apps (savePreparedInlineMessage) ===
+// === Prepared Share for Mini Apps (savePreparedInlineMessage) ===
 // POST /tasks/:id/share-prepared
 // body: { userId: number, allowGroups?: boolean, withButton?: boolean }
 app.post('/tasks/:id/share-prepared', async (req, res) => {
   try {
     const taskId = String(req.params.id);
-    const { userId, allowGroups = false, withButton = true } = req.body || {};
+    const { userId, allowGroups = true, withButton = true } = req.body || {};
     if (!userId) return res.status(400).json({ ok: false, error: 'no_user_id' });
 
     const task = await prisma.task.findUnique({ where: { id: taskId } });
     if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
 
-    const botUser  = process.env.BOT_USERNAME;          // без @
-    const appShort = process.env.APP_SHORT_NAME;         // short name mini app
-    const webAppUrl = process.env.PUBLIC_WEBAPP_URL;     // https://rms-bot.com/telegsar
-    if (!botUser || !appShort || !webAppUrl) {
-      console.error('[share-prepared] missing .env', {
-        botUser: !!botUser, appShort: !!appShort, webAppUrl: !!webAppUrl
-      });
+    const botUser  = process.env.BOT_USERNAME;      // без @ (пример: telegsar_bot)
+    const appShort = process.env.APP_SHORT_NAME;     // короткое имя Mini App из BotFather
+    if (!botUser || !appShort) {
+      console.error('[share-prepared] missing .env', { botUser: !!botUser, appShort: !!appShort });
       return res.status(500).json({ ok: false, error: 'missing_bot_env' });
     }
 
     const text = `Задача: ${task.text || ''}`.trim().slice(0, 4096);
-    const startapp = `https://t.me/${botUser}/${appShort}?startapp=task_${taskId}`;
+  const startappUrl =
+  `https://t.me/${botUser}?startapp=task_${taskId}`;
 
-    // Сконструируем result (INLINE) — сначала с кнопкой (если просили)
     const unique = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
     const baseResult = {
       type: 'article',
@@ -849,32 +874,34 @@ app.post('/tasks/:id/share-prepared', async (req, res) => {
       input_message_content: { message_text: text }
     };
 
-    const withUrlButton = {
-      ...baseResult,
-      reply_markup: { inline_keyboard: [[ { text: 'Открыть задачу', url: startapp } ]] }
-    };
+    const withUrlButton = withButton
+      ? {
+          ...baseResult,
+          reply_markup: {
+            inline_keyboard: [[ { text: 'Открыть задачу', url: startappUrl } ]]
+          }
+        }
+      : baseResult;
 
-    const payloadBase = {
+    const payload = {
       user_id: Number(userId),
       allow_user_chats: true,
       allow_group_chats: !!allowGroups,
       allow_channel_chats: !!allowGroups,
-      allow_bot_chats: false
+      allow_bot_chats: false,
+      result: withUrlButton
     };
 
-    // 1) Пытаемся С КНОПКОЙ (если withButton=true)
-    let payload = { ...payloadBase, result: withButton ? withUrlButton : baseResult };
-    console.log('[share-prepared:req-1]', { taskId, userId, allowGroups, withButton, resultId: payload.result.id, startapp });
-
+    console.log('[share-prepared:req]', { taskId, userId, allowGroups, withButton, resultId: payload.result.id, startappUrl });
     let tgResp = await tg('savePreparedInlineMessage', payload);
-    console.log('[savePreparedInlineMessage:resp-1]', JSON.stringify(tgResp));
+    console.log('[share-prepared:resp]', JSON.stringify(tgResp));
 
-    // 2) Если не ок или нет id — пробуем БЕЗ КНОПКИ (как в твоём curl)
+    // Фолбэк на "минимальный" вариант (как у тебя в curl), если вдруг Telegram откажет
     if (!tgResp?.ok || !(tgResp?.result?.id || tgResp?.result?.prepared_message_id)) {
-      payload = { ...payloadBase, result: baseResult };
-      console.warn('[share-prepared:retry-minimal]', { resultId: payload.result.id });
-      tgResp = await tg('savePreparedInlineMessage', payload);
-      console.log('[savePreparedInlineMessage:resp-2]', JSON.stringify(tgResp));
+      const fallback = { ...payload, result: baseResult };
+      console.warn('[share-prepared:fallback-minimal]', { resultId: fallback.result.id });
+      tgResp = await tg('savePreparedInlineMessage', fallback);
+      console.log('[share-prepared:resp-fallback]', JSON.stringify(tgResp));
     }
 
     const preparedId =
@@ -891,7 +918,7 @@ app.post('/tasks/:id/share-prepared', async (req, res) => {
       });
     }
 
-    return res.json({ ok: true, preparedMessageId: preparedId, minimized: !withButton && true });
+    return res.json({ ok: true, preparedMessageId: preparedId });
   } catch (e) {
     console.error('POST /tasks/:id/share-prepared error:', e);
     res.status(500).json({ ok: false, error: 'server_error' });
@@ -945,12 +972,19 @@ app.post('/tasks', async (req, res) => {
     chat_id: caller,
     text: `Новая задача: ${task.text}`,
     disable_notification: true,
-    reply_markup: {
-      inline_keyboard: [[
-        { text: 'Открыть', web_app: { url: `${process.env.PUBLIC_WEBAPP_URL}?from=${caller}&task=${task.id}&group=${groupId || ''}` } }
-      ]]
-    }
+
+
+reply_markup: {
+  inline_keyboard: [[
+ { text: 'Открыть задачу',
+  url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }
+  ]]
+}
+
   });
+
+
+
   try {
     if (sent?.ok && sent.result?.message_id) {
       await prisma.task.update({
