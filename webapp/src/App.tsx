@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import WebApp from '@twa-dev/sdk';
 import BottomNav, { type TabKey } from './BottomNav';
 import GroupEdit from './components/GroupEdit';
+import WriteAccessGate from './WriteAccessGate';
 
 import GroupMembers from './components/GroupMembers';
 import NotificationsView from './NotificationsView';
@@ -299,6 +300,15 @@ export default function App() {
     console.log('[NAV] backToGroupsList');
     setGroupsPage('list');
   };
+
+
+
+
+
+
+
+
+
 
   // выбранная группа
   const selectedGroup = groups.find((g) => g.id === selectedGroupId);
@@ -635,212 +645,243 @@ export default function App() {
   };
 
   /* ---------------- render ---------------- */
-  if (taskId) return <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />;
 
-  const isBoardView = tab === 'groups' && groupsPage === 'detail' && groupTab === 'kanban';
-  if (loading && isBoardView) return <div style={{ padding: 16 }}>Загрузка…</div>;
-  if (error) return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
+/* ---------------- render ---------------- */
+return (
+  <>
+    {/* Гейт всегда смонтирован сверху. Если доступ не выдан — перекрывает всё, включая TaskView */}
+    <WriteAccessGate />
 
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0f1216',
-        color: '#e8eaed',
-        padding: 16,
-        paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
-      }}
-    >
-      {/* Шапка */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {tab === 'groups' && groupsPage === 'detail' ? (
-            <button
-              onClick={backToGroupsList}
-              title="К списку групп"
-              style={{
-                background: 'transparent',
-                border: '1px solid #2a3346',
-                color: '#e8eaed',
-                borderRadius: 10,
-                padding: '6px 8px',
-                cursor: 'pointer',
-              }}
-            >
-              ⟵ Назад
-            </button>
-          ) : null}
+    {taskId ? (
+      <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
+    ) : (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0f1216',
+          color: '#e8eaed',
+          padding: 16,
+          paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        {/* Шапка */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
-            {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
+            {tab === 'groups' && groupsPage === 'detail' ? (
               <button
-                title="Переименовать группу"
-                onClick={() => setShowGroupEdit(true)}
+                onClick={backToGroupsList}
+                title="К списку групп"
                 style={{
                   background: 'transparent',
-                  border: 'none',
-                  color: '#8aa0ff',
+                  border: '1px solid #2a3346',
+                  color: '#e8eaed',
+                  borderRadius: 10,
+                  padding: '6px 8px',
                   cursor: 'pointer',
-                  fontSize: 14,          // мелкий шрифт, как просил
-                  padding: 2,
-                  lineHeight: 1,
                 }}
               >
-                ✏️
+                ⟵ Назад
               </button>
             ) : null}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+              {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
+                <button
+                  title="Переименовать группу"
+                  onClick={() => setShowGroupEdit(true)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#8aa0ff',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    padding: 2,
+                    lineHeight: 1,
+                  }}
+                >
+                  ✏️
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
+
+        {tab === 'groups' ? (
+          groupsPage === 'list' ? (
+            <GroupList
+              chatId={chatId}
+              groups={groups}
+              onReload={reloadGroups}
+              onOpen={goToGroup}
+            />
+          ) : (
+            <>
+              <GroupTabs current={groupTab} onChange={setGroupTab} />
+
+{groupTab === 'kanban' ? (
+  // ✅ теперь loading и error используются
+  loading ? (
+    <div style={{ padding: 16 }}>Загрузка…</div>
+  ) : error ? (
+    <div style={{ padding: 16, color: 'crimson' }}>{error}</div>
+  ) : (
+    <>
+      {/* Создание */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <NewTaskBar
+          chatId={chatId}
+          groupId={resolvedGroupId}
+          onCreated={reloadBoard}
+        />
+        <AddColumnButton
+          chatId={chatId}
+          groupId={resolvedGroupId}
+          onAdded={reloadBoard}
+        />
       </div>
 
-      {tab === 'groups' ? (
-        groupsPage === 'list' ? (
-          <GroupList
-            chatId={chatId}
-            groups={groups}
-            onReload={reloadGroups}
-            onOpen={goToGroup}
-          />
-        ) : (
-          <>
-            <GroupTabs current={groupTab} onChange={setGroupTab} />
-
-            {groupTab === 'kanban' ? (
-              <>
-                {/* Создание */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <NewTaskBar chatId={chatId} groupId={resolvedGroupId} onCreated={reloadBoard} />
-                  <AddColumnButton chatId={chatId} groupId={resolvedGroupId} onAdded={reloadBoard} />
-                </div>
-
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCorners}
-                  onDragStart={handleDragStart}
-                  onDragMove={handleDragMove}
-                  onDragOver={handleDragOver}
-                  onDragEnd={handleDragEnd}
-                  autoScroll={false}
-                >
-                  {/* Горизонтальный холст */}
-                  <div
-                    ref={scrollerRef}
-                    style={{
-                      overflowX: 'auto',
-                      overflowY: 'hidden',
-                      whiteSpace: 'nowrap',
-                      WebkitOverflowScrolling: 'touch',
-                      overscrollBehaviorX: 'contain',
-                      paddingBottom: 8,
-                      touchAction: dragging ? 'none' : 'pan-x',
-                    }}
-                  >
-                    {columns
-                      .sort((a, b) => a.order - b.order)
-                      .map((col) => (
-                        <ColumnView
-                          key={col.id}
-                          column={col}
-                          onOpenTask={openTask}
-                          onRenamed={reloadBoard}
-                          activeId={activeId}
-                          dragging={dragging}
-                        />
-                      ))}
-                  </div>
-
-                  <DragOverlay>
-                    {activeId
-                      ? (() => {
-                          const t = columns.flatMap((c) => c.tasks).find((t) => t.id === activeId);
-                          return t ? <TaskCard text={t.text} order={t.order} dragging /> : null;
-                        })()
-                      : null}
-                  </DragOverlay>
-                </DndContext>
-              </>
-            ) : groupTab === 'process' ? (
-              <div
-                style={{
-                  padding: 16,
-                  background: '#1b2030',
-                  border: '1px solid #2a3346',
-                  borderRadius: 16,
-                  minHeight: 240,
-                }}
-              >
-                Процесс 🔀: скоро подключим редактор связей (React Flow).
-              </div>
-
-
-
-
-      ) : (
-<GroupMembers
-  group={selectedGroup as any}
-  chatId={chatId}
-  isOwner={isOwnerOfSelected}
-  onChanged={async () => {
-    await reloadGroups();
-    // Без проверки — loadBoard сам ничего не сделает, если сейчас не kanban
-    await loadBoard();
-  }}
-  onLeftGroup={() => {
-    setGroupsPage('list');
-    setSelectedGroupId('');
-    reloadGroups();
-  }}
-/>
-
-)
-
-            
-            
-            
-            }
-          </>
-        )
-      ) : (
-         tab === 'notifications' ? <NotificationsView /> : <TabPlaceholder tab={tab} />
-      )}
-
-      {/* Нижняя панель */}
-      <BottomNav
-        current={tab}
-        onChange={(t) => {
-          console.log('[NAV] bottom change', t);
-          setTab(t);
-          try {
-            (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
-          } catch {}
-          if (t !== 'groups') setGroupsPage('list');
-        }}
-      />
-
-      {/* 🔹 Модалка редактирования группы — в корне App */}
-      {showGroupEdit && selectedGroup ? (
-        <GroupEdit
-          group={selectedGroup as any}
-          chatId={chatId}
-          onClose={() => setShowGroupEdit(false)}
-          onRenamed={async (newTitle) => {
-            await reloadGroups();
-            // если это текущая группа — обновим локальный заголовок без перезахода
-            setGroups((prev: Group[]) =>
-              prev.map((g: Group) => g.id === selectedGroup.id ? { ...g, title: newTitle } as Group : g)
-            );
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        autoScroll={false}
+      >
+        {/* Горизонтальный холст */}
+        <div
+          ref={scrollerRef}
+          style={{
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            whiteSpace: 'nowrap',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorX: 'contain',
+            paddingBottom: 8,
+            touchAction: dragging ? 'none' : 'pan-x',
           }}
-          onDeleted={async () => {
-            await reloadGroups();
-            // после удаления уходим на список групп
-            setGroupsPage('list');
-            setSelectedGroupId('');
+        >
+          {columns
+            .sort((a, b) => a.order - b.order)
+            .map((col) => (
+              <ColumnView
+                key={col.id}
+                column={col}
+                onOpenTask={openTask}
+                onRenamed={reloadBoard}
+                activeId={activeId}
+                dragging={dragging}
+              />
+            ))}
+        </div>
+
+        <DragOverlay>
+          {activeId
+            ? (() => {
+                const t = columns
+                  .flatMap((c) => c.tasks)
+                  .find((t) => t.id === activeId);
+                return t ? (
+                  <TaskCard text={t.text} order={t.order} dragging />
+                ) : null;
+              })()
+            : null}
+        </DragOverlay>
+      </DndContext>
+    </>
+  )
+) : groupTab === 'process' ? (
+  <div
+    style={{
+      padding: 16,
+      background: '#1b2030',
+      border: '1px solid #2a3346',
+      borderRadius: 16,
+      minHeight: 240,
+    }}
+  >
+    Процесс 🔀: скоро подключим редактор связей (React Flow).
+  </div>
+) : (
+  <GroupMembers
+    group={selectedGroup as any}
+    chatId={chatId}
+    isOwner={isOwnerOfSelected}
+    onChanged={async () => {
+      await reloadGroups();
+      await loadBoard();
+    }}
+    onLeftGroup={() => {
+      setGroupsPage('list');
+      setSelectedGroupId('');
+      reloadGroups();
+    }}
+  />
+)}
+
+            </>
+          )
+        ) : tab === 'notifications' ? (
+          <NotificationsView />
+        ) : (
+          <TabPlaceholder tab={tab} />
+        )}
+
+        {/* Нижняя панель */}
+        <BottomNav
+          current={tab}
+          onChange={(t) => {
+            console.log('[NAV] bottom change', t);
+            setTab(t);
+            try {
+              (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(
+                'light',
+              );
+            } catch {}
+            if (t !== 'groups') setGroupsPage('list');
           }}
         />
-      ) : null}
-    </div>
-  );
+
+        {/* 🔹 Модалка редактирования группы — в корне App */}
+        {showGroupEdit && selectedGroup ? (
+          <GroupEdit
+            group={selectedGroup as any}
+            chatId={chatId}
+            onClose={() => setShowGroupEdit(false)}
+            onRenamed={async (newTitle) => {
+              await reloadGroups();
+              // если это текущая группа — обновим локальный заголовок без перезахода
+              setGroups((prev: Group[]) =>
+                prev.map((g: Group) =>
+                  g.id === selectedGroup.id
+                    ? ({ ...g, title: newTitle } as Group)
+                    : g,
+                ),
+              );
+            }}
+            onDeleted={async () => {
+              await reloadGroups();
+              // после удаления уходим на список групп
+              setGroupsPage('list');
+              setSelectedGroupId('');
+            }}
+          />
+        ) : null}
+      </div>
+    )}
+  </>
+);
 }
+
 
 /* ---------------- subviews ---------------- */
 function NewTaskBar({ chatId, groupId, onCreated }: { chatId: string; groupId?: string; onCreated: () => void }) {
