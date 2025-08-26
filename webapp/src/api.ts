@@ -270,3 +270,21 @@ export async function leaveGroup(groupId: string, chatId: string): Promise<{ ok:
   });
   return { ok: r.ok };
 }
+
+
+
+// src/api.ts
+export async function prepareGroupShareMessage(groupId: string, params: {
+  userId: number;
+  allowGroups?: boolean;
+  withButton?: boolean;
+}): Promise<{ ok: boolean; preparedMessageId?: string }> {
+  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${groupId}/share-prepared`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!r.ok) return { ok: false };
+  return r.json();
+}
+

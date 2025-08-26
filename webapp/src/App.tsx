@@ -4,6 +4,7 @@ import BottomNav, { type TabKey } from './BottomNav';
 import GroupEdit from './components/GroupEdit';
 
 import GroupMembers from './components/GroupMembers';
+import NotificationsView from './NotificationsView';
 
 import TaskView from './TaskView';
 import {
@@ -800,7 +801,7 @@ export default function App() {
           </>
         )
       ) : (
-        <TabPlaceholder tab={tab} />
+         tab === 'notifications' ? <NotificationsView /> : <TabPlaceholder tab={tab} />
       )}
 
       {/* Нижняя панель */}
