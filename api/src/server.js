@@ -4,6 +4,9 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { tasksRouter } from './routes/tasks.js';
 
+import { notificationsRouter } from './routes/notifications.js';
+
+
 const prisma = new PrismaClient();
 const app = express();
 app.use(express.json());
@@ -171,6 +174,12 @@ async function updateChatCommands(chatId) {
 
 /* ---------- Health ---------- */
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'telegsar-api' }));
+
+/* ---------- Оповещение ---------- */
+
+app.use('/notifications', notificationsRouter({ prisma }));
+
+
 
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
@@ -557,6 +566,7 @@ app.patch('/tasks/:id', async (req, res) => {
     const id = String(req.params.id);
     const { text, assigneeChatId } = req.body || {};
 
+    // Сформируем patch
     const data = {};
     if (typeof text === 'string' && text.trim()) data.text = text.trim();
     if (typeof assigneeChatId === 'string' || assigneeChatId === null) {
@@ -566,13 +576,57 @@ app.patch('/tasks/:id', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'nothing_to_update' });
     }
 
+    // 1) До обновления
+    const before = await prisma.task.findUnique({ where: { id } });
+    if (!before) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    // 2) Обновляем
     const updated = await prisma.task.update({ where: { id }, data });
+
+    // 3) Триггер: появился ответственный (assigneeChatId: null -> chatId)
+    try {
+      const was = before?.assigneeChatId ? String(before.assigneeChatId) : null;
+      const now = updated?.assigneeChatId ? String(updated.assigneeChatId) : null;
+
+      if (was !== now && now) {
+        // Имя назначенного
+        let assigneeName = null;
+        try {
+          const u = await prisma.user.findUnique({ where: { chatId: now } });
+          assigneeName = u
+            ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || now
+            : now;
+        } catch {}
+
+        // Настройки уведомлений: используем chatId как telegramId
+        const st = await prisma.notificationSetting.findUnique({
+          where: { telegramId: now },
+          select: { receiveTaskAccepted: true, writeAccessGranted: true },
+        });
+
+        if (!st || (st.receiveTaskAccepted && st.writeAccessGranted)) {
+          const actorName = assigneeName || 'Пользователь';
+          const title = updated.text || 'Без названия';
+
+          await tg('sendMessage', {
+            chat_id: now, // пишем назначенному
+            text: `👤 <b>${actorName}</b> принял(а) задачу: <b>${title}</b>`,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('notify task accepted error', e);
+    }
+
     res.json({ ok: true, task: updated });
   } catch (e) {
     console.error('PATCH /tasks/:id error:', e);
     res.status(500).json({ ok: false });
   }
 });
+
 
 /* ---------- Invites ---------- */
 app.post('/invites', async (req, res) => {
@@ -634,6 +688,11 @@ app.post('/invites', async (req, res) => {
   }
 });
 
+
+
+
+
+
 app.post('/invites/accept', async (req, res) => {
   try {
     const { chatId, token } = req.body || {};
@@ -660,6 +719,39 @@ app.post('/invites/accept', async (req, res) => {
         data: { assigneeChatId: who }
       });
       assigned = true;
+
+      // 🔔 уведомление ответственному
+      try {
+        const taskAfter = await prisma.task.findUnique({ where: { id: invite.taskId } });
+        const now = String(who);
+        const st = await prisma.notificationSetting.findUnique({
+          where: { telegramId: now },
+          select: { receiveTaskAccepted: true, writeAccessGranted: true },
+        });
+
+        // имя пригласившего
+        let actorName = null;
+        try {
+          const actor = await prisma.user.findUnique({ where: { chatId: String(invite.invitedByChatId) } });
+          actorName = actor
+            ? [actor.firstName, actor.lastName].filter(Boolean).join(' ') || actor.username || String(invite.invitedByChatId)
+            : String(invite.invitedByChatId);
+        } catch {}
+
+        const title = taskAfter?.text || 'Без названия';
+        const textMsg = `👤 <b>${actorName || 'Пользователь'}</b> принял(а) задачу: <b>${title}</b>`;
+
+        if (!st || (st.receiveTaskAccepted && st.writeAccessGranted)) {
+          await tg('sendMessage', {
+            chat_id: now,
+            text: textMsg,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+          });
+        }
+      } catch (e) {
+        console.error('notify via invites/accept error', e);
+      }
     }
 
     await prisma.inviteTicket.update({
@@ -673,6 +765,11 @@ app.post('/invites/accept', async (req, res) => {
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
+
+
+
+
+
 
 /* ---------- Complete / Reopen ---------- */
 app.post('/tasks/:id/complete', async (req, res) => {
@@ -692,6 +789,7 @@ app.post('/tasks/:id/complete', async (req, res) => {
     const done = await prisma.column.findFirst({ where: { chatId: task.chatId, name: doneName } });
     if (!done) return res.status(500).json({ ok: false, error: 'Done column not found' });
 
+    // Уже в Done → только переупорядочивание
     if (task.columnId === done.id) {
       const count = await prisma.task.count({ where: { columnId: done.id } });
       const lastIndex = count - 1;
@@ -704,9 +802,11 @@ app.post('/tasks/:id/complete', async (req, res) => {
         });
         return tx.task.update({ where: { id }, data: { order: lastIndex } });
       });
+
       return res.json({ ok: true, task: updated });
     }
 
+    // Перенос в Done
     const toIndex = await prisma.task.count({ where: { columnId: done.id } });
     const fromColumnId = task.columnId;
 
@@ -718,12 +818,69 @@ app.post('/tasks/:id/complete', async (req, res) => {
       return tx.task.update({ where: { id }, data: { columnId: done.id, order: toIndex } });
     });
 
+    // 🔔 Уведомляем ПОСТАНОВЩИКА (sourceChatId), если включено receiveTaskCompletedMine
+    (async () => {
+      try {
+        const creatorId = task?.sourceChatId ? String(task.sourceChatId) : null;
+        if (!creatorId) return;
+
+        const st = await prisma.notificationSetting.findUnique({
+          where: { telegramId: creatorId },
+          select: { receiveTaskCompletedMine: true, writeAccessGranted: true },
+        });
+
+        // Если настроек нет — трактуем как включено (дефолт true), но писать можно только если writeAccessGranted=true
+        const allow =
+          (!st && false /* без writeAccessGranted писать нельзя */) ||
+          (!!st && st.receiveTaskCompletedMine && st.writeAccessGranted);
+
+        if (!allow) return;
+
+        // Кто завершил — берём назначенного (если есть)
+        let whoName = null;
+        try {
+          const aid = updated?.assigneeChatId ? String(updated.assigneeChatId) : null;
+          if (aid) {
+            const u = await prisma.user.findUnique({ where: { chatId: aid } });
+            whoName = u
+              ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || aid
+              : null;
+          }
+        } catch {}
+
+        const title = updated?.text || 'Без названия';
+        const textMsg = whoName
+          ? `✅ <b>${whoName}</b> завершил(а) задачу: <b>${title}</b>`
+          : `✅ Задача завершена: <b>${title}</b>`;
+
+        await tg('sendMessage', {
+          chat_id: creatorId,
+          text: textMsg,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        });
+      } catch (err) {
+        console.error('notify task completed (creator) error', err);
+      }
+    })().catch(() => { /* noop */ });
+
     res.json({ ok: true, task: updated });
   } catch (e) {
     console.error('POST /tasks/:id/complete error:', e);
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
 
 app.post('/tasks/:id/reopen', async (req, res) => {
   try {
@@ -1345,6 +1502,98 @@ app.post('/groups/:id/leave', async (req, res) => {
 
 
 
+// === Prepared Share for GROUP invites ===
+// POST /groups/:id/share-prepared
+// body: { userId: number, allowGroups?: boolean, withButton?: boolean }
+app.post('/groups/:id/share-prepared', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const { userId, allowGroups = true, withButton = true } = req.body || {};
+    if (!userId) return res.status(400).json({ ok: false, error: 'no_user_id' });
+
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+
+    const botUser  = process.env.BOT_USERNAME;      // без @
+    const appShort = process.env.APP_SHORT_NAME;    // короткое имя Mini App из BotFather
+    if (!botUser || !appShort) {
+      console.error('[group share-prepared] missing .env', { botUser: !!botUser, appShort: !!appShort });
+      return res.status(500).json({ ok: false, error: 'missing_bot_env' });
+    }
+
+    // Создаём GROUP-инвайт и кладём join__<groupId>__<token> в кнопку
+    const invite = await prisma.inviteTicket.create({
+      data: {
+        token: makeToken(),
+        type: 'GROUP',
+        status: 'ACTIVE',
+        groupId: groupId,
+        taskId: null,
+        invitedByChatId: String(userId),
+      }
+    });
+
+    const text = `Приглашаю тебя в группу: ${g.title}`.slice(0, 4096);
+    const startappUrl = `https://t.me/${botUser}?startapp=join__${groupId}__${invite.token}`;
+
+    const unique = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+    const baseResult = {
+      type: 'article',
+      id: `group_${groupId}_${unique}`.slice(0,64),
+      title: `Группа: ${g.title}`.slice(0, 64),
+      input_message_content: { message_text: text }
+    };
+
+    const withUrlButton = withButton
+      ? {
+          ...baseResult,
+          reply_markup: {
+            inline_keyboard: [[ { text: 'Принять приглашение', url: startappUrl } ]]
+          }
+        }
+      : baseResult;
+
+    const payload = {
+      user_id: Number(userId),
+      allow_user_chats: true,
+      allow_group_chats: !!allowGroups,
+      allow_channel_chats: !!allowGroups,
+      allow_bot_chats: false,
+      result: withUrlButton
+    };
+
+    console.log('[group share-prepared:req]', { groupId, userId, resultId: payload.result.id, startappUrl });
+    let tgResp = await tg('savePreparedInlineMessage', payload);
+    console.log('[group share-prepared:resp]', JSON.stringify(tgResp));
+
+    // Фолбэк на «минимальный» вариант, если TG откажет
+    if (!tgResp?.ok || !(tgResp?.result?.id || tgResp?.result?.prepared_message_id)) {
+      const fallback = { ...payload, result: baseResult };
+      console.warn('[group share-prepared:fallback-minimal]', { resultId: fallback.result.id });
+      tgResp = await tg('savePreparedInlineMessage', fallback);
+      console.log('[group share-prepared:resp-fallback]', JSON.stringify(tgResp));
+    }
+
+    const preparedId =
+      tgResp?.result?.id ||
+      tgResp?.result?.prepared_message_id ||
+      tgResp?.prepared_message_id ||
+      null;
+
+    if (!tgResp?.ok || !preparedId) {
+      return res.status(502).json({
+        ok: false,
+        error: 'tg_save_prepared_failed',
+        details: tgResp?.description || JSON.stringify(tgResp)
+      });
+    }
+
+    return res.json({ ok: true, preparedMessageId: preparedId });
+  } catch (e) {
+    console.error('POST /groups/:id/share-prepared error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
 
 
 

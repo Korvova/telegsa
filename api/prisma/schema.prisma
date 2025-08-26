@@ -112,6 +112,19 @@ model GroupShortcut {
   @@index([groupId])
 }
 
+
+model NotificationSetting {
+  telegramId                 String   @id
+  receiveTaskAccepted        Boolean  @default(true)
+  writeAccessGranted         Boolean  @default(false)
+  receiveTaskCompletedMine   Boolean  @default(true)  // ⬅️ НОВОЕ
+  updatedAt                  DateTime @updatedAt
+}
+
+
+
+
+
 model InviteTicket {
   id     String       @id @default(cuid())
   token  String       @unique
