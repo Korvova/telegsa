@@ -1,7 +1,10 @@
+// webapp/src/components/ResponsibleActions.tsx
 import React, { useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { createAssignInvite, assignSelf, pingMemberDM } from '../api/assign';
-import { prepareShareMessage } from '../api'; // ⬅️ добавили
+import { prepareShareMessage } from '../api';
+import { buildFullSharePayload } from '../share';
+
 
 
 export type Member = {
@@ -16,13 +19,10 @@ type Props = {
   taskTitle: string;
   groupId?: string | null;
   meChatId: string;
-  // кто сейчас ответственный (чтобы прятать "сделать себя", если уже ты)
   currentAssigneeChatId?: string | null;
-  // список участников текущей группы (для пункта "Выбрать из группы")
   members?: Member[];
-  // можно ли назначать (например, постановщик/владелец) — иначе показываем только "сделать себя"
   canAssign?: boolean;
-  onAssigned?: (newAssigneeChatId: string) => void; // уведомить родителя, чтобы обновил UI
+  onAssigned?: (newAssigneeChatId: string) => void;
 };
 
 export default function ResponsibleActions({
@@ -34,7 +34,6 @@ export default function ResponsibleActions({
   canAssign = true,
   onAssigned,
 }: Props) {
-
   const [open, setOpen] = useState(false);
   const [subView, setSubView] = useState<'root' | 'members'>('root');
   const [busy, setBusy] = useState(false);
@@ -43,7 +42,6 @@ export default function ResponsibleActions({
     () => currentAssigneeChatId && String(currentAssigneeChatId) === String(meChatId),
     [currentAssigneeChatId, meChatId]
   );
-
   const canAssignSelf = useMemo(() => !alreadyMe, [alreadyMe]);
 
   const openSheet = () => setOpen(true);
@@ -74,32 +72,73 @@ export default function ResponsibleActions({
   async function makeInviteLink() {
     const r = await createAssignInvite(taskId);
     if (!r.ok) throw new Error(r.error || 'invite_create_failed');
-    // ссылка для старта мини-аппа (делаем универсальную)
-    // r.tmeStartApp уже приходит с правильным startapp=assign....
     return {
       startAppLink: r.tmeStartApp as string,
       shareText: `Нужен ответственный для задачи «${taskTitle}». Открой мини-приложение в Telegram и нажми «Принять».`,
     };
   }
 
+  // НОВОЕ: стабильный «другой мессенджер» — текст задачи + deep-link мини-аппа на задачу
   async function shareToOtherMessenger() {
     setBusy(true);
     try {
-      const { startAppLink, shareText } = await makeInviteLink();
-      const sharePayload = { title: 'Задача', text: shareText, url: startAppLink };
+      const { url, text, full } = buildFullSharePayload({
+        id: taskId,
+        title: taskTitle,
+      });
 
-      // 1) если доступен нативный share
-      if ((navigator as any).share) {
-        await (navigator as any).share(sharePayload);
-        WebApp?.HapticFeedback?.notificationOccurred?.('success');
-        closeSheet();
-        return;
+      // 1) Пробуем нативный Web Share (в браузерах / PWA). В Telegram WebView часто NotAllowedError.
+      const canNative =
+        typeof navigator !== 'undefined' &&
+        'share' in navigator &&
+        (!('canShare' in navigator) || (navigator as any).canShare?.({ text: full }));
+
+      if (canNative) {
+        try {
+          await (navigator as any).share({ title: taskTitle, text: full });
+          WebApp?.HapticFeedback?.notificationOccurred?.('success');
+          closeSheet();
+          return;
+        } catch (err: any) {
+          // Падаем в фолбэк (типичное поведение внутри Telegram WebView)
+          console.debug('[ResponsibleActions] native share failed, fallback:', err?.name || err);
+        }
       }
 
-      // 2) иначе просто копируем ссылку
-      await navigator.clipboard.writeText(`${shareText}\n${startAppLink}`);
+      // 2) Фолбэк: быстрые цели + копирование
+      const enc = (s: string) => encodeURIComponent(s);
+      const targets = [
+        { name: 'WhatsApp', href: `https://wa.me/?text=${enc(full)}` },
+        { name: 'Telegram', href: `https://t.me/share/url?url=${enc(url)}&text=${enc(text)}` },
+        { name: 'VK', href: `https://vk.com/share.php?url=${enc(url)}&title=${enc(taskTitle)}` },
+        { name: 'Email', href: `mailto:?subject=${enc(taskTitle)}&body=${enc(full)}` },
+      ];
+
+      try {
+        // Откроем первую цель (WhatsApp) — остальное пользователь всегда сможет вставить вручную
+        WebApp.openLink(targets[0].href);
+      } catch (e) {
+        console.debug('[ResponsibleActions] WebApp.openLink failed:', e);
+        window.open?.(targets[0].href, '_blank');
+      } finally {
+        // Всегда кладём текст+ссылку в буфер обмена, чтобы можно было вставить в любой мессенджер
+        try {
+          await navigator.clipboard.writeText(full);
+          WebApp.showPopup?.({ title: 'Скопировано', message: 'Текст задачи и ссылка скопированы.' });
+        } catch {
+          // фолбэк clipboard
+          const ta = document.createElement('textarea');
+          ta.value = full;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+          WebApp.showPopup?.({ title: 'Скопировано', message: 'Текст задачи и ссылка скопированы.' });
+        }
+      }
+
       WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      alert('Ссылка скопирована в буфер обмена.');
       closeSheet();
     } catch (e) {
       console.error('[ResponsibleActions] share other error', e);
@@ -113,57 +152,58 @@ export default function ResponsibleActions({
 
 
 
-async function shareToTelegram() {
-  setBusy(true);
-  try {
-    const TG: any = (window as any).Telegram?.WebApp || WebApp;
 
-    // userId владельца текущей сессии мини-аппа
-    const meId = TG?.initDataUnsafe?.user?.id || (meChatId ? Number(meChatId) : null);
 
-    // 1) Пытаемся подготовить "prepared message" (официальный способ поделиться из Mini Apps)
-    if (meId) {
-      const { ok, preparedMessageId } = await prepareShareMessage(taskId, {
-        userId: meId,
-        allowGroups: true,
-        withButton: true, // кнопка откроет mini app с assign__<taskId>__<token>
-      });
 
-      if (ok && preparedMessageId && typeof TG?.shareMessage === 'function') {
-        TG.shareMessage(preparedMessageId, (success: boolean) => {
-          WebApp?.HapticFeedback?.notificationOccurred?.(success ? 'success' : 'warning');
-          if (success) closeSheet();
+
+
+
+
+  
+
+  async function shareToTelegram() {
+    setBusy(true);
+    try {
+      const TG: any = (window as any).Telegram?.WebApp || WebApp;
+      const meId = TG?.initDataUnsafe?.user?.id || (meChatId ? Number(meChatId) : null);
+
+      // 1) prepared message (официальный способ)
+      if (meId) {
+        const { ok, preparedMessageId } = await prepareShareMessage(taskId, {
+          userId: meId,
+          allowGroups: true,
+          withButton: true,
         });
-        return; // всё ок — уходим
+
+        if (ok && preparedMessageId && typeof TG?.shareMessage === 'function') {
+          TG.shareMessage(preparedMessageId, (success: boolean) => {
+            WebApp?.HapticFeedback?.notificationOccurred?.(success ? 'success' : 'warning');
+            if (success) closeSheet();
+          });
+          return;
+        }
       }
+
+      // 2) Фолбэк: обычный t.me/share/url c инвайтом
+      const { startAppLink, shareText } = await makeInviteLink();
+      const tgShare = `https://t.me/share/url?url=${encodeURIComponent(startAppLink)}&text=${encodeURIComponent(shareText)}`;
+
+      if (WebApp?.openTelegramLink) {
+        WebApp.openTelegramLink(tgShare);
+      } else {
+        window.open?.(tgShare, '_blank');
+      }
+
+      WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      closeSheet();
+    } catch (e) {
+      console.error('[ResponsibleActions] share tg error', e);
+      WebApp?.HapticFeedback?.notificationOccurred?.('error');
+      alert('Не удалось открыть окно Telegram для шаринга.');
+    } finally {
+      setBusy(false);
     }
-
-    // 2) Фолбэк: обычная ссылка через t.me/share/url с нашим инвайтом
-    const { startAppLink, shareText } = await makeInviteLink();
-    const tgShare = `https://t.me/share/url?url=${encodeURIComponent(startAppLink)}&text=${encodeURIComponent(shareText)}`;
-
-    if (WebApp?.openTelegramLink) {
-      WebApp.openTelegramLink(tgShare); // у openTelegramLink только 1 аргумент
-    } else {
-      window.open?.(tgShare, '_blank'); // у window.open два аргумента — ок
-    }
-
-    WebApp?.HapticFeedback?.notificationOccurred?.('success');
-    closeSheet();
-  } catch (e) {
-    console.error('[ResponsibleActions] share tg error', e);
-    WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    alert('Не удалось открыть окно Telegram для шаринга.');
-  } finally {
-    setBusy(false);
   }
-}
-
-
-
-
-
-
 
   async function pingMember(to: Member) {
     setBusy(true);
@@ -174,7 +214,6 @@ async function shareToTelegram() {
         alert('Приглашение отправлено в личку выбранному участнику.');
         closeSheet();
       } else if (r.error === 'need_manual') {
-        // Пользователь не писал боту — отправка не удалась. Дадим ссылку.
         const { startAppLink, shareText } = await makeInviteLink();
         await navigator.clipboard.writeText(`${shareText}\n${startAppLink}`);
         alert('Пользователь ещё не открыл чат с ботом. Ссылка скопирована — отправьте вручную.');

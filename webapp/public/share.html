@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Поделиться</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 16px; }
+  .box { max-width: 560px; margin: 0 auto; background: #0f1216; color: #e8eaed; border-radius: 14px; padding: 16px; border: 1px solid #2a3346; }
+  button, a.btn { display:inline-block; padding:10px 14px; border-radius:12px; border:1px solid #2a3346; background:#202840; color:#e8eaed; text-decoration:none; }
+  .muted { opacity:.8; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .hidden { display:none; }
+  pre { white-space: pre-wrap; word-break: break-word; background:#121722; padding:10px; border-radius:10px; border:1px solid #2a3346; }
+</style>
+<body>
+  <div class="box">
+    <h2 style="margin-top:0">Поделиться задачей</h2>
+    <p class="muted">
+      Откроется системное окно «Поделиться». После отправки вернитесь назад, чтобы продолжить в Telegram.
+    </p>
+
+    <div id="preview" class="hidden">
+      <p class="muted">Текст для отправки:</p>
+      <pre id="pv"></pre>
+    </div>
+
+    <div class="row">
+      <button id="share">Поделиться</button>
+      <button id="copy">Скопировать</button>
+      <a id="back" class="btn hidden" href="#">Назад в Telegram</a>
+    </div>
+
+    <p id="status" class="muted" style="margin-top:12px"></p>
+  </div>
+
+<script>
+(function () {
+  const qs = new URLSearchParams(location.search);
+  const text = qs.get('text') || '';
+  const url  = qs.get('url')  || '';
+  const ret  = qs.get('return') || ''; // https://t.me/<bot>?startapp=...
+  const full = [text, url].filter(Boolean).join('\n\n');
+
+  const el = (id)=>document.getElementById(id);
+  const status = el('status');
+
+  if (full) {
+    el('preview').classList.remove('hidden');
+    el('pv').textContent = full;
+  }
+
+  function setBackLinkVisible(visible) {
+    const back = el('back');
+    if (ret) back.href = ret;
+    back.classList.toggle('hidden', !ret || !visible);
+  }
+
+  async function doShare() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Задача', text: full, url });
+        status.textContent = 'Готово! Можете закрыть вкладку или вернуться в Telegram.';
+        if (ret) {
+          // попробуем вернуть в Telegram автоматически
+          try { location.href = ret; } catch {}
+        }
+      } else {
+        status.textContent = 'Системный шэр не поддерживается, используйте «Скопировать».';
+      }
+    } catch (e) {
+      // отмена пользователем или ошибка
+      status.textContent = 'Шэр отменён или недоступен. Можно попробовать ещё раз или «Скопировать».';
+      setBackLinkVisible(true);
+    }
+  }
+
+  // автозапуск: на iOS может потребоваться жест, поэтому оставляем кнопку на всякий
+  document.addEventListener('DOMContentLoaded', () => {
+    doShare();
+  });
+
+  el('share').addEventListener('click', doShare);
+
+  el('copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(full || url);
+      status.textContent = 'Скопировано. Вернитесь в Telegram и вставьте в чат.';
+      setBackLinkVisible(true);
+    } catch {
+      status.textContent = 'Не удалось скопировать. Выделите текст и скопируйте вручную.';
+      setBackLinkVisible(true);
+    }
+  });
+
+  if (ret) setBackLinkVisible(true);
+})();
+</script>
+</body>
+</html>

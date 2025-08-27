@@ -15,6 +15,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hello-pangea/dnd": "^18.0.1",
+    "@tma.js/sdk": "^2.7.0",
     "@twa-dev/sdk": "^8.0.2",
     "classnames": "^2.5.1",
     "eruda": "^3.4.3",
