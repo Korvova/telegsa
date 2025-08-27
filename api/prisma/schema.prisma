@@ -122,6 +122,7 @@ model NotificationSetting {
   writeAccessGranted         Boolean  @default(false)
   receiveTaskCompletedMine   Boolean  @default(true)  // ⬅️ НОВОЕ
   updatedAt                  DateTime @updatedAt
+   receiveTaskComment       Boolean @default(true) 
 }
 
 
@@ -135,7 +136,6 @@ model Comment {
   text          String
   createdAt     DateTime @default(now())
 }
-
 
 
 

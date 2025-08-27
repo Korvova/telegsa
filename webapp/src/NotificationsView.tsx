@@ -5,6 +5,7 @@ type Settings = {
   telegramId: string;
   receiveTaskAccepted: boolean;
   receiveTaskCompletedMine: boolean;
+  receiveTaskComment: boolean;     // ⬅️ НОВОЕ
   writeAccessGranted: boolean;
 };
 
@@ -28,6 +29,10 @@ export default function NotificationsView() {
           receiveTaskAccepted: !!st.receiveTaskAccepted,
           receiveTaskCompletedMine:
             typeof st.receiveTaskCompletedMine === 'boolean' ? st.receiveTaskCompletedMine : true, // default ON
+
+ receiveTaskComment:
+  typeof st.receiveTaskComment === 'boolean' ? st.receiveTaskComment : true, // ⬅️ default ON
+
           writeAccessGranted: !!st.writeAccessGranted,
         });
       })
@@ -36,6 +41,7 @@ export default function NotificationsView() {
           telegramId: me,
           receiveTaskAccepted: true,
           receiveTaskCompletedMine: true,
+                   receiveTaskComment: true, // ⬅️
           writeAccessGranted: false,
         })
       )
@@ -55,6 +61,7 @@ export default function NotificationsView() {
           telegramId: next.telegramId,
           receiveTaskAccepted: next.receiveTaskAccepted,
           receiveTaskCompletedMine: next.receiveTaskCompletedMine,
+            receiveTaskComment: next.receiveTaskComment, // ⬅️ отправляем
           writeAccessGranted: next.writeAccessGranted,
         }),
       });
@@ -253,6 +260,30 @@ export default function NotificationsView() {
             </div>
           </div>
         </label>
+
+
+
+
+        <div style={{ height: 10 }} />
+        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <input
+            type="checkbox"
+            checked={s.receiveTaskComment}
+            disabled={!masterEnabled || saving}
+            onChange={(e) => saveMe({ receiveTaskComment: e.target.checked })}
+          />
+          <div>
+            <div style={{ fontWeight: 600 }}>Комментарий к задаче</div>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Придёт сообщение исполнителю и постановщику с текстом комментария.
+            </div>
+          </div>
+        </label>
+
+
+
+
+
 
         {!masterEnabled && (
           <div style={{ fontSize: 12, color: '#ffcf99', marginTop: 8 }}>

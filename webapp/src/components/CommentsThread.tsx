@@ -44,9 +44,7 @@ export default function CommentsThread({
         setItems(prev => [...prev, r.comment!]);
         setText('');
         WebApp?.HapticFeedback?.impactOccurred?.('light');
-      } else {
-        alert(r.error || 'Не удалось добавить комментарий');
-      }
+      } 
     } finally {
       setBusy(false);
     }
@@ -102,7 +100,7 @@ export default function CommentsThread({
           placeholder="Напишите комментарий…"
           style={input}
         />
-        <button onClick={send} disabled={busy || !text.trim()} style={sendBtn}>Отправить</button>
+        <button onClick={send} disabled={busy || !text.trim()} style={sendBtn}>⌲</button>
       </div>
     </div>
   );

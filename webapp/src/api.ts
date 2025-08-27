@@ -306,14 +306,15 @@ export async function listComments(taskId: string): Promise<{ ok: boolean; comme
   return r.json();
 }
 
-export async function addComment(taskId: string, chatId: string, text: string): Promise<{ ok: boolean; comment?: TaskComment; error?: string }> {
+export async function addComment(taskId: string, chatId: string, text: string) {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatId, text }),
+    body: JSON.stringify({ authorChatId: chatId, text }), // ✅ правильно
   });
   return r.json();
 }
+
 
 export async function deleteComment(taskId: string, commentId: string, chatId: string): Promise<{ ok: boolean }> {
   const u = new URL(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`);

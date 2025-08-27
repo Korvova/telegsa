@@ -235,6 +235,34 @@ export default function App() {
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } })
   );
 
+
+
+
+
+
+
+useEffect(() => {
+  const u = WebApp?.initDataUnsafe?.user;
+  if (!u?.id) return;
+  fetch(`${import.meta.env.VITE_API_BASE}/me`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chatId: String(u.id),
+      firstName: u.first_name ?? null,
+      lastName:  u.last_name  ?? null,
+      username:  u.username   ?? null,
+    }),
+  }).catch(() => {});
+}, []);
+
+
+
+
+
+
+
+
   // убираем белые поля по X
   useEffect(() => {
     const html = document.documentElement;

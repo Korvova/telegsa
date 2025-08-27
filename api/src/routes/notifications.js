@@ -1,4 +1,4 @@
-// api/routes/notifications.js
+// api/src/routes/notifications.js
 import express from 'express';
 
 export function notificationsRouter({ prisma }) {
@@ -20,7 +20,8 @@ export function notificationsRouter({ prisma }) {
       const settings = {
         telegramId,
         receiveTaskAccepted: st?.receiveTaskAccepted ?? true,
-        receiveTaskCompletedMine: st?.receiveTaskCompletedMine ?? true, // ⬅️ новый флаг (по умолчанию ВКЛ)
+        receiveTaskCompletedMine: st?.receiveTaskCompletedMine ?? true,
+        receiveTaskComment: st?.receiveTaskComment ?? true, // ⬅️ флаг комментариев
         writeAccessGranted: st?.writeAccessGranted ?? false,
       };
 
@@ -51,8 +52,8 @@ export function notificationsRouter({ prisma }) {
           telegramId: data.telegramId,
           receiveTaskAccepted: data.receiveTaskAccepted,
           writeAccessGranted: data.writeAccessGranted,
-          // при создании пусть будет включено по умолчанию
-          receiveTaskCompletedMine: true,
+          receiveTaskCompletedMine: true,   // при создании включаем по умолчанию
+          receiveTaskComment: true,         // ⬅️ при создании тоже включаем по умолчанию
         },
         update: {
           receiveTaskAccepted: data.receiveTaskAccepted,
@@ -97,16 +98,24 @@ export function notificationsRouter({ prisma }) {
   });
 
   // 🧩 Точный апдейт чекбоксов
-  // POST /notifications/me { telegramId, receiveTaskAccepted?, receiveTaskCompletedMine?, writeAccessGranted? }
+  // POST /notifications/me { telegramId, receiveTaskAccepted?, receiveTaskCompletedMine?, receiveTaskComment?, writeAccessGranted? }
   router.post('/me', async (req, res) => {
     try {
-      const { telegramId, receiveTaskAccepted, receiveTaskCompletedMine, writeAccessGranted } = req.body || {};
+      const {
+        telegramId,
+        receiveTaskAccepted,
+        receiveTaskCompletedMine,
+        receiveTaskComment,
+        writeAccessGranted,
+      } = req.body || {};
+
       if (!telegramId) return res.status(400).json({ ok: false, error: 'telegramId_required' });
 
       const payload = {
         telegramId: String(telegramId),
         ...(typeof receiveTaskAccepted === 'boolean' ? { receiveTaskAccepted } : {}),
-        ...(typeof receiveTaskCompletedMine === 'boolean' ? { receiveTaskCompletedMine } : {}), // ⬅️ учитываем новый флаг
+        ...(typeof receiveTaskCompletedMine === 'boolean' ? { receiveTaskCompletedMine } : {}),
+        ...(typeof receiveTaskComment === 'boolean' ? { receiveTaskComment } : {}), // ⬅️ новый флаг
         ...(typeof writeAccessGranted === 'boolean' ? { writeAccessGranted } : {}),
       };
 

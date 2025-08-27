@@ -7,11 +7,6 @@ const router = Router();
 
 const GROUP_SEP = '::';
 
-
-
-
-
-
 // --- Telegram helper (локально для этого файла) ---
 async function tg(method, payload) {
   const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
@@ -25,65 +20,229 @@ async function tg(method, payload) {
   return data;
 }
 
-// --- when responsible appears -> notify assignee (if settings allow) ---
-async function maybeNotifyTaskAccepted({ prisma, taskBefore, taskAfter, actorUser }) {
+// ===== helpers =====
+
+
+// ===== helpers (обновлённые) =====
+function miniAppLink(taskId) {
+  const bot = process.env.BOT_USERNAME || process.env.TG_BOT_USERNAME || 'telegsar_bot';
+  return `https://t.me/${bot}?startapp=task_${encodeURIComponent(taskId)}`;
+}
+function clip100(s = '') { return s.length > 100 ? s.slice(0, 100) + '…' : s; }
+function joinName(u) {
+  if (!u) return '';
+  const fn = (u.firstName || '').trim();
+  const ln = (u.lastName || '').trim();
+  if (fn || ln) return [fn, ln].filter(Boolean).join(' ').trim();
+  if (u.username) return `@${u.username}`;
+  return String(u.chatId || '');
+}
+
+// Текст пуша без заголовка задачи — как просил:
+function fmtCommentText({ authorName, comment }) {
+  const who = `👤 ${authorName || 'Пользователь'}`;
+  return `${who}\n𓂃✍︎\n${comment}`;
+}
+
+/**
+ * Уведомить об комментарии:
+ * - каждому адресату ровно ОДНО сообщение;
+ * - если адресат = постановщик (есть task.sourceChatId/sourceMessageId) — шлём reply на исходное сообщение;
+ * - у всех сообщений одна и та же inline-кнопка «Ответить» (открывает мини-апп на задаче).
+ */
+async function notifyAboutComment({ task, authorUser, authorChatId, text }) {
   try {
-    const was = taskBefore?.responsibleId || null;
-    const now = taskAfter?.responsibleId || null;
-    if (was === now || !now) return; // не изменилось или так и не появился
+    // 1) Кого уведомляем: исполнитель + постановщик
+    const rawTargets = [task.assigneeChatId, task.chatId].filter(Boolean).map(String);
+    const targets = Array.from(new Set(rawTargets)); // <-- убираем дубли
 
-    // получаем нового ответственного
-    const assignee = await prisma.user.findUnique({
-      where: { id: now },
-      select: { telegramId: true, fullName: true },
+    if (targets.length === 0) return;
+
+    // 2) Проверим настройки (NotificationSetting.telegramId == chatId)
+    const st = await prisma.notificationSetting.findMany({
+      where: { telegramId: { in: targets } },
+      select: { telegramId: true, receiveTaskComment: true, writeAccessGranted: true },
     });
-    if (!assignee?.telegramId) return;
+    const allowed = new Set(
+      st
+        .filter((s) => (s.receiveTaskComment ?? true) && s.writeAccessGranted)
+        .map((s) => String(s.telegramId))
+    );
 
-    // проверяем настройки уведомлений
-    const st = await prisma.notificationSetting.findUnique({
-      where: { telegramId: String(assignee.telegramId) },
-      select: { receiveTaskAccepted: true, writeAccessGranted: true },
-    });
-    if (st && (!st.receiveTaskAccepted || !st.writeAccessGranted)) return;
+    // 3) Имя автора (падение на chatId, если нет профиля)
+    const authorName = joinName(authorUser) || String(authorChatId || '') || 'Пользователь';
+    const textMsg = fmtCommentText({ authorName, comment: text });
 
-    // формируем текст
-    const actorName = actorUser?.fullName ?? 'Кто-то';
-    const title = taskAfter.title ?? 'Без названия';
+    const markup = {
+      inline_keyboard: [[{ text: 'Ответить', url: miniAppLink(task.id) }]],
+    };
 
-    const text = `👤 <b>${actorName}</b> принял(а) задачу: <b>${title}</b>`;
+    // 4) Отправки
+    await Promise.all(
+      targets
+        .filter((t) => allowed.has(String(t)))
+        .map((chatId) => {
+          // Можно сделать reply только в чате, где лежит исходное сообщение задачи
+          const canReplyHere =
+            String(chatId) === String(task.sourceChatId) && Number.isInteger(task.sourceMessageId);
 
-    await tg('sendMessage', {
-      chat_id: assignee.telegramId,
-      text,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-    });
+          const payload = {
+            chat_id: chatId,
+            text: textMsg,
+            disable_web_page_preview: true,
+            reply_markup: markup,
+            ...(canReplyHere ? { reply_to_message_id: Number(task.sourceMessageId) } : {}),
+          };
+          return tg('sendMessage', payload);
+        })
+    );
   } catch (e) {
-    console.error('notify task accepted error', e);
+    console.error('[notifyAboutComment] error:', e);
   }
 }
 
 
+// Уведомление, когда появился ответственный
+async function maybeNotifyTaskAccepted({ taskBefore, taskAfter, actorChatId }) {
+  try {
+    const was = taskBefore?.assigneeChatId || null;
+    const now = taskAfter?.assigneeChatId || null;
+    if (was === now || !now) return; // не изменилось или не назначен
 
+    // новый ответственный
+    const assignee = await prisma.user.findUnique({
+      where: { chatId: String(now) },
+      select: { chatId: true, firstName: true, lastName: true, username: true },
+    });
+    if (!assignee?.chatId) return;
 
+    // настройки
+    const st = await prisma.notificationSetting.findUnique({
+      where: { telegramId: String(assignee.chatId) },
+      select: { receiveTaskAccepted: true, writeAccessGranted: true },
+    });
+    if (st && (!st.receiveTaskAccepted || !st.writeAccessGranted)) return;
 
+    // кто назначил (если есть)
+    let actorName = 'Кто-то';
+    if (actorChatId) {
+      const actor = await prisma.user.findUnique({
+        where: { chatId: String(actorChatId) },
+        select: { chatId: true, firstName: true, lastName: true, username: true },
+      });
+      actorName = joinName(actor) || actorName;
+    }
 
+    const title = clip100(taskAfter.text || 'Без названия');
+    const msg = `👤 <b>${actorName}</b> назначил(а) вам задачу: <b>${title}</b>`;
 
+    await tg('sendMessage', {
+      chat_id: String(assignee.chatId),
+      text: msg,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [[{ text: 'Открыть', url: miniAppLink(taskAfter.id) }]],
+      },
+    });
+  } catch (e) {
+    console.error('[maybeNotifyTaskAccepted] error:', e);
+  }
+}
 
+/* ==================== КОММЕНТАРИИ ==================== */
 
+// Получить последние комментарии задачи
+// GET /tasks/:id/comments
+router.get('/:id/comments', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const items = await prisma.comment.findMany({
+      where: { taskId: id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, authorChatId: true, text: true, createdAt: true },
+    });
 
+    // Подтянуть авторов разом
+    const authorIds = Array.from(new Set(items.map((c) => String(c.authorChatId)))).filter(Boolean);
+    const authors = await prisma.user.findMany({
+      where: { chatId: { in: authorIds } },
+      select: { chatId: true, firstName: true, lastName: true, username: true },
+    });
+    const map = new Map(authors.map((u) => [String(u.chatId), joinName(u)]));
+
+    const result = items.map((c) => ({
+      id: c.id,
+      text: c.text,
+      createdAt: c.createdAt,
+      authorChatId: c.authorChatId,
+      authorName: map.get(String(c.authorChatId)) || String(c.authorChatId),
+    }));
+
+    res.json({ ok: true, comments: result });
+  } catch (e) {
+    console.error('GET /tasks/:id/comments error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// Добавить комментарий
+// POST /tasks/:id/comments { authorChatId: string, text: string }
+// POST /tasks/:id/comments { authorChatId?: string, chatId?: string, text: string }
+router.post('/:id/comments', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+
+    // ✅ поддерживаем оба варианта: authorChatId ИЛИ chatId
+    const rawAuthor = req.body?.authorChatId ?? req.body?.chatId ?? null;
+    const author = rawAuthor ? String(rawAuthor) : null;
+
+    const commentText = String(req.body?.text || '').trim();
+    if (!commentText) {
+      return res.status(400).json({ ok: false, error: 'text_required' });
+    }
+
+    const task = await prisma.task.findUnique({ where: { id } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    const authorUser = author
+      ? await prisma.user.findUnique({
+          where: { chatId: author },
+          select: { chatId: true, firstName: true, lastName: true, username: true },
+        })
+      : null;
+
+    await prisma.comment.create({
+      data: { taskId: id, authorChatId: author || '', text: commentText },
+    });
+
+    await notifyAboutComment({
+      task,
+      authorUser,
+      authorChatId: author,
+      text: commentText,
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /tasks/:id/comments error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+/* ==================== ЗАДАЧИ ==================== */
+
+// Удалить задачу
 router.delete('/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
 
-    // тянем задачу и колонку (чтобы узнать groupId и поправить order)
     const task = await prisma.task.findUnique({
       where: { id },
       include: { column: true },
     });
     if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
 
-    // <groupId>::...
     let groupId = null;
     const nm = task.column?.name || '';
     const i = nm.indexOf(GROUP_SEP);
@@ -104,39 +263,41 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-
-
-
-
-// обновить задачу (в т.ч. назначить ответственного)
+// Обновить задачу (текст / перемещение / назначение исполнителя)
 router.patch('/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
     const patch = {};
 
-    // принимаем поля, которые реально разрешено менять
-    if ('title' in req.body) patch.title = String(req.body.title ?? '');
-    if ('description' in req.body) patch.description = String(req.body.description ?? '');
-    if ('responsibleId' in req.body) {
-      // допускаем null для снятия ответственного
-      patch.responsibleId = req.body.responsibleId === null ? null : String(req.body.responsibleId);
-    }
+    if ('text' in req.body) patch.text = String(req.body.text ?? '');
+    if ('title' in req.body) patch.text = String(req.body.title ?? '');
+
     if ('columnId' in req.body) patch.columnId = String(req.body.columnId);
     if ('order' in req.body) patch.order = Number(req.body.order);
+
+    if ('assigneeChatId' in req.body) {
+      patch.assigneeChatId =
+        req.body.assigneeChatId === null ? null : String(req.body.assigneeChatId);
+    }
+    if ('responsibleId' in req.body) {
+      patch.assigneeChatId =
+        req.body.responsibleId === null ? null : String(req.body.responsibleId);
+    }
 
     const before = await prisma.task.findUnique({ where: { id } });
     if (!before) return res.status(404).json({ ok: false, error: 'not_found' });
 
     const updated = await prisma.task.update({ where: { id }, data: patch });
 
-    // кто сделал действие — если у тебя есть auth, подставь реального юзера
-    const actorUser = req.user ?? null;
+    const actorChatId =
+      (req.user && req.user.chatId) ||
+      (req.body && req.body.actorChatId) ||
+      null;
 
     await maybeNotifyTaskAccepted({
-      prisma,
       taskBefore: before,
       taskAfter: updated,
-      actorUser,
+      actorChatId,
     });
 
     res.json({ ok: true, task: updated });
@@ -145,10 +306,5 @@ router.patch('/:id', async (req, res) => {
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
-
-
-
-
-
 
 export { router as tasksRouter };
