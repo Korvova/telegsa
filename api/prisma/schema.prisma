@@ -123,6 +123,18 @@ model NotificationSetting {
 
 
 
+model Invite {
+  id         String   @id @default(cuid())
+  type       String   // 'TASK'
+  mode       String   // 'assign'
+  token      String   @unique
+  taskId     String
+  createdBy  String?
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+}
+
+
 
 
 model InviteTicket {

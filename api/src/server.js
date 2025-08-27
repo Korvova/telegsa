@@ -7,6 +7,9 @@ import { tasksRouter } from './routes/tasks.js';
 import { notificationsRouter } from './routes/notifications.js';
 
 
+import { assignRouter } from './routes/assign.js';  
+
+
 const prisma = new PrismaClient();
 const app = express();
 app.use(express.json());
@@ -179,6 +182,10 @@ app.get('/health', (_req, res) => res.json({ ok: true, service: 'telegsar-api' }
 
 app.use('/notifications', notificationsRouter({ prisma }));
 
+
+
+/* ---------- Назначения / приглашения ответственных ---------- */
+app.use('/assign', assignRouter({ prisma })); 
 
 
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */

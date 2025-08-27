@@ -4,25 +4,24 @@ import express from 'express';
 export function notificationsRouter({ prisma }) {
   const router = express.Router();
 
-  // 🔎 Быстрый пинг для проверки, что роутер смонтирован
+  // 🔎 Пинг
   router.get('/ping', (_req, res) => res.json({ ok: true, scope: 'notifications' }));
 
-  // ⚙️ Получить текущие настройки (для фронта)
+  // ⚙️ Текущие настройки
   // GET /notifications/:telegramId
   router.get('/:telegramId', async (req, res) => {
     try {
       const telegramId = String(req.params.telegramId || '');
       if (!telegramId) return res.status(400).json({ ok: false, error: 'telegramId_required' });
 
-      const st = await prisma.notificationSetting.findUnique({
-        where: { telegramId },
-      });
+      const st = await prisma.notificationSetting.findUnique({ where: { telegramId } });
 
-      // значение по умолчанию
-      const settings = st ?? {
+      // Возвращаем с дефолтами, даже если записи нет
+      const settings = {
         telegramId,
-        receiveTaskAccepted: true,
-        writeAccessGranted: false,
+        receiveTaskAccepted: st?.receiveTaskAccepted ?? true,
+        receiveTaskCompletedMine: st?.receiveTaskCompletedMine ?? true, // ⬅️ новый флаг (по умолчанию ВКЛ)
+        writeAccessGranted: st?.writeAccessGranted ?? false,
       };
 
       res.json({ ok: true, settings });
@@ -32,7 +31,7 @@ export function notificationsRouter({ prisma }) {
     }
   });
 
-  // 🔔 Мастер-переключатель (вкл/выкл) — вызывается после requestWriteAccess
+  // 🔔 Мастер-тумблер (после requestWriteAccess)
   // POST /notifications/toggle { telegramId, enabled }
   router.post('/toggle', async (req, res) => {
     try {
@@ -42,13 +41,23 @@ export function notificationsRouter({ prisma }) {
       const data = {
         telegramId: String(telegramId),
         receiveTaskAccepted: !!enabled,
+        // receiveTaskCompletedMine оставляем как есть — управляется отдельным чекбоксом
         writeAccessGranted: !!enabled,
       };
 
       await prisma.notificationSetting.upsert({
         where: { telegramId: data.telegramId },
-        create: data,
-        update: data,
+        create: {
+          telegramId: data.telegramId,
+          receiveTaskAccepted: data.receiveTaskAccepted,
+          writeAccessGranted: data.writeAccessGranted,
+          // при создании пусть будет включено по умолчанию
+          receiveTaskCompletedMine: true,
+        },
+        update: {
+          receiveTaskAccepted: data.receiveTaskAccepted,
+          writeAccessGranted: data.writeAccessGranted,
+        },
       });
 
       res.json({ ok: true });
@@ -58,18 +67,13 @@ export function notificationsRouter({ prisma }) {
     }
   });
 
-
-
-
-
-  // 📩 Тест: отправить себе сообщение в личку (проверка write access)
+  // 📩 Тест: отправить себе сообщение
   // POST /notifications/test { telegramId: string, text?: string }
   router.post('/test', async (req, res) => {
     try {
       const { telegramId, text } = req.body || {};
       if (!telegramId) return res.status(400).json({ ok: false, error: 'telegramId_required' });
 
-      // локальный helper, чтобы не тянуть из server.js
       const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`;
       const r = await fetch(url, {
         method: 'POST',
@@ -92,25 +96,17 @@ export function notificationsRouter({ prisma }) {
     }
   });
 
-
-
-
-
-
-
-
-
-
-  // 🧩 (на будущее) Точный апдейт чекбоксов
-  // POST /notifications/me { telegramId, receiveTaskAccepted?, writeAccessGranted? }
+  // 🧩 Точный апдейт чекбоксов
+  // POST /notifications/me { telegramId, receiveTaskAccepted?, receiveTaskCompletedMine?, writeAccessGranted? }
   router.post('/me', async (req, res) => {
     try {
-      const { telegramId, receiveTaskAccepted, writeAccessGranted } = req.body || {};
+      const { telegramId, receiveTaskAccepted, receiveTaskCompletedMine, writeAccessGranted } = req.body || {};
       if (!telegramId) return res.status(400).json({ ok: false, error: 'telegramId_required' });
 
       const payload = {
         telegramId: String(telegramId),
         ...(typeof receiveTaskAccepted === 'boolean' ? { receiveTaskAccepted } : {}),
+        ...(typeof receiveTaskCompletedMine === 'boolean' ? { receiveTaskCompletedMine } : {}), // ⬅️ учитываем новый флаг
         ...(typeof writeAccessGranted === 'boolean' ? { writeAccessGranted } : {}),
       };
 

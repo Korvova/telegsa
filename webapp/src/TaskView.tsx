@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import type { Task } from './api';
 import { listGroups } from './api';
+import ResponsibleActions from './components/ResponsibleActions';
+
 import {
   getTask,
   getTaskWithGroup,
@@ -10,9 +12,9 @@ import {
   completeTask,
   reopenTask,
   deleteTask,
-  createInvite,
-  forwardTask,
-  prepareShareMessage,
+  // участники группы
+  type GroupMember,
+  getGroupMembers,
 } from './api';
 
 type Props = {
@@ -31,15 +33,35 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [phase, setPhase] = useState<string | undefined>(undefined);
   const isDone = phase === 'Done';
 
-  // 🔹 заголовок группы
+  // заголовок группы
   const [groupTitle, setGroupTitle] = useState<string | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
 
-  // куда вернуться при закрытии (источник истины остаётся ref)
+  // куда возвращаться при закрытии
   const groupIdRef = useRef<string | null | undefined>(undefined);
 
-  // мягкий «тик» для перезапуска поллинга при надобности
+  // мягкий «тик» для обновления карточки после назначений
   const [refreshTick, setRefreshTick] = useState(0);
+
+  // кто я (для «Сделать ответственным себя»)
+  const meChatId = String(
+    WebApp?.initDataUnsafe?.user?.id ||
+      new URLSearchParams(window.location.search).get('from') ||
+      ''
+  );
+
+  // участники текущей группы (для «Выбрать из группы»)
+  const [members, setMembers] = useState<GroupMember[]>([]);
+
+  // когда узнали groupId — подтягиваем участников
+  useEffect(() => {
+    if (!groupId) return;
+    getGroupMembers(groupId)
+      .then((r) => {
+        if (r.ok) setMembers(r.members || []);
+      })
+      .catch(() => {});
+  }, [groupId]);
 
   /* --- системная кнопка "Назад" --- */
   useEffect(() => {
@@ -53,18 +75,14 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       onClose(groupIdRef.current);
     };
 
-    try {
-      WebApp?.BackButton?.show?.();
-    } catch {}
+    try { WebApp?.BackButton?.show?.(); } catch {}
     WebApp?.onEvent?.('backButtonClicked', handle);
     WebApp?.BackButton?.onClick?.(handle);
 
     return () => {
       WebApp?.offEvent?.('backButtonClicked', handle);
       WebApp?.BackButton?.offClick?.(handle);
-      try {
-        WebApp?.BackButton?.hide?.();
-      } catch {}
+      try { WebApp?.BackButton?.hide?.(); } catch {}
     };
   }, [onClose]);
 
@@ -81,29 +99,27 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         try {
           const gResp = await getTaskWithGroup(taskId);
           groupIdRef.current = gResp?.groupId ?? null;
-          setGroupId(groupIdRef.current);            // 🔹 реактивно
+          setGroupId(groupIdRef.current);
           setPhase(gResp?.phase);
         } catch {
           const gid = new URLSearchParams(location.search).get('group');
           groupIdRef.current = gid || null;
-          setGroupId(groupIdRef.current);            // 🔹 реактивно
+          setGroupId(groupIdRef.current);
           setPhase(undefined);
         }
       })
       .catch(() => {
         const gid = new URLSearchParams(location.search).get('group');
         groupIdRef.current = gid || null;
-        setGroupId(groupIdRef.current);              // 🔹 реактивно
+        setGroupId(groupIdRef.current);
         setTask(null);
       })
       .finally(() => !ignore && setLoading(false));
 
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, [taskId]);
 
-  /* --- название группы по groupId --- */
+  /* --- подтянуть название группы по groupId --- */
   useEffect(() => {
     if (!groupId) {
       setGroupTitle(null);
@@ -124,7 +140,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       .catch(() => {});
   }, [groupId]);
 
-  /* --- мягкий поллинг, пока карточка открыта (обновление ответственного и т.п.) --- */
+  /* --- мягкий поллинг (обновляем ответственного/фазу) --- */
   useEffect(() => {
     let t: any = null;
     let alive = true;
@@ -143,7 +159,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
     return () => { alive = false; clearTimeout(t); };
   }, [taskId, refreshTick]);
 
-  /* --- действия --- */
+  /* --- действия с задачей --- */
   const save = async () => {
     const val = text.trim();
     if (!val) return;
@@ -193,120 +209,14 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
     }
   };
 
-  const handleInviteAssignee = async () => {
-    try {
-      const me =
-        WebApp?.initDataUnsafe?.user?.id ||
-        new URLSearchParams(location.search).get('from');
+  // === Поделиться → открываем системный шэр с prepared message ===
 
-      const r = await createInvite({
-        chatId: String(me || ''),
-        type: 'task',
-        taskId,
-      });
-
-      if (!r?.ok || !r?.link) throw new Error('invite_error');
-
-      const text = r.shareText || 'Вас назначают ответственным за задачу';
-      const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(r.link)}&text=${encodeURIComponent(text)}`;
-
-      WebApp?.openTelegramLink?.(shareUrl);
-
-      // 🔁 быстрый поллинг в течение ~15 сек, чтобы моментально показать назначение
-      const started = Date.now();
-      const fastPull = async () => {
-        try {
-          const t = await getTask(taskId);
-          setTask(t.task);
-          if (t.task?.assigneeChatId) return;
-        } catch {}
-        if (Date.now() - started < 15000) {
-          setTimeout(fastPull, 1500);
-        } else {
-          setRefreshTick((x) => x + 1);
-        }
-      };
-      fastPull();
-
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-    } catch (e) {
-      console.error('[INVITE] error', e);
-      alert('Не удалось создать приглашение');
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    }
-  };
-
-  const handleForward = async () => {
-    try {
-      const raw = prompt(
-        'Введи chat_id пользователя (число). Важно: пользователь должен нажать Start у бота.'
-      );
-      const to = (raw || '').trim();
-      if (!to) return;
-
-      const r = await forwardTask(taskId, to);
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      alert(
-        r?.method === 'forward'
-          ? 'Переслано исходное сообщение (без кнопки — это ограничение forward).'
-          : 'Отправлено новое сообщение с кнопкой “Открыть”.'
-      );
-    } catch (e) {
-      console.error('[FORWARD] error', e);
-      alert('Не удалось отправить. Проверь, что пользователь начал диалог с ботом.');
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    }
-  };
-
-  const handleShare = async () => {
-    try {
-      const TG: any = (window as any).Telegram?.WebApp || WebApp;
-
-      const meId = TG?.initDataUnsafe?.user?.id;
-      if (!meId) {
-        WebApp?.HapticFeedback?.notificationOccurred?.('error');
-        return alert('Не найден user.id из Telegram WebApp. Открой через Telegram.');
-      }
-
-      // теперь сервер создаёт TASK-инвайт и кладёт assign__<id>__<token> в кнопку
-      const { ok, preparedMessageId } = await prepareShareMessage(taskId, {
-        userId: meId,
-        allowGroups: true,
-        withButton: true,
-      });
-
-      if (!ok || !preparedMessageId) {
-        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
-          window.location.href
-        )}&text=${encodeURIComponent('Открой мою задачу')}`;
-        WebApp?.openTelegramLink?.(shareUrl);
-        return;
-      }
-
-      if (typeof TG?.shareMessage === 'function') {
-        TG.shareMessage(preparedMessageId, (success: boolean) => {
-          WebApp?.HapticFeedback?.notificationOccurred?.(success ? 'success' : 'warning');
-        });
-      } else {
-        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
-          window.location.href
-        )}&text=${encodeURIComponent('Открой мою задачу')}`;
-        WebApp?.openTelegramLink?.(shareUrl);
-      }
-    } catch (e) {
-      console.error('[SHARE] error', e);
-      const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(
-        window.location.href
-      )}&text=${encodeURIComponent('Открой мою задачу')}`;
-      WebApp?.openTelegramLink?.(shareUrl);
-    }
-  };
 
   /* --- UI --- */
   if (loading) return <div style={{ padding: 16 }}>Загрузка…</div>;
   if (error) return <div style={{ padding: 16, color: 'crimson' }}>{error}</div>;
 
-  // Заголовок с «назад» и названием группы (мелким шрифтом)
+  // заголовок с «назад» и именем группы
   const Header = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
       <button
@@ -315,9 +225,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       >
         ← Назад
       </button>
-      {groupTitle && (
-        <span style={{ fontSize: 13, opacity: 0.8 }}>{groupTitle}</span>
-      )}
+      {groupTitle && <span style={{ fontSize: 13, opacity: 0.8 }}>{groupTitle}</span>}
     </div>
   );
 
@@ -328,7 +236,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
         <div style={{ background: '#1b2030', border: '1px solid #2a3346', borderRadius: 16, padding: 16 }}>
           <div style={{ fontSize: 18, marginBottom: 8 }}>Задача уже удалена</div>
-          <div style={{ opacity: 0.8, marginBottom: 16 }}>Этой задачи больше нет. Можешь вернуться в доску.</div>
+          <div style={{ opacity: 0.8, marginBottom: 16 }}>
+            Этой задачи больше нет. Можешь вернуться в доску.
+          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               onClick={() => onClose(null)}
@@ -363,7 +273,10 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         }}
       >
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div>
-        <label style={{ display: 'block', fontSize: 14, opacity: 0.85, marginBottom: 8 }}>Текст задачи</label>
+
+        <label style={{ display: 'block', fontSize: 14, opacity: 0.85, marginBottom: 8 }}>
+          Текст задачи
+        </label>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -444,7 +357,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
             </div>
           ) : null}
 
-          {/* Ответственный */}
+          {/* Ответственный / действия назначения */}
           {task.assigneeChatId ? (
             <div
               style={{
@@ -463,50 +376,23 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               <strong>{task.assigneeName || task.assigneeChatId}</strong>
             </div>
           ) : (
-            <button
-              onClick={handleInviteAssignee}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid #2a3346',
-                background: '#204028',
-                color: '#d7ffd7',
-                cursor: 'pointer',
-              }}
-            >
-              Ответственный → пригласить
-            </button>
+            <ResponsibleActions
+              taskId={taskId}
+              taskTitle={text}
+              groupId={groupId || undefined}
+              meChatId={meChatId}
+              currentAssigneeChatId={task?.assigneeChatId ?? null}
+              // передаём имя как firstName — компонент сам сформирует подпись
+              members={members.map((m) => ({
+                chatId: String(m.chatId),
+                firstName: m.name || undefined,
+              }))}
+              canAssign={true}
+              onAssigned={() => setRefreshTick((t) => t + 1)}
+            />
           )}
 
-          {/* Пригласить через forward */}
-          <button
-            onClick={handleForward}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#203040',
-              color: '#e8f2ff',
-              cursor: 'pointer',
-            }}
-          >
-            Пригласить (forward)
-          </button>
-
-          {/* Поделиться (встроенный диалог) */}
-          <button
-            onClick={handleShare}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-            }}
-          >
-            Поделиться
-          </button>
+    
         </div>
       </div>
     </div>
