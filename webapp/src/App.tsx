@@ -7,6 +7,10 @@ import WriteAccessGate from './WriteAccessGate';
 import GroupMembers from './components/GroupMembers';
 import NotificationsView from './NotificationsView';
 
+
+import CalendarView from './CalendarView';
+
+
 import TaskView from './TaskView';
 import {
   fetchBoard,
@@ -623,9 +627,13 @@ useEffect(() => {
     tab === 'groups'
       ? groupsPage === 'list'
         ? 'Группы'
+
+
         : ` ${selectedGroup?.title || 'Группа'}`
       : tab === 'calendar'
       ? 'Календарь'
+
+
       : tab === 'notifications'
       ? 'Уведомления'
       : 'Настройки';
@@ -731,125 +739,128 @@ useEffect(() => {
             </div>
           </div>
 
-          {tab === 'groups' ? (
-            groupsPage === 'list' ? (
-              <GroupList
+{tab === 'groups' ? (
+  groupsPage === 'list' ? (
+    <GroupList
+      chatId={chatId}
+      groups={groups}
+      onReload={reloadGroups}
+      onOpen={goToGroup}
+    />
+  ) : (
+    <>
+      <GroupTabs current={groupTab} onChange={setGroupTab} />
+
+      {groupTab === 'kanban' ? (
+        loading ? (
+          <div style={{ padding: 16 }}>Загрузка…</div>
+        ) : error ? (
+          <div style={{ padding: 16, color: 'crimson' }}>{error}</div>
+        ) : (
+          <>
+            {/* Создание */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <NewTaskBar
                 chatId={chatId}
-                groups={groups}
-                onReload={reloadGroups}
-                onOpen={goToGroup}
+                groupId={resolvedGroupId}
+                onCreated={reloadBoard}
               />
-            ) : (
-              <>
-                <GroupTabs current={groupTab} onChange={setGroupTab} />
+              <AddColumnButton
+                chatId={chatId}
+                groupId={resolvedGroupId}
+                onAdded={reloadBoard}
+              />
+            </div>
 
-                {groupTab === 'kanban' ? (
-                  loading ? (
-                    <div style={{ padding: 16 }}>Загрузка…</div>
-                  ) : error ? (
-                    <div style={{ padding: 16, color: 'crimson' }}>{error}</div>
-                  ) : (
-                    <>
-                      {/* Создание */}
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                        <NewTaskBar
-                          chatId={chatId}
-                          groupId={resolvedGroupId}
-                          onCreated={reloadBoard}
-                        />
-                        <AddColumnButton
-                          chatId={chatId}
-                          groupId={resolvedGroupId}
-                          onAdded={reloadBoard}
-                        />
-                      </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              autoScroll={false}
+            >
+              {/* Горизонтальный холст */}
+              <div
+                ref={scrollerRef}
+                style={{
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  whiteSpace: 'nowrap',
+                  WebkitOverflowScrolling: 'touch',
+                  overscrollBehaviorX: 'contain',
+                  paddingBottom: 8,
+                  touchAction: dragging ? 'none' : 'pan-x',
+                }}
+              >
+                {columns
+                  .sort((a, b) => a.order - b.order)
+                  .map((col) => (
+                    <ColumnView
+                      key={col.id}
+                      column={col}
+                      onOpenTask={openTask}
+                      onRenamed={reloadBoard}
+                      activeId={activeId}
+                      dragging={dragging}
+                    />
+                  ))}
+              </div>
 
-                      <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCorners}
-                        onDragStart={handleDragStart}
-                        onDragMove={handleDragMove}
-                        onDragOver={handleDragOver}
-                        onDragEnd={handleDragEnd}
-                        autoScroll={false}
-                      >
-                        {/* Горизонтальный холст */}
-                        <div
-                          ref={scrollerRef}
-                          style={{
-                            overflowX: 'auto',
-                            overflowY: 'hidden',
-                            whiteSpace: 'nowrap',
-                            WebkitOverflowScrolling: 'touch',
-                            overscrollBehaviorX: 'contain',
-                            paddingBottom: 8,
-                            touchAction: dragging ? 'none' : 'pan-x',
-                          }}
-                        >
-                          {columns
-                            .sort((a, b) => a.order - b.order)
-                            .map((col) => (
-                              <ColumnView
-                                key={col.id}
-                                column={col}
-                                onOpenTask={openTask}
-                                onRenamed={reloadBoard}
-                                activeId={activeId}
-                                dragging={dragging}
-                              />
-                            ))}
-                        </div>
+              <DragOverlay>
+                {activeId
+                  ? (() => {
+                      const t = columns
+                        .flatMap((c) => c.tasks)
+                        .find((t) => t.id === activeId);
+                      return t ? (
+                        <TaskCard text={t.text} order={t.order} dragging />
+                      ) : null;
+                    })()
+                  : null}
+              </DragOverlay>
+            </DndContext>
+          </>
+        )
+      ) : groupTab === 'process' ? (
+        <div
+          style={{
+            padding: 16,
+            background: '#1b2030',
+            border: '1px solid #2a3346',
+            borderRadius: 16,
+            minHeight: 240,
+          }}
+        >
+          Процесс 🔀: скоро подключим редактор связей (React Flow).
+        </div>
+      ) : (
+        <GroupMembers
+          group={selectedGroup as any}
+          chatId={chatId}
+          isOwner={isOwnerOfSelected}
+          onChanged={async () => {
+            await reloadGroups();
+            await loadBoard();
+          }}
+          onLeftGroup={() => {
+            setGroupsPage('list');
+            setSelectedGroupId('');
+            reloadGroups();
+          }}
+        />
+      )}
+    </>
+  )
+) : tab === 'calendar' ? (
+  <CalendarView />
+) : tab === 'notifications' ? (
+  <NotificationsView />
+) : (
+  <TabPlaceholder tab={tab} />
+)}
 
-                        <DragOverlay>
-                          {activeId
-                            ? (() => {
-                                const t = columns
-                                  .flatMap((c) => c.tasks)
-                                  .find((t) => t.id === activeId);
-                                return t ? (
-                                  <TaskCard text={t.text} order={t.order} dragging />
-                                ) : null;
-                              })()
-                            : null}
-                        </DragOverlay>
-                      </DndContext>
-                    </>
-                  )
-                ) : groupTab === 'process' ? (
-                  <div
-                    style={{
-                      padding: 16,
-                      background: '#1b2030',
-                      border: '1px solid #2a3346',
-                      borderRadius: 16,
-                      minHeight: 240,
-                    }}
-                  >
-                    Процесс 🔀: скоро подключим редактор связей (React Flow).
-                  </div>
-                ) : (
-                  <GroupMembers
-                    group={selectedGroup as any}
-                    chatId={chatId}
-                    isOwner={isOwnerOfSelected}
-                    onChanged={async () => {
-                      await reloadGroups();
-                      await loadBoard();
-                    }}
-                    onLeftGroup={() => {
-                      setGroupsPage('list');
-                      setSelectedGroupId('');
-                      reloadGroups();
-                    }}
-                  />
-                )}
-              </>
-            )
-          ) : tab === 'notifications' ? (
-            <NotificationsView />
-          ) : (
-            <TabPlaceholder tab={tab} />
-          )}
 
           {/* Нижняя панель */}
           <BottomNav

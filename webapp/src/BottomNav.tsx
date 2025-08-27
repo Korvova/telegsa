@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 
 export type TabKey = 'groups' | 'calendar' | 'notifications' | 'settings';
 
+
+
+
 export default function BottomNav({
   current,
   onChange,
@@ -44,6 +47,15 @@ export default function BottomNav({
         {items.map((it) => {
           const active = current === it.id;
           return (
+
+
+
+
+
+
+
+
+            
             <button
               key={it.id}
               onClick={() => onChange(it.id)}
@@ -64,6 +76,10 @@ export default function BottomNav({
               <span style={{ fontSize: 18, lineHeight: 1 }}>{it.icon}</span>
               <span style={{ fontSize: 11 }}>{it.label}</span>
             </button>
+            
+
+
+
           );
         })}
       </div>
