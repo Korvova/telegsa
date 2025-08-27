@@ -79,75 +79,56 @@ export default function ResponsibleActions({
   }
 
   // НОВОЕ: стабильный «другой мессенджер» — текст задачи + deep-link мини-аппа на задачу
-  async function shareToOtherMessenger() {
-    setBusy(true);
-    try {
-      const { url, text, full } = buildFullSharePayload({
-        id: taskId,
-        title: taskTitle,
-      });
+// ResponsibleActions.tsx
+async function shareToOtherMessenger() {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const { url, full } = buildFullSharePayload({
+      id: taskId,
+      title: taskTitle,
+    });
 
-      // 1) Пробуем нативный Web Share (в браузерах / PWA). В Telegram WebView часто NotAllowedError.
-      const canNative =
-        typeof navigator !== 'undefined' &&
-        'share' in navigator &&
-        (!('canShare' in navigator) || (navigator as any).canShare?.({ text: full }));
+    // 1) В браузерах/PWA пробуем нативный share (в Telegram WebView часто запрещён)
+    const payload: ShareData = { title: taskTitle, text: full, url };
+    const canNative =
+      typeof navigator !== 'undefined' &&
+      'share' in navigator &&
+      (!('canShare' in navigator) || (navigator as any).canShare?.(payload));
 
-      if (canNative) {
-        try {
-          await (navigator as any).share({ title: taskTitle, text: full });
-          WebApp?.HapticFeedback?.notificationOccurred?.('success');
-          closeSheet();
-          return;
-        } catch (err: any) {
-          // Падаем в фолбэк (типичное поведение внутри Telegram WebView)
-          console.debug('[ResponsibleActions] native share failed, fallback:', err?.name || err);
-        }
-      }
-
-      // 2) Фолбэк: быстрые цели + копирование
-      const enc = (s: string) => encodeURIComponent(s);
-      const targets = [
-        { name: 'WhatsApp', href: `https://wa.me/?text=${enc(full)}` },
-        { name: 'Telegram', href: `https://t.me/share/url?url=${enc(url)}&text=${enc(text)}` },
-        { name: 'VK', href: `https://vk.com/share.php?url=${enc(url)}&title=${enc(taskTitle)}` },
-        { name: 'Email', href: `mailto:?subject=${enc(taskTitle)}&body=${enc(full)}` },
-      ];
-
+    if (canNative) {
       try {
-        // Откроем первую цель (WhatsApp) — остальное пользователь всегда сможет вставить вручную
-        WebApp.openLink(targets[0].href);
-      } catch (e) {
-        console.debug('[ResponsibleActions] WebApp.openLink failed:', e);
-        window.open?.(targets[0].href, '_blank');
-      } finally {
-        // Всегда кладём текст+ссылку в буфер обмена, чтобы можно было вставить в любой мессенджер
-        try {
-          await navigator.clipboard.writeText(full);
-          WebApp.showPopup?.({ title: 'Скопировано', message: 'Текст задачи и ссылка скопированы.' });
-        } catch {
-          // фолбэк clipboard
-          const ta = document.createElement('textarea');
-          ta.value = full;
-          ta.style.position = 'fixed';
-          ta.style.left = '-9999px';
-          document.body.appendChild(ta);
-          ta.select();
-          try { document.execCommand('copy'); } finally { document.body.removeChild(ta); }
-          WebApp.showPopup?.({ title: 'Скопировано', message: 'Текст задачи и ссылка скопированы.' });
-        }
+        await (navigator as any).share(payload);
+        WebApp?.HapticFeedback?.notificationOccurred?.('success');
+        closeSheet();
+        return;
+      } catch {
+        // игнорируем — пойдём в ссылочный фолбэк
       }
-
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      closeSheet();
-    } catch (e) {
-      console.error('[ResponsibleActions] share other error', e);
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-      alert('Не удалось подготовить ссылку для шаринга.');
-    } finally {
-      setBusy(false);
     }
+
+    // 2) Ссылочный фолбэк: открываем WhatsApp (или что-то другое) — БЕЗ автокопирования и БЕЗ popup
+    const enc = (s: string) => encodeURIComponent(s);
+    const href = `https://wa.me/?text=${enc(full)}`; // можно заменить на нужную цель
+
+    try {
+      if (WebApp?.openLink) WebApp.openLink(href);
+      else window.open?.(href, '_blank');
+    } catch {
+      // 3) Совсем крайний случай: тихо копируем (без popup), чтобы юзер сам вставил
+      try { await navigator.clipboard.writeText(full); } catch {}
+    }
+
+    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    closeSheet();
+  } catch (e) {
+    console.error('[ResponsibleActions] share other error', e);
+    WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    alert('Не удалось подготовить ссылку для шаринга.');
+  } finally {
+    setBusy(false);
   }
+}
 
 
 
