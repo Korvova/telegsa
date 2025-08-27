@@ -288,3 +288,36 @@ export async function prepareGroupShareMessage(groupId: string, params: {
   return r.json();
 }
 
+
+
+
+// Комментарии к задаче
+export type TaskComment = {
+  id: string;
+  taskId: string;
+  authorChatId: string;
+  authorName?: string | null;
+  text: string;
+  createdAt: string;
+};
+
+export async function listComments(taskId: string): Promise<{ ok: boolean; comments: TaskComment[] }> {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments`);
+  return r.json();
+}
+
+export async function addComment(taskId: string, chatId: string, text: string): Promise<{ ok: boolean; comment?: TaskComment; error?: string }> {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, text }),
+  });
+  return r.json();
+}
+
+export async function deleteComment(taskId: string, commentId: string, chatId: string): Promise<{ ok: boolean }> {
+  const u = new URL(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`);
+  u.searchParams.set('chatId', chatId);
+  const r = await fetch(u.toString(), { method: 'DELETE' });
+  return r.json();
+}

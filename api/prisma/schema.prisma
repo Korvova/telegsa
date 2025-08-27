@@ -29,6 +29,7 @@ model Column {
  */
 model Task {
   id          String   @id @default(cuid())
+
   chatId      String
   text        String
   order       Int
@@ -48,6 +49,8 @@ model Task {
 
   sourceChatId     String?  // куда отправили исходное уведомление
   sourceMessageId  Int?     // message_id исходного уведомления
+
+   comments  Comment[]
 
 }
 
@@ -120,6 +123,21 @@ model NotificationSetting {
   receiveTaskCompletedMine   Boolean  @default(true)  // ⬅️ НОВОЕ
   updatedAt                  DateTime @updatedAt
 }
+
+
+
+
+model Comment {
+  id            String   @id @default(cuid())
+  taskId        String
+  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorChatId  String   // chatId автора (как в user.chatId и task.assigneeChatId)
+  text          String
+  createdAt     DateTime @default(now())
+}
+
+
+
 
 
 

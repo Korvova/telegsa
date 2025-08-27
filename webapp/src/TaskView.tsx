@@ -4,7 +4,7 @@ import WebApp from '@twa-dev/sdk';
 import type { Task } from './api';
 import { listGroups } from './api';
 import ResponsibleActions from './components/ResponsibleActions';
-
+import CommentsThread from './components/CommentsThread';
 import {
   getTask,
   getTaskWithGroup,
@@ -392,9 +392,12 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
             />
           )}
 
-    
         </div>
       </div>
+
+<CommentsThread taskId={taskId} meChatId={meChatId} />
+
+
     </div>
   );
 }

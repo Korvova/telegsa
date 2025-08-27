@@ -191,6 +191,138 @@ app.use('/assign', assignRouter({ prisma }));
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
 
+
+
+
+
+
+
+/* ---------- Comments: list / add / delete ---------- */
+app.get('/tasks/:id/comments', async (req, res) => {
+  try {
+    const taskId = String(req.params.id);
+
+    // грузим комментарии
+    const rows = await prisma.comment.findMany({
+      where: { taskId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // подтянем имена авторов по chatId
+    const ids = Array.from(new Set(rows.map(r => r.authorChatId)));
+    const users = ids.length
+      ? await prisma.user.findMany({ where: { chatId: { in: ids } } })
+      : [];
+    const nameByChat = new Map(
+      users.map(u => [
+        u.chatId,
+        [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.chatId
+      ])
+    );
+
+    const comments = rows.map(r => ({
+      id: r.id,
+      taskId: r.taskId,
+      authorChatId: r.authorChatId,
+      authorName: nameByChat.get(r.authorChatId) || r.authorChatId,
+      text: r.text,
+      createdAt: r.createdAt,
+    }));
+
+    res.json({ ok: true, comments });
+  } catch (e) {
+    console.error('GET /tasks/:id/comments error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+app.post('/tasks/:id/comments', async (req, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const { chatId, text } = req.body || {};
+    const author = String(chatId || '').trim();
+    const body = String(text || '').trim();
+    if (!author || !body) {
+      return res.status(400).json({ ok: false, error: 'chatId and text required' });
+    }
+
+    // проверка прав: владелец личной задачи или участник соответствующей группы
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: { column: true },
+    });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    // пытаемся понять groupId из имени колонки "<groupId>::Inbox"
+    let groupId = null;
+    if (task.column?.name) {
+      const i = task.column.name.indexOf(GROUP_SEP);
+      groupId = i > 0 ? task.column.name.slice(0, i) : null;
+    }
+
+    let allowed = false;
+    if (groupId) {
+      allowed = await userIsGroupMemberOrOwner(author, groupId); // уже есть у тебя в файле
+    } else {
+      // личная доска владельца
+      allowed = (String(task.chatId) === author) || (String(task.assigneeChatId || '') === author);
+    }
+    if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    const c = await prisma.comment.create({
+      data: { taskId, authorChatId: author, text: body },
+    });
+
+    res.status(201).json({ ok: true, comment: c });
+  } catch (e) {
+    console.error('POST /tasks/:id/comments error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+app.delete('/tasks/:id/comments/:commentId', async (req, res) => {
+  try {
+    const { id, commentId } = req.params;
+    const chatId = String(req.query.chatId || ''); // кто удаляет
+
+    const c = await prisma.comment.findUnique({ where: { id: String(commentId) } });
+    if (!c || c.taskId !== String(id)) {
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+
+    // удалять может автор комментария ИЛИ владелец доски/группы
+    const task = await prisma.task.findUnique({ where: { id: String(id) }, include: { column: true } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    let groupId = null;
+    if (task?.column?.name) {
+      const i = task.column.name.indexOf(GROUP_SEP);
+      groupId = i > 0 ? task.column.name.slice(0, i) : null;
+    }
+
+    let allowed = (c.authorChatId === chatId);
+    if (!allowed) {
+      if (groupId) {
+        allowed = await userIsGroupMemberOrOwner(chatId, groupId);
+      } else {
+        allowed = (String(task.chatId) === chatId);
+      }
+    }
+    if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+
+    await prisma.comment.delete({ where: { id: String(commentId) } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /tasks/:id/comments/:commentId error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+
+
+
 /* ---------- helper: имена ответственных в колонках ---------- */
 async function enrichColumnsWithAssignees(columnsRaw) {
   const ids = Array.from(new Set(
