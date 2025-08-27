@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { createAssignInvite, assignSelf, pingMemberDM } from '../api/assign';
 import { prepareShareMessage } from '../api';
-import { buildFullSharePayload } from '../share';
+
 
 
 
@@ -79,18 +79,24 @@ export default function ResponsibleActions({
   }
 
   // НОВОЕ: стабильный «другой мессенджер» — текст задачи + deep-link мини-аппа на задачу
-// ResponsibleActions.tsx
+// Заменить существующую shareToOtherMessenger на эту версию
 async function shareToOtherMessenger() {
   if (busy) return;
   setBusy(true);
   try {
-    const { url, full } = buildFullSharePayload({
-      id: taskId,
-      title: taskTitle,
-    });
+    // 1) Получаем инвайт с токеном (даёт авто-назначение при открытии)
+    const r = await createAssignInvite(taskId);
+    if (!r.ok || !r.tmeStartApp) throw new Error(r.error || 'invite_create_failed');
 
-    // 1) В браузерах/PWA пробуем нативный share (в Telegram WebView часто запрещён)
-    const payload: ShareData = { title: taskTitle, text: full, url };
+    // deep-link вида: https://t.me/<bot>?startapp=assign__<taskId>__<token>
+    // При открытии Mini App твой App.tsx примет инвайт и назначит пользователя.
+    const link = String(r.tmeStartApp);
+
+    // Текст для отправки
+    const full = `🗒️ ${taskTitle}\n\n📲 Открыть:\n${link}`;
+
+    // 2) В браузерах/PWA — пробуем системный Web Share
+    const payload: ShareData = { title: taskTitle, text: full, url: link };
     const canNative =
       typeof navigator !== 'undefined' &&
       'share' in navigator &&
@@ -103,19 +109,19 @@ async function shareToOtherMessenger() {
         closeSheet();
         return;
       } catch {
-        // игнорируем — пойдём в ссылочный фолбэк
+        // пойдём в ссылочный фолбэк
       }
     }
 
-    // 2) Ссылочный фолбэк: открываем WhatsApp (или что-то другое) — БЕЗ автокопирования и БЕЗ popup
+    // 3) Ссылочный фолбэк: откроем WhatsApp с готовым текстом (можно заменить цель)
     const enc = (s: string) => encodeURIComponent(s);
-    const href = `https://wa.me/?text=${enc(full)}`; // можно заменить на нужную цель
+    const waHref = `https://wa.me/?text=${enc(full)}`;
 
     try {
-      if (WebApp?.openLink) WebApp.openLink(href);
-      else window.open?.(href, '_blank');
+      if (WebApp?.openLink) WebApp.openLink(waHref);
+      else window.open?.(waHref, '_blank');
     } catch {
-      // 3) Совсем крайний случай: тихо копируем (без popup), чтобы юзер сам вставил
+      // 4) Крайний случай: тихо положим текст в буфер (без попапа)
       try { await navigator.clipboard.writeText(full); } catch {}
     }
 
@@ -129,9 +135,6 @@ async function shareToOtherMessenger() {
     setBusy(false);
   }
 }
-
-
-
 
 
 
