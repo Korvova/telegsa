@@ -68,25 +68,42 @@ function getTaskIdFromURL() {
 }
 
 /** Парсер start_param для инвайтов assign/join в компактном и полном виде */
-function parseStartParam(sp: string) {
-  if (!sp) return null as null | { type: 'assign' | 'join'; id: string; token: string };
 
-  // 1) Нормальный вид: assign__ID__TOKEN  |  join__ID__TOKEN
-  let m = sp.match(/^(assign|join)__([a-z0-9]+)__([A-Za-z0-9\-_]{10,})$/i);
+
+
+// заменить parseStartParam на:
+function parseStartParam(sp: string) {
+  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task'; id: string; token?: string };
+
+  // 1) Полный вид: assign/join/event
+  let m = sp.match(/^(assign|join|event)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
   if (m) return { type: m[1] as any, id: m[2], token: m[3] };
 
-  // 2) Компактный вид: assign<ID><TOKEN>  |  join<ID><TOKEN>
-  const head = sp.startsWith('assign') ? 'assign' : (sp.startsWith('join') ? 'join' : null);
+  // 2) task_<id> (кнопка в напоминании)
+  m = sp.match(/^task_([a-z0-9]+)$/i);
+  if (m) return { type: 'task', id: m[1] };
+
+  // 3) Компактный assign/join/event: head<ID><TOKEN>
+  const head = sp.startsWith('assign')
+    ? 'assign'
+    : sp.startsWith('join')
+    ? 'join'
+    : sp.startsWith('event')
+    ? 'event'
+    : null;
   if (!head) return null;
 
   const rest = sp.slice(head.length);
-  const TOKEN_LEN = 22; // base64url(16) ≈ 22 символа
+  const TOKEN_LEN = 22; // base64url(16)
   if (rest.length <= TOKEN_LEN) return null;
   const token = rest.slice(-TOKEN_LEN);
   const id = rest.slice(0, -TOKEN_LEN);
   if (!id) return null;
   return { type: head as any, id, token };
 }
+
+
+
 
 /* ---------------- UI bits ---------------- */
 function TaskCard({
@@ -96,6 +113,9 @@ function TaskCard({
   active,
   dragging,
   onClick,
+  isEvent,
+  startAt,
+  endAt,
 }: {
   text: string;
   order: number;
@@ -103,16 +123,27 @@ function TaskCard({
   active?: boolean;
   dragging?: boolean;
   onClick?: () => void;
+  isEvent?: boolean;
+  startAt?: string | null;
+  endAt?: string | null;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
+  const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '');
   return (
     <div onClick={onClick} style={{
       background: bg, border: '1px solid #2a3346', borderRadius: 12, padding: 12,
       userSelect: 'none', cursor: 'pointer', boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
     }}>
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>#{order}</div>
+        {isEvent && (
+          <div style={{ fontSize: 12, opacity: 0.85 }} title="Событие">
+            📅 {fmt(startAt)}{endAt ? ` — ${fmt(endAt)}` : ''}
+          </div>
+        )}
+      </div>
       <div style={{ fontSize: 15, marginBottom: assigneeName ? 6 : 0 }}>{text}</div>
-      {assigneeName ? (
+      {!isEvent && assigneeName ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>👤</span><span>{assigneeName}</span>
         </div>
@@ -121,6 +152,9 @@ function TaskCard({
   );
 }
 
+
+
+
 function SortableTask({
   taskId,
   text,
@@ -128,6 +162,9 @@ function SortableTask({
   assigneeName,
   onOpenTask,
   armed,
+  isEvent,
+  startAt,
+  endAt,
 }: {
   taskId: string;
   text: string;
@@ -135,16 +172,30 @@ function SortableTask({
   assigneeName?: string | null;
   onOpenTask: (id: string) => void;
   armed?: boolean;
+  isEvent?: boolean;
+  startAt?: string | null;
+  endAt?: string | null;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: taskId });
   const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, touchAction: armed || isDragging ? 'none' : 'auto' };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <TaskCard text={text} order={order} assigneeName={assigneeName} active={armed} dragging={isDragging} onClick={() => onOpenTask(taskId)} />
+      <TaskCard
+        text={text}
+        order={order}
+        assigneeName={assigneeName}
+        active={armed}
+        dragging={isDragging}
+        onClick={() => onOpenTask(taskId)}
+        isEvent={isEvent}
+        startAt={startAt}
+        endAt={endAt}
+      />
     </div>
   );
 }
+
 
 /* + Колонка */
 function AddColumnButton({ chatId, groupId, onAdded }: { chatId: string; groupId?: string; onAdded: () => void }) {
@@ -421,6 +472,7 @@ useEffect(() => {
 
     if (!parsed) return;
 
+
     if (parsed.type === 'assign') {
       const url = new URL(window.location.href);
       url.searchParams.set('task', parsed.id);
@@ -448,6 +500,28 @@ useEffect(() => {
         })
         .catch(() => {});
     }
+
+    // 🔔 EVENT-инвайт: принять и открыть карточку события
+    if (parsed.type === 'event') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('task', parsed.id);
+      window.history.replaceState(null, '', url.toString());
+      setTaskId(parsed.id);
+
+      fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: me, token: parsed.token }),
+      }).catch(() => {});
+    }
+
+
+
+
+
+
+
+
   }, [chatId, reloadGroups, loadBoard]);
 
   useEffect(() => {
@@ -854,7 +928,17 @@ useEffect(() => {
     </>
   )
 ) : tab === 'calendar' ? (
-  <CalendarView />
+
+
+
+<CalendarView
+  chatId={chatId}
+  groupId={selectedGroupId}
+  onOpenTask={openTask}
+/>
+
+
+
 ) : tab === 'notifications' ? (
   <NotificationsView />
 ) : (
@@ -1074,17 +1158,22 @@ function ColumnView({
             touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
-          {column.tasks.map((t) => (
-            <SortableTask
-              key={t.id}
-              taskId={t.id}
-              text={t.text}
-              order={t.order}
-              assigneeName={t.assigneeName}
-              onOpenTask={onOpenTask}
-              armed={activeId === t.id}
-            />
-          ))}
+{column.tasks.map((t) => (
+  <SortableTask
+    key={t.id}
+    taskId={t.id}
+    text={t.text}
+    order={t.order}
+    assigneeName={t.assigneeName}
+    onOpenTask={onOpenTask}
+    armed={activeId === t.id}
+    isEvent={t.type === 'EVENT'}
+    startAt={t.startAt}
+    endAt={t.endAt}
+  />
+))}
+
+
 
           {column.tasks.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>Пусто</div>}
         </div>

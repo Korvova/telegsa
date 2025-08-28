@@ -3,16 +3,55 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 import { tasksRouter } from './routes/tasks.js';
-
 import { notificationsRouter } from './routes/notifications.js';
-
-
 import { assignRouter } from './routes/assign.js';  
+import { eventsRouter } from './routes/events.js';
+import { initReminderScheduler, scheduleRemindersForEvent } from './scheduler.js';
+
 
 
 const prisma = new PrismaClient();
 const app = express();
 app.use(express.json());
+
+
+
+
+
+
+
+
+
+
+// 2) PATCH с try/catch
+eventsRouter.patch('/:id', async (req, res) => {
+  try {
+    const eventId = String(req.params.id);
+    const before = await prisma.task.findUnique({ where: { id: eventId } });
+    if (!before) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const updated = await prisma.task.update({ where: { id: eventId }, data: req.body });
+
+    if (
+      req.body.startAt &&
+      (!before.startAt ||
+       new Date(req.body.startAt).getTime() !== new Date(before.startAt).getTime())
+    ) {
+      await recomputeAndRescheduleEventReminders(prisma, tg, eventId, req.body.startAt);
+    }
+
+    return res.json({ ok: true, event: updated });
+  } catch (e) {
+    console.error('PATCH /events/:id error', e);
+    return res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+
+
+
 
 /* ---------- Telegram helper ---------- */
 async function tg(method, payload) {
@@ -26,6 +65,44 @@ async function tg(method, payload) {
   if (!data.ok) console.error('Telegram API error:', data);
   return data;
 }
+
+
+
+initReminderScheduler({ prisma, tg }).catch(console.error);
+
+
+
+
+async function recomputeAndRescheduleEventReminders(prisma, tg, eventId, newStartAt) {
+  const start = new Date(newStartAt);
+  if (Number.isNaN(start.getTime())) return; // плохая дата — выходим
+
+  await prisma.$transaction(async (tx) => {
+    const rows = await tx.eventReminder.findMany({
+      where: { eventId: String(eventId), sentAt: null },
+      select: { id: true, offsetMinutes: true },
+    });
+    for (const r of rows) {
+      await tx.eventReminder.update({
+        where: { id: r.id },
+        data: { fireAt: new Date(start.getTime() - (r.offsetMinutes ?? 0) * 60_000) },
+      });
+    }
+  });
+
+  await scheduleRemindersForEvent(prisma, tg, eventId);
+}
+
+
+
+
+
+
+
+
+
+
+
 
 /* ---------- Short codes (без БД) ---------- */
 function buildShortCodes(ids) {
@@ -191,9 +268,9 @@ app.use('/assign', assignRouter({ prisma }));
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
 
+/* ---------- Мероприятия ---------- */
 
-
-
+app.use('/events', eventsRouter);
 
 
 
@@ -224,6 +301,36 @@ async function enrichColumnsWithAssignees(columnsRaw) {
     })),
   }));
 }
+
+
+
+
+
+// ---------- helper: проверка, что byChatId — организатор события ----------
+async function isEventOrganizer(eventId, chatId) {
+  const p = await prisma.eventParticipant.findFirst({
+    where: { eventId: String(eventId), chatId: String(chatId), role: 'ORGANIZER' },
+  });
+  return !!p;
+}
+
+
+// ---------- helper:----------
+
+async function ensureMyGroupId(ownerChatId) {
+  const who = String(ownerChatId);
+  let g = await prisma.group.findFirst({
+    where: { ownerChatId: who, title: 'Моя группа' }
+  });
+  if (!g) {
+    g = await prisma.group.create({
+      data: { ownerChatId: who, title: 'Моя группа' }
+    });
+  }
+  return g.id;
+}
+
+
 
 /* ---------- миграция: перенести колонки группы к владельцу ---------- */
 async function adoptGroupColumnsToOwner(boardChatId, groupId) {
@@ -706,12 +813,78 @@ app.patch('/tasks/:id', async (req, res) => {
 
 
 /* ---------- Invites ---------- */
+/* ---------- Invites ---------- */
 app.post('/invites', async (req, res) => {
   try {
-    const { chatId, type, taskId, groupId: rawGroupId } = req.body || {};
-    const inviter = String(chatId || '');
+    const {
+      chatId,
+      type,
+      taskId,
+      groupId: rawGroupId,
+      eventId: rawEventId,  // для EVENT-инвайта
+    } = req.body || {};
 
-    if (!inviter || (type !== 'task' && type !== 'group')) {
+    const inviter = String(chatId || '');
+    if (!inviter || !type) {
+      return res.status(400).json({ ok: false, error: 'bad_request' });
+    }
+
+    const botUser = process.env.BOT_USERNAME || 'telegsar_bot';
+
+    /* ===== EVENT invite ===== */
+    if (String(type).toLowerCase() === 'event') {
+      const eventId = String(rawEventId || '');
+      if (!eventId) return res.status(400).json({ ok: false, error: 'eventId required' });
+
+      const event = await prisma.task.findUnique({
+        where: { id: eventId },
+        include: { column: true },
+      });
+      if (!event || event.type !== 'EVENT') {
+        return res.status(404).json({ ok: false, error: 'event_not_found' });
+      }
+
+      // только организатор может генерировать инвайт
+      const isOrg = await isEventOrganizer(eventId, inviter);
+      if (!isOrg) return res.status(403).json({ ok: false, error: 'only_organizer_allowed' });
+
+      // groupId для тикета: из имени колонки (как у TASK)
+
+
+const parsedGroupId = event?.column ? parseGroupIdFromColumnName(event.column.name) : null;
+const fallbackGroup = await prisma.group.findFirst({
+  where: { ownerChatId: event.chatId, title: 'Моя группа' },
+});
+const groupIdFinal = parsedGroupId ?? fallbackGroup?.id ?? null;
+
+// ✅ гарантируем, что groupId точно есть
+const groupIdResolved = groupIdFinal ?? (await ensureMyGroupId(inviter));
+
+const token = makeToken();
+const created = await prisma.inviteTicket.create({
+  data: {
+    token,
+    type: 'EVENT',
+    status: 'ACTIVE',
+    groupId: groupIdResolved,
+    taskId: null,
+    eventId: eventId,
+    invitedByChatId: inviter,
+  },
+});
+
+
+
+
+
+      const link = `https://t.me/${botUser}?startapp=event__${created.eventId}__${created.token}`;
+      const shareText = `Приглашаю тебя на событие: ${event.text || ''}`;
+
+      return res.json({ ok: true, token, link, shareText });
+    }
+
+    /* ===== TASK / GROUP invites (как было) ===== */
+    if (type !== 'task' && type !== 'group') {
       return res.status(400).json({ ok: false, error: 'bad_request' });
     }
 
@@ -742,19 +915,23 @@ app.post('/invites', async (req, res) => {
         token,
         type: type === 'task' ? 'TASK' : 'GROUP',
         status: 'ACTIVE',
-        groupId: groupId ?? (await prisma.group.findFirst({ where: { ownerChatId: inviter, title: 'Моя группа' } })).id,
+        groupId:
+          groupId ??
+          (await prisma.group.findFirst({
+            where: { ownerChatId: inviter, title: 'Моя группа' },
+          }))?.id,
         taskId: type === 'task' ? String(taskId) : null,
         invitedByChatId: inviter,
-      }
+      },
     });
 
     let link = '';
     let shareText = '';
     if (created.type === 'TASK') {
-      link = `https://t.me/telegsar_bot?startapp=assign__${created.taskId}__${created.token}`;
+      link = `https://t.me/${botUser}?startapp=assign__${created.taskId}__${created.token}`;
       shareText = `Назначаю тебя ответственным по задаче. Открой ссылку:`;
     } else {
-      link = `https://t.me/telegsar_bot?startapp=join__${created.groupId}__${created.token}`;
+      link = `https://t.me/${botUser}?startapp=join__${created.groupId}__${created.token}`;
       shareText = `Приглашаю тебя в группу. Открой ссылку:`;
     }
 
@@ -764,8 +941,6 @@ app.post('/invites', async (req, res) => {
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
-
-
 
 
 
@@ -782,13 +957,41 @@ app.post('/invites/accept', async (req, res) => {
       return res.status(410).json({ ok: false, error: 'invite_invalid' });
     }
 
-    const isMember = await userIsGroupMemberOrOwner(who, invite.groupId);
-    if (!isMember) {
-      await prisma.groupMember.create({
-        data: { groupId: invite.groupId, chatId: who, role: 'member' }
+    // Добавляем в группу (если ещё не член)
+    if (invite.groupId) {
+      const isMember = await userIsGroupMemberOrOwner(who, invite.groupId);
+      if (!isMember) {
+        await prisma.groupMember.create({
+          data: { groupId: invite.groupId, chatId: who, role: 'member' }
+        });
+      }
+    }
+
+    // === EVENT: принять приглашение в событие ===
+    if (invite.type === 'EVENT' && invite.eventId) {
+      const exists = await prisma.eventParticipant.findFirst({
+        where: { eventId: invite.eventId, chatId: who },
+      });
+      if (!exists) {
+        await prisma.eventParticipant.create({
+          data: { eventId: invite.eventId, chatId: who, role: 'PARTICIPANT' },
+        });
+      }
+
+      await prisma.inviteTicket.update({
+        where: { token: tok },
+        data: { status: 'USED' },
+      });
+
+      return res.json({
+        ok: true,
+        groupId: invite.groupId,
+        eventId: invite.eventId,
+        joined: true
       });
     }
 
+    // === TASK: назначить ответственным ===
     let assigned = false;
     if (invite.type === 'TASK' && invite.taskId) {
       await prisma.task.update({
@@ -797,7 +1000,7 @@ app.post('/invites/accept', async (req, res) => {
       });
       assigned = true;
 
-      // 🔔 уведомление ответственному
+      // 🔔 уведомление назначенному
       try {
         const taskAfter = await prisma.task.findUnique({ where: { id: invite.taskId } });
         const now = String(who);
@@ -831,12 +1034,18 @@ app.post('/invites/accept', async (req, res) => {
       }
     }
 
+    // === GROUP или TASK (после обработки) — пометить тикет использованным
     await prisma.inviteTicket.update({
       where: { token: tok },
       data: { status: 'USED' }
     });
 
-    return res.json({ ok: true, groupId: invite.groupId, taskId: invite.taskId ?? null, assigned });
+    return res.json({
+      ok: true,
+      groupId: invite.groupId,
+      taskId: invite.taskId ?? null,
+      assigned
+    });
   } catch (e) {
     console.error('POST /invites/accept error:', e);
     res.status(500).json({ ok: false, error: 'internal' });
@@ -953,6 +1162,98 @@ app.post('/tasks/:id/complete', async (req, res) => {
 
 
 
+// === PRIME: разослать базовые сообщения участникам события и сохранить replyToMessageId ===
+// POST /events/:id/reminders/prime
+// body: { byChatId: string }
+app.post('/events/:id/reminders/prime', async (req, res) => {
+  try {
+    const eventId = String(req.params.id);
+    const { byChatId } = req.body || {};
+    if (!byChatId) return res.status(400).json({ ok: false, error: 'byChatId required' });
+
+    const event = await prisma.task.findUnique({ where: { id: eventId } });
+    if (!event || event.type !== 'EVENT') {
+      return res.status(404).json({ ok: false, error: 'event_not_found' });
+    }
+    if (!event.startAt) return res.status(400).json({ ok: false, error: 'event_has_no_start' });
+
+    // только организатор может праймить
+    const allowed = await isEventOrganizer(eventId, String(byChatId));
+    if (!allowed) return res.status(403).json({ ok: false, error: 'only_organizer_allowed' });
+
+    // участники события
+    const participants = await prisma.eventParticipant.findMany({
+      where: { eventId },
+      select: { chatId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const chatIds = participants.map(p => String(p.chatId));
+    if (!chatIds.length) return res.json({ ok: true, primed: 0 });
+
+    // у кого есть напоминания и нет replyToMessageId
+    const needMap = new Map(); // chatId -> true, если хотя бы одна запись без reply
+    const rows = await prisma.eventReminder.findMany({
+      where: { eventId, chatId: { in: chatIds } },
+      select: { chatId: true, replyToMessageId: true },
+    });
+    for (const r of rows) {
+      if (!r.replyToMessageId) needMap.set(String(r.chatId), true);
+    }
+    const toPrime = chatIds.filter(cid => needMap.get(cid));
+    if (!toPrime.length) return res.json({ ok: true, primed: 0 });
+
+    // уважим writeAccessGranted: шлём только тем, кому можно
+    const settings = await prisma.notificationSetting.findMany({
+      where: { telegramId: { in: toPrime } },
+      select: { telegramId: true, writeAccessGranted: true },
+    });
+    const canDM = new Set(settings.filter(s => !!s.writeAccessGranted).map(s => String(s.telegramId)));
+    const recipients = toPrime.filter(cid => canDM.has(cid));
+
+    let primed = 0;
+    // текст базового сообщения
+    const fmt = (d) => new Date(d).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+    const title = event.text || 'Событие';
+    const timeLine = event.endAt
+      ? `${fmt(event.startAt)} — ${fmt(event.endAt)}`
+      : `${fmt(event.startAt)}`;
+    const baseText = `📅 <b>${title}</b>\n${timeLine}`;
+
+    for (const chat_id of recipients) {
+      try {
+        const sent = await tg('sendMessage', {
+          chat_id,
+          text: baseText,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        });
+
+        const mid = sent?.ok && sent.result?.message_id ? Number(sent.result.message_id) : null;
+        if (mid) {
+          await prisma.eventReminder.updateMany({
+            where: { eventId, chatId: chat_id, replyToMessageId: null },
+            data: { replyToMessageId: mid },
+          });
+          primed++;
+        }
+      } catch (e) {
+        console.warn('[prime] send to', chat_id, 'failed:', e?.description || e);
+      }
+    }
+
+await scheduleRemindersForEvent(prisma, tg, eventId);
+
+
+
+
+    // вернём, кому НЕ отправили из-за writeAccessGranted=false (может пригодиться в UI)
+    const skipped = toPrime.filter(cid => !recipients.includes(cid));
+    return res.json({ ok: true, primed, skipped });
+  } catch (e) {
+    console.error('POST /events/:id/reminders/prime error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
 
 
 

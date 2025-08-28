@@ -5,6 +5,7 @@ import type { Task } from './api';
 import { listGroups } from './api';
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
+import EventPanel from './components/EventPanel';
 import {
   getTask,
   getTaskWithGroup,
@@ -274,9 +275,16 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       >
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div>
 
-        <label style={{ display: 'block', fontSize: 14, opacity: 0.85, marginBottom: 8 }}>
-          Текст задачи
-        </label>
+
+
+<label style={{ display: 'block', fontSize: 14, opacity: 0.85, marginBottom: 8 }}>
+  {task?.type === 'EVENT' ? 'Событие' : 'Текст задачи'}
+</label>
+
+
+
+
+
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -338,62 +346,85 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           </button>
 
           {/* Постановщик */}
-          {(task as any).creatorName ? (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid #2a3346',
-                background: '#1a2030',
-                color: '#e8eaed',
-                display: 'inline-flex',
-                gap: 8,
-                alignItems: 'center',
-              }}
-              title="Постановщик задачи"
-            >
-              <span style={{ opacity: 0.8 }}>Постановщик:</span>
-              <strong>{(task as any).creatorName}</strong>
-            </div>
-          ) : null}
+     {/* Организатор / Постановщик */}
+{(task as any).creatorName ? (
+  <div
+    style={{
+      padding: '10px 14px',
+      borderRadius: 12,
+      border: '1px solid #2a3346',
+      background: '#1a2030',
+      color: '#e8eaed',
+      display: 'inline-flex',
+      gap: 8,
+      alignItems: 'center',
+    }}
+    title={task?.type === 'EVENT' ? 'Организатор события' : 'Постановщик задачи'}
+  >
+    <span style={{ opacity: 0.8 }}>{task?.type === 'EVENT' ? 'Организатор:' : 'Постановщик:'}</span>
+    <strong>{(task as any).creatorName}</strong>
+  </div>
+) : null}
+
+
 
           {/* Ответственный / действия назначения */}
-          {task.assigneeChatId ? (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: 12,
-                border: '1px solid #2a3346',
-                background: '#15251a',
-                color: '#d7ffd7',
-                display: 'inline-flex',
-                gap: 8,
-                alignItems: 'center',
-              }}
-              title="Ответственный по задаче"
-            >
-              <span style={{ opacity: 0.8 }}>Ответственный:</span>
-              <strong>{task.assigneeName || task.assigneeChatId}</strong>
-            </div>
-          ) : (
-            <ResponsibleActions
-              taskId={taskId}
-              taskTitle={text}
-              groupId={groupId || undefined}
-              meChatId={meChatId}
-              currentAssigneeChatId={task?.assigneeChatId ?? null}
-              // передаём имя как firstName — компонент сам сформирует подпись
-              members={members.map((m) => ({
-                chatId: String(m.chatId),
-                firstName: m.name || undefined,
-              }))}
-              canAssign={true}
-              onAssigned={() => setRefreshTick((t) => t + 1)}
-            />
-          )}
+    {/* Для событий — ответственного не показываем (есть участники в EventPanel) */}
+
+{task?.type !== 'EVENT' && (
+  task.assigneeChatId ? (
+    <div
+      style={{
+        padding: '10px 14px',
+        borderRadius: 12,
+        border: '1px solid #2a3346',
+        background: '#15251a',
+        color: '#d7ffd7',
+        display: 'inline-flex',
+        gap: 8,
+        alignItems: 'center',
+      }}
+      title="Ответственный по задаче"
+    >
+      <span style={{ opacity: 0.8 }}>Ответственный:</span>
+      <strong>{task.assigneeName || task.assigneeChatId}</strong>
+    </div>
+  ) : (
+    <ResponsibleActions
+      taskId={taskId}
+      taskTitle={text}
+      groupId={groupId || undefined}
+      meChatId={meChatId}
+      currentAssigneeChatId={task?.assigneeChatId ?? null}
+      members={members.map((m) => ({
+        chatId: String(m.chatId),
+        firstName: m.name || undefined,
+      }))}
+      canAssign={true}
+      onAssigned={() => setRefreshTick((t) => t + 1)}
+    />
+  )
+)}
+
+
 
         </div>
       </div>
+
+
+
+
+{task?.type === 'EVENT' && (
+  <EventPanel
+    eventId={task.id}
+    startAt={String(task.startAt || '')}   // строка
+    endAt={task.endAt ?? null}
+    chatId={meChatId}
+    isOrganizer={Boolean((task as any)?.meIsOrganizer)}
+  />
+)}
+
+      
 
 <CommentsThread taskId={taskId} meChatId={meChatId} />
 

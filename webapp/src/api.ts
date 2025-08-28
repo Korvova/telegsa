@@ -1,3 +1,4 @@
+// src/api.ts
 import ky from 'ky';
 
 /* ---------- Types ---------- */
@@ -12,9 +13,18 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
 
-  // ⤵️ добавляем
+  // назначение
   assigneeChatId?: string | null;
   assigneeName?: string | null;
+
+  // событие (если type === 'EVENT')
+  type?: 'TASK' | 'EVENT';
+  startAt?: string | null;
+  endAt?: string | null;
+
+  // сервисные
+  creatorName?: string | null;
+  meIsOrganizer?: boolean;
 };
 
 export type Column = {
@@ -31,7 +41,39 @@ export type Group = {
   id: string;
   title: string;
   kind: 'own' | 'member';
-  ownerName?: string | null; // ⬅️ новое поле
+  ownerName?: string | null;
+};
+
+export type GroupMember = {
+  chatId: string;
+  name?: string | null;
+  role?: 'owner' | 'member' | 'invited';
+  assignedCount?: number;
+};
+
+export type TaskComment = {
+  id: string;
+  taskId: string;
+  authorChatId: string;
+  authorName?: string | null;
+  text: string;
+  createdAt: string;
+};
+
+// --- Events ---
+export type EventItem = {
+  id: string;
+  text: string;
+  type: 'EVENT';
+  startAt: string;
+  endAt?: string | null;
+  chatId: string;
+};
+
+export type EventParticipant = {
+  chatId: string;
+  role: 'ORGANIZER' | 'PARTICIPANT';
+  name?: string | null;
 };
 
 /* ---------- Config ---------- */
@@ -176,7 +218,6 @@ export async function forwardTask(taskId: string, toChatId: string) {
 
 /* ---------- Share (Mini App) ---------- */
 
-// savePreparedInlineMessage → shareMessage (встроенный диалог)
 export async function prepareShareMessage(
   taskId: string,
   body: { userId: number; allowGroups?: boolean; withButton?: boolean }
@@ -197,7 +238,6 @@ export async function prepareShareMessage(
   };
 }
 
-// опционально: отправить «превью себе» обычным sendMessage (для отладки)
 export async function sendSelfPreview(taskId: string, body: { userId: number }) {
   const r = await fetch(`${API_BASE}/tasks/${taskId}/send-self-preview`, {
     method: 'POST',
@@ -214,24 +254,14 @@ export async function sendSelfPreview(taskId: string, body: { userId: number }) 
   };
 }
 
-
-// src/api.ts (добавь рядом с остальными типами/функциями)
-
-export type GroupMember = {
-  chatId: string;
-  name?: string | null;
-  role?: 'owner' | 'member' | 'invited';
-  assignedCount?: number; // сколько задач на участнике в этой группе
-};
+/* ---------- Groups: members / invites ---------- */
 
 export async function getGroupMembers(groupId: string): Promise<{
   ok: boolean;
   owner?: GroupMember;
   members: GroupMember[];
 }> {
-  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${groupId}/members`, {
-    credentials: 'include',
-  });
+  const r = await fetch(`${API_BASE}/groups/${groupId}/members`, { credentials: 'include' });
   if (!r.ok) return { ok: false, members: [] };
   return r.json();
 }
@@ -241,7 +271,7 @@ export async function createGroupInvite(params: { chatId: string; groupId: strin
   link?: string;
   shareText?: string;
 }> {
-  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${params.groupId}/invite`, {
+  const r = await fetch(`${API_BASE}/groups/${params.groupId}/invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chatId: params.chatId }),
@@ -252,18 +282,14 @@ export async function createGroupInvite(params: { chatId: string; groupId: strin
 
 export async function removeGroupMember(groupId: string, memberChatId: string, byChatId: string): Promise<{ ok: boolean }> {
   const r = await fetch(
-    `${import.meta.env.VITE_API_BASE}/groups/${groupId}/members/${memberChatId}?byChatId=${encodeURIComponent(byChatId)}`,
+    `${API_BASE}/groups/${groupId}/members/${memberChatId}?byChatId=${encodeURIComponent(byChatId)}`,
     { method: 'DELETE' }
   );
   return { ok: r.ok };
 }
 
-
-
-
-
 export async function leaveGroup(groupId: string, chatId: string): Promise<{ ok: boolean }> {
-  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${groupId}/leave`, {
+  const r = await fetch(`${API_BASE}/groups/${groupId}/leave`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chatId }),
@@ -271,15 +297,11 @@ export async function leaveGroup(groupId: string, chatId: string): Promise<{ ok:
   return { ok: r.ok };
 }
 
-
-
-// src/api.ts
-export async function prepareGroupShareMessage(groupId: string, params: {
-  userId: number;
-  allowGroups?: boolean;
-  withButton?: boolean;
-}): Promise<{ ok: boolean; preparedMessageId?: string }> {
-  const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${groupId}/share-prepared`, {
+export async function prepareGroupShareMessage(
+  groupId: string,
+  params: { userId: number; allowGroups?: boolean; withButton?: boolean }
+): Promise<{ ok: boolean; preparedMessageId?: string }> {
+  const r = await fetch(`${API_BASE}/groups/${groupId}/share-prepared`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -288,18 +310,7 @@ export async function prepareGroupShareMessage(groupId: string, params: {
   return r.json();
 }
 
-
-
-
-// Комментарии к задаче
-export type TaskComment = {
-  id: string;
-  taskId: string;
-  authorChatId: string;
-  authorName?: string | null;
-  text: string;
-  createdAt: string;
-};
+/* ---------- Comments ---------- */
 
 export async function listComments(taskId: string): Promise<{ ok: boolean; comments: TaskComment[] }> {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments`);
@@ -310,15 +321,130 @@ export async function addComment(taskId: string, chatId: string, text: string) {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ authorChatId: chatId, text }), // ✅ правильно
+    body: JSON.stringify({ authorChatId: chatId, text }),
   });
   return r.json();
 }
-
 
 export async function deleteComment(taskId: string, commentId: string, chatId: string): Promise<{ ok: boolean }> {
   const u = new URL(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`);
   u.searchParams.set('chatId', chatId);
   const r = await fetch(u.toString(), { method: 'DELETE' });
   return r.json();
+}
+
+/* ---------- Events API ---------- */
+
+export async function listEvents(chatId: string, groupId?: string | null) {
+  const sp = new URLSearchParams();
+  sp.set('chatId', chatId);
+  if (groupId) sp.set('groupId', groupId);
+  const r = await fetch(`${API_BASE}/events?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; events: EventItem[] }>;
+}
+
+export async function createEvent(params: {
+  chatId: string;
+  groupId?: string | null;
+  text: string;        // важно: text, не title
+  startAt: string;
+  endAt?: string | null;
+}) {
+  const r = await fetch(`${API_BASE}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return r.json() as Promise<{ ok: boolean; event: EventItem }>;
+}
+
+export async function getEvent(id: string) {
+  const r = await fetch(`${API_BASE}/events/${id}`);
+  return r.json() as Promise<{ ok: boolean; event: EventItem }>;
+}
+
+export async function updateEvent(
+  id: string,
+  byChatId: string,
+  patch: Partial<Pick<EventItem, 'text' | 'startAt' | 'endAt'>>
+) {
+  const r = await fetch(`${API_BASE}/events/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ byChatId, ...patch }),
+  });
+  return r.json() as Promise<{ ok: boolean; event: EventItem }>;
+}
+
+export async function deleteEvent(id: string, byChatId: string) {
+  const sp = new URLSearchParams();
+  sp.set('byChatId', byChatId);
+  const r = await fetch(`${API_BASE}/events/${id}?${sp.toString()}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+// participants
+export async function listEventParticipants(eventId: string) {
+  const r = await fetch(`${API_BASE}/events/${eventId}/participants`);
+  return r.json() as Promise<{ ok: boolean; participants: EventParticipant[] }>;
+}
+
+export async function addEventParticipant(
+  eventId: string,
+  byChatId: string,
+  chatId: string,
+  role: 'PARTICIPANT' | 'ORGANIZER' = 'PARTICIPANT'
+) {
+  const r = await fetch(`${API_BASE}/events/${eventId}/participants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ byChatId, chatId, role }),
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+export async function removeEventParticipant(eventId: string, targetChatId: string, byChatId: string) {
+  const sp = new URLSearchParams();
+  sp.set('byChatId', byChatId);
+  const r = await fetch(
+    `${API_BASE}/events/${eventId}/participants/${encodeURIComponent(targetChatId)}?${sp.toString()}`,
+    { method: 'DELETE' }
+  );
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+// reminders (per-user)
+export async function getMyEventReminders(eventId: string, chatId: string) {
+  const sp = new URLSearchParams();
+  sp.set('chatId', chatId);
+  const r = await fetch(`${API_BASE}/events/${eventId}/reminders?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; reminders: { id: string; offsetMinutes: number }[] }>;
+}
+
+export async function setMyEventReminders(eventId: string, chatId: string, offsets: number[]) {
+  const r = await fetch(`${API_BASE}/events/${eventId}/reminders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, offsets }),
+  });
+  return r.json() as Promise<{ ok: boolean; count: number }>;
+}
+
+export async function primeEventReminders(eventId: string, byChatId: string) {
+  const r = await fetch(`${API_BASE}/events/${eventId}/reminders/prime`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ byChatId }),
+  });
+  return r.json() as Promise<{ ok: boolean; primed: number; skipped: string[] }>;
+}
+
+// invite for EVENT
+export async function createEventInvite(eventId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/invites`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, type: 'event', eventId }),
+  });
+  return r.json() as Promise<{ ok: boolean; token: string; link: string; shareText?: string }>;
 }

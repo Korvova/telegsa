@@ -24,8 +24,23 @@ model Column {
   @@index([chatId])
 }
 
+/* -------------------- NEW/UPDATED ENUMS -------------------- */
+
+enum TaskType {
+  TASK
+  EVENT
+}
+
+enum EventRole {
+  ORGANIZER
+  PARTICIPANT
+}
+
+/* -------------------- TASKS -------------------- */
 /**
  * Задачи.
+ * Теперь поддерживает типы: обычная задача (TASK) и мероприятие (EVENT).
+ * Для EVENT используем startAt/endAt, участников и отдельные инвайты.
  */
 model Task {
   id          String   @id @default(cuid())
@@ -42,7 +57,18 @@ model Task {
 
   assigneeChatId String?
 
-  inviteTickets InviteTicket[] @relation("TaskInviteTickets") // ← добавь это
+  // === NEW: тип задачи/события + даты (для EVENT)
+  type     TaskType @default(TASK)
+  startAt  DateTime?
+  endAt    DateTime?
+
+  // Инвайты на TASK (как было)
+  inviteTickets       InviteTicket[] @relation("TaskInviteTickets")
+  // NEW: инвайты на EVENT (отдельная связь на тот же Task, когда type=EVENT)
+  eventInviteTickets  InviteTicket[] @relation("EventInviteTickets")
+
+  // NEW: участники мероприятия (только для EVENT, но связь не мешает TASK)
+  participants EventParticipant[]
 
   @@index([chatId])
   @@index([columnId, order])
@@ -50,11 +76,13 @@ model Task {
   sourceChatId     String?  // куда отправили исходное уведомление
   sourceMessageId  Int?     // message_id исходного уведомления
 
-   comments  Comment[]
+   reminders    EventReminder[]   // one-to-many: Task -> EventReminder
 
+  comments  Comment[]
 }
 
-/// === Groups ===
+/* -------------------- GROUPS -------------------- */
+
 model Group {
   id          String   @id @default(cuid())
   ownerChatId String
@@ -64,12 +92,11 @@ model Group {
 
   members       GroupMember[]
   shortcuts     GroupShortcut[]
-  inviteTickets InviteTicket[]  @relation("GroupInviteTickets") // ← добавь это
+  inviteTickets InviteTicket[]  @relation("GroupInviteTickets")
 
   @@unique([ownerChatId, title])
   @@index([ownerChatId])
 }
-
 
 model User {
   chatId    String   @id
@@ -79,9 +106,6 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-
-
 
 model GroupMember {
   id        String   @id @default(cuid())
@@ -115,31 +139,27 @@ model GroupShortcut {
   @@index([groupId])
 }
 
+/* -------------------- NOTIFICATIONS / COMMENTS -------------------- */
 
 model NotificationSetting {
-  telegramId                 String   @id
-  receiveTaskAccepted        Boolean  @default(true)
-  writeAccessGranted         Boolean  @default(false)
-  receiveTaskCompletedMine   Boolean  @default(true)  // ⬅️ НОВОЕ
-  updatedAt                  DateTime @updatedAt
-   receiveTaskComment       Boolean @default(true) 
+  telegramId               String   @id
+  receiveTaskAccepted      Boolean  @default(true)
+  writeAccessGranted       Boolean  @default(false)
+  receiveTaskCompletedMine Boolean  @default(true)
+  updatedAt                DateTime @updatedAt
+  receiveTaskComment       Boolean  @default(true)
 }
-
-
-
 
 model Comment {
   id            String   @id @default(cuid())
   taskId        String
   task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  authorChatId  String   // chatId автора (как в user.chatId и task.assigneeChatId)
+  authorChatId  String
   text          String
   createdAt     DateTime @default(now())
 }
 
-
-
-
+/* -------------------- LEGACY INVITE (оставляем как было) -------------------- */
 
 model Invite {
   id         String   @id @default(cuid())
@@ -152,8 +172,7 @@ model Invite {
   createdAt  DateTime @default(now())
 }
 
-
-
+/* -------------------- INVITE TICKETS (расширены под EVENT) -------------------- */
 
 model InviteTicket {
   id     String       @id @default(cuid())
@@ -167,21 +186,63 @@ model InviteTicket {
   createdAt       DateTime  @default(now())
   expiresAt       DateTime?
 
-  // === именованные связи ===
+  // === NEW: для EVENT — ссылка на Task с type=EVENT
+  eventId String?
+  event   Task?   @relation("EventInviteTickets", fields: [eventId], references: [id])
+
+  // === именованные связи (как были)
   group Group @relation("GroupInviteTickets", fields: [groupId], references: [id], onDelete: Cascade)
   task  Task? @relation("TaskInviteTickets", fields: [taskId], references: [id], onDelete: SetNull)
 
   @@index([groupId])
   @@index([taskId])
+  @@index([eventId])
 }
 
 enum InviteType {
   TASK
   GROUP
+  EVENT
 }
 
 enum InviteStatus {
   ACTIVE
   USED
   EXPIRED
+}
+
+/* -------------------- NEW: УЧАСТНИКИ СОБЫТИЯ -------------------- */
+
+model EventParticipant {
+  id       String    @id @default(cuid())
+  eventId  String
+  event    Task      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  chatId   String
+  role     EventRole @default(PARTICIPANT)
+
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, chatId])  // один участник один раз в событии
+  @@index([chatId])
+}
+
+
+
+model EventReminder {
+  id              String   @id @default(cuid())
+  eventId         String
+  event           Task     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  chatId          String            // участник, кому слать
+  offsetMinutes   Int               // 60, 10, 5
+  fireAt          DateTime          // когда именно слать (startAt - offset)
+  replyToMessageId Int?             // message_id базового сообщения про событие (для reply)
+  sentAt          DateTime?
+  tries           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@unique([eventId, chatId, offsetMinutes]) // по одному напоминанию каждого вида на участника
+  @@index([fireAt])
+  @@index([eventId, chatId])
 }
