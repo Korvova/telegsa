@@ -1,6 +1,7 @@
 import { useEffect,  useState } from 'react';
+
 import WebApp from '@twa-dev/sdk';
-import { createEvent, listGroups, setMyEventReminders, primeEventReminders, type Group } from '../api';
+import { createEvent, listGroups, setMyEventReminders, createEventInvite, type Group } from '../api';
 
 
 export default function EventCreateModal({
@@ -21,6 +22,10 @@ export default function EventCreateModal({
   onCreated: (eventId: string) => void;
 }) {
   const [title, setTitle] = useState('');
+
+
+const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
+  
   const [startAt, setStartAt] = useState<string>(initialStart.toISOString());
   const [endAt, setEndAt] = useState<string>(initialEnd.toISOString());
   const [groups, setGroups] = useState<Group[]>([]);
@@ -54,41 +59,63 @@ export default function EventCreateModal({
 
   const allowSave = title.trim() && new Date(startAt) <= new Date(endAt);
 
-  const onSave = async () => {
-    if (!allowSave || busy) return;
-    setBusy(true);
-    try {
- const r = await createEvent({
-   chatId,
-   groupId,
-   title: title.trim(),          // ← стало title
-   startAt,
-   endAt,
- });
-      if (!r.ok) throw new Error('create_event_failed');
 
-      // напоминания (персональные; организатор = создатель)
-      const byChatId = String(
-        WebApp?.initDataUnsafe?.user?.id ||
-        new URLSearchParams(location.search).get('from') ||
-        chatId
-      );
-      if (reminders.length) {
-        await setMyEventReminders(r.event.id, byChatId, reminders.slice().sort((a,b)=>a-b));
-        try { await primeEventReminders(r.event.id, byChatId); } catch {}
-      }
+const onSave = async () => {
+  if (!allowSave || busy) return;
+  setBusy(true);
+  try {
+    const r = await createEvent({
+      chatId,
+      groupId,
+      title: title.trim(),
+      startAt,
+      endAt,
+    });
+    if (!r.ok) throw new Error('create_event_failed');
 
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      onCreated(r.event.id);
-      onClose();
-    } catch (e) {
-      console.error('[EventCreateModal] create error', e);
-      alert('Не удалось создать событие');
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    } finally {
-      setBusy(false);
+    // напоминания (персональные; организатор = создатель)
+    const byChatId = String(
+      WebApp?.initDataUnsafe?.user?.id ||
+      new URLSearchParams(location.search).get('from') ||
+      chatId
+    );
+    if (reminders.length) {
+      await setMyEventReminders(r.event.id, byChatId, reminders.slice().sort((a,b)=>a-b));
     }
-  };
+
+    // ✅ сразу открыть приглашение (t.me/share) после создания
+    if (openInviteAfterCreate) {
+      try {
+        const inv = await createEventInvite(r.event.id, byChatId);
+        if (inv?.ok && (inv.link || inv.shareText)) {
+          const url = `https://t.me/share/url?url=${encodeURIComponent(inv.link || '')}&text=${encodeURIComponent(inv.shareText || 'Присоединяйся к событию')}`;
+          // в миниапп лучше открывать телеграмный диалог
+          if ((WebApp as any)?.openTelegramLink) {
+            (WebApp as any).openTelegramLink(url);
+          } else {
+            WebApp.openLink?.(url, { try_instant_view: false });
+          }
+        }
+      } catch (e) {
+        console.warn('[EventCreateModal] invite open failed', e);
+      }
+    }
+
+    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    onCreated(r.event.id);  // откроется карточка события
+    onClose();
+  } catch (e) {
+    console.error('[EventCreateModal] create error', e);
+    alert('Не удалось создать событие');
+    WebApp?.HapticFeedback?.notificationOccurred?.('error');
+  } finally {
+    setBusy(false);
+  }
+};
+
+
+
+
 
   if (!open) return null;
   return (
@@ -156,6 +183,25 @@ export default function EventCreateModal({
           ))}
         </div>
 
+
+
+
+<div style={{ marginTop: 10 }}>
+  <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 13, opacity: .9 }}>
+    <input
+      type="checkbox"
+      checked={openInviteAfterCreate}
+      onChange={e => setOpenInviteAfterCreate(e.target.checked)}
+    />
+    Открыть приглашение после создания
+  </label>
+</div>
+
+
+
+
+
+
         <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
           <button onClick={onClose} disabled={busy}
             style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #2a3346', background: '#121722', color: '#e8eaed' }}>
@@ -165,6 +211,12 @@ export default function EventCreateModal({
             style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}>
             Создать
           </button>
+
+
+
+
+
+
         </div>
       </div>
     </div>

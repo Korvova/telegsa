@@ -1,13 +1,17 @@
 // src/CalendarView.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
-import type { SlotInfo, Event as RBCEvent } from 'react-big-calendar';
+import type { SlotInfo, Event as RBCEvent, View } from 'react-big-calendar';
 import moment from 'moment';
 import 'moment/locale/ru';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 import { listEvents, type EventItem } from './api';
 import EventCreateModal from './components/EventCreateModal';
+
+
+
+
 
 moment.locale('ru');
 const localizer = momentLocalizer(moment);
@@ -27,6 +31,8 @@ export default function CalendarView({
   const [modalOpen, setModalOpen] = useState(false);
   const [range, setRange] = useState<{ start: Date; end: Date } | null>(null);
 
+  const [view, setView] = useState<View>('day');
+
   const messages = useMemo(() => ({
     date: 'Дата', time: 'Время', event: 'Событие', allDay: 'Весь день',
     week: 'Неделя', work_week: 'Рабочая неделя', day: 'День', month: 'Месяц',
@@ -37,16 +43,36 @@ export default function CalendarView({
 
   const formats = useMemo(() => ({
     timeGutterFormat: 'HH:mm',
-    eventTimeRangeFormat: ({ start, end }: { start: Date; end: Date }, _c: unknown, l: any) =>
-      `${l.format(start, 'HH:mm')} – ${l.format(end, 'HH:mm')}`,
-    agendaTimeRangeFormat: ({ start, end }: { start: Date; end: Date }, _c: unknown, l: any) =>
-      `${l.format(start, 'HH:mm')} – ${l.format(end, 'HH:mm')}`,
-    dayHeaderFormat: 'dddd, D MMMM YYYY',
+
+
     dayRangeHeaderFormat: ({ start, end }: { start: Date; end: Date }, _c: unknown, l: any) =>
       `${l.format(start, 'D MMM')} – ${l.format(end, 'D MMM YYYY')}`,
+
+
+
+        agendaTimeRangeFormat: ({ start, end }: { start: Date; end: Date }, _c: unknown, l: any) =>
+      `${l.format(start, 'HH:mm')} – ${l.format(end, 'HH:mm')}`,
+    dayHeaderFormat: 'dddd, D MMMM YYYY',
+
+
+
+    eventTimeRangeFormat: ({ start, end }: { start: Date; end: Date }, _c: unknown, l: any) =>
+      `${l.format(start, 'HH:mm')} – ${l.format(end, 'HH:mm')}`,
+
+
+
+
+
+
+
+
+
     agendaHeaderFormat: ({ start, end }: { start: Date; end: Date }, _c: unknown, l: any) =>
       `${l.format(start, 'D MMM YYYY')} – ${l.format(end, 'D MMM YYYY')}`,
-  }), []);
+  }), 
+  
+  
+  []);
 
   const reload = async () => {
     const r = await listEvents(chatId, groupId || undefined);
@@ -75,15 +101,22 @@ const mapped: CalEvent[] = events.map((e) => ({
 
   return (
     <div style={{ height: 600 }}>
-      <Calendar
-        localizer={localizer}
-        selectable
-        events={mapped}
-        messages={messages}
-        formats={formats as any}
-        onSelectSlot={handleSelect}
-        onSelectEvent={onSelectEvent}
-      />
+<Calendar
+  localizer={localizer}
+  selectable
+  events={mapped}
+  messages={messages}
+  formats={formats as any}
+  onSelectSlot={handleSelect}
+  onSelectEvent={onSelectEvent}
+
+  // ✅ порядок кнопок и доступные виды
+  views={['day', 'week', 'month', 'agenda']}
+  // ✅ управляемый вид + по умолчанию "day"
+  view={view}
+  onView={(v) => setView(v)}
+  defaultView="day"
+/>
 
       <EventCreateModal
         open={modalOpen}
