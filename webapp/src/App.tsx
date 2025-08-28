@@ -107,15 +107,8 @@ function parseStartParam(sp: string) {
 
 /* ---------------- UI bits ---------------- */
 function TaskCard({
-  text,
-  order,
-  assigneeName,
-  active,
-  dragging,
-  onClick,
-  isEvent,
-  startAt,
-  endAt,
+  text, order, assigneeName, active, dragging, onClick,
+  isEvent, startAt, endAt,
 }: {
   text: string;
   order: number;
@@ -128,22 +121,23 @@ function TaskCard({
   endAt?: string | null;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
-  const fmt = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '');
+  const dateLine = isEvent && startAt
+    ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}`
+    : null;
+
   return (
     <div onClick={onClick} style={{
       background: bg, border: '1px solid #2a3346', borderRadius: 12, padding: 12,
       userSelect: 'none', cursor: 'pointer', boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <div style={{ fontSize: 12, opacity: 0.7 }}>#{order}</div>
-        {isEvent && (
-          <div style={{ fontSize: 12, opacity: 0.85 }} title="Событие">
-            📅 {fmt(startAt)}{endAt ? ` — ${fmt(endAt)}` : ''}
-          </div>
-        )}
+      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
+      <div style={{ fontSize: 15, marginBottom: 6 }}>
+        {isEvent ? '📅 ' : ''}{text}
       </div>
-      <div style={{ fontSize: 15, marginBottom: assigneeName ? 6 : 0 }}>{text}</div>
-      {!isEvent && assigneeName ? (
+      {dateLine && (
+        <div style={{ fontSize: 12, opacity: .75, marginBottom: 6 }}>{dateLine}</div>
+      )}
+      {assigneeName && !isEvent ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>👤</span><span>{assigneeName}</span>
         </div>
@@ -152,6 +146,15 @@ function TaskCard({
   );
 }
 
+function fmtShort(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const dd = pad(d.getDate());
+  const mm = pad(d.getMonth() + 1);
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${dd}.${mm} ${hh}:${mi}`;
+}
 
 
 
@@ -930,10 +933,9 @@ useEffect(() => {
 ) : tab === 'calendar' ? (
 
 
-
 <CalendarView
   chatId={chatId}
-  groupId={selectedGroupId}
+  groupId={resolvedGroupId}
   onOpenTask={openTask}
 />
 

@@ -342,7 +342,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               cursor: 'pointer',
             }}
           >
-            Удалить задачу
+             {task?.type === 'EVENT' ? 'Удалить событие' : 'Удалить задачу'}
           </button>
 
           {/* Постановщик */}

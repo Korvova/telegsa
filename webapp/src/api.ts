@@ -1,4 +1,3 @@
-// src/api.ts
 import ky from 'ky';
 
 /* ---------- Types ---------- */
@@ -17,12 +16,12 @@ export type Task = {
   assigneeChatId?: string | null;
   assigneeName?: string | null;
 
-  // событие (если type === 'EVENT')
+  // ⬇️ поля события (при type === 'EVENT')
   type?: 'TASK' | 'EVENT';
   startAt?: string | null;
   endAt?: string | null;
 
-  // сервисные
+  // сервисные поля
   creatorName?: string | null;
   meIsOrganizer?: boolean;
 };
@@ -44,40 +43,8 @@ export type Group = {
   ownerName?: string | null;
 };
 
-export type GroupMember = {
-  chatId: string;
-  name?: string | null;
-  role?: 'owner' | 'member' | 'invited';
-  assignedCount?: number;
-};
-
-export type TaskComment = {
-  id: string;
-  taskId: string;
-  authorChatId: string;
-  authorName?: string | null;
-  text: string;
-  createdAt: string;
-};
-
-// --- Events ---
-export type EventItem = {
-  id: string;
-  text: string;
-  type: 'EVENT';
-  startAt: string;
-  endAt?: string | null;
-  chatId: string;
-};
-
-export type EventParticipant = {
-  chatId: string;
-  role: 'ORGANIZER' | 'PARTICIPANT';
-  name?: string | null;
-};
-
 /* ---------- Config ---------- */
-const API_BASE = import.meta.env.VITE_API_BASE || ''; // напр. '/telegsar-api' или '/api'
+const API_BASE = import.meta.env.VITE_API_BASE || ''; // '/telegsar-api'
 
 /* ---------- Helpers ---------- */
 const normGroup = (gid?: string) => (gid && gid !== 'default' ? gid : undefined);
@@ -254,14 +221,23 @@ export async function sendSelfPreview(taskId: string, body: { userId: number }) 
   };
 }
 
-/* ---------- Groups: members / invites ---------- */
+/* ---------- Group members ---------- */
+
+export type GroupMember = {
+  chatId: string;
+  name?: string | null;
+  role?: 'owner' | 'member' | 'invited';
+  assignedCount?: number;
+};
 
 export async function getGroupMembers(groupId: string): Promise<{
   ok: boolean;
   owner?: GroupMember;
   members: GroupMember[];
 }> {
-  const r = await fetch(`${API_BASE}/groups/${groupId}/members`, { credentials: 'include' });
+  const r = await fetch(`${API_BASE}/groups/${groupId}/members`, {
+    credentials: 'include',
+  });
   if (!r.ok) return { ok: false, members: [] };
   return r.json();
 }
@@ -297,10 +273,11 @@ export async function leaveGroup(groupId: string, chatId: string): Promise<{ ok:
   return { ok: r.ok };
 }
 
-export async function prepareGroupShareMessage(
-  groupId: string,
-  params: { userId: number; allowGroups?: boolean; withButton?: boolean }
-): Promise<{ ok: boolean; preparedMessageId?: string }> {
+export async function prepareGroupShareMessage(groupId: string, params: {
+  userId: number;
+  allowGroups?: boolean;
+  withButton?: boolean;
+}): Promise<{ ok: boolean; preparedMessageId?: string }> {
   const r = await fetch(`${API_BASE}/groups/${groupId}/share-prepared`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -311,6 +288,15 @@ export async function prepareGroupShareMessage(
 }
 
 /* ---------- Comments ---------- */
+
+export type TaskComment = {
+  id: string;
+  taskId: string;
+  authorChatId: string;
+  authorName?: string | null;
+  text: string;
+  createdAt: string;
+};
 
 export async function listComments(taskId: string): Promise<{ ok: boolean; comments: TaskComment[] }> {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments`);
@@ -327,13 +313,28 @@ export async function addComment(taskId: string, chatId: string, text: string) {
 }
 
 export async function deleteComment(taskId: string, commentId: string, chatId: string): Promise<{ ok: boolean }> {
-  const u = new URL(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}`);
-  u.searchParams.set('chatId', chatId);
-  const r = await fetch(u.toString(), { method: 'DELETE' });
+  const url = `${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}?chatId=${encodeURIComponent(chatId)}`;
+  const r = await fetch(url, { method: 'DELETE' });
   return r.json();
 }
 
 /* ---------- Events API ---------- */
+export type EventItem = {
+  id: string;
+  text: string;       // ← сервер отдаёт text
+  type: 'EVENT';
+  startAt: string;
+  endAt?: string | null;
+  chatId: string;
+  groupId?: string | null;
+};
+
+
+export type EventParticipant = {
+  chatId: string;
+  role: 'ORGANIZER' | 'PARTICIPANT';
+  name?: string | null;
+};
 
 export async function listEvents(chatId: string, groupId?: string | null) {
   const sp = new URLSearchParams();
@@ -346,17 +347,31 @@ export async function listEvents(chatId: string, groupId?: string | null) {
 export async function createEvent(params: {
   chatId: string;
   groupId?: string | null;
-  text: string;        // важно: text, не title
+  title: string;
   startAt: string;
   endAt?: string | null;
 }) {
   const r = await fetch(`${API_BASE}/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
+    // шлём и title, и text — совместимость с бэком
+    body: JSON.stringify({
+      chatId: params.chatId,
+      groupId: params.groupId ?? null,
+      title: params.title,
+      text: params.title,
+      startAt: params.startAt,
+      endAt: params.endAt ?? null,
+    }),
   });
   return r.json() as Promise<{ ok: boolean; event: EventItem }>;
 }
+
+
+
+
+
+
 
 export async function getEvent(id: string) {
   const r = await fetch(`${API_BASE}/events/${id}`);
@@ -377,9 +392,8 @@ export async function updateEvent(
 }
 
 export async function deleteEvent(id: string, byChatId: string) {
-  const sp = new URLSearchParams();
-  sp.set('byChatId', byChatId);
-  const r = await fetch(`${API_BASE}/events/${id}?${sp.toString()}`, { method: 'DELETE' });
+  const url = `${API_BASE}/events/${id}?byChatId=${encodeURIComponent(byChatId)}`;
+  const r = await fetch(url, { method: 'DELETE' });
   return r.json() as Promise<{ ok: boolean }>;
 }
 
@@ -404,28 +418,23 @@ export async function addEventParticipant(
 }
 
 export async function removeEventParticipant(eventId: string, targetChatId: string, byChatId: string) {
-  const sp = new URLSearchParams();
-  sp.set('byChatId', byChatId);
-  const r = await fetch(
-    `${API_BASE}/events/${eventId}/participants/${encodeURIComponent(targetChatId)}?${sp.toString()}`,
-    { method: 'DELETE' }
-  );
+  const url = `${API_BASE}/events/${eventId}/participants/${encodeURIComponent(targetChatId)}?byChatId=${encodeURIComponent(byChatId)}`;
+  const r = await fetch(url, { method: 'DELETE' });
   return r.json() as Promise<{ ok: boolean }>;
 }
 
 // reminders (per-user)
-export async function getMyEventReminders(eventId: string, chatId: string) {
-  const sp = new URLSearchParams();
-  sp.set('chatId', chatId);
-  const r = await fetch(`${API_BASE}/events/${eventId}/reminders?${sp.toString()}`);
-  return r.json() as Promise<{ ok: boolean; reminders: { id: string; offsetMinutes: number }[] }>;
+export async function getMyEventReminders(eventId: string, _chatId: string) {
+  // сервер возвращает {ok, offsets, reminders: [...]}, chatId в query не обязателен
+  const r = await fetch(`${API_BASE}/events/${eventId}/reminders`);
+  return r.json() as Promise<{ ok: boolean; offsets: number[]; reminders: { id: string; offsetMinutes: number }[] }>;
 }
 
-export async function setMyEventReminders(eventId: string, chatId: string, offsets: number[]) {
+export async function setMyEventReminders(eventId: string, byChatId: string, offsets: number[]) {
   const r = await fetch(`${API_BASE}/events/${eventId}/reminders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatId, offsets }),
+    body: JSON.stringify({ byChatId, offsets }), // ⬅️ ВАЖНО: byChatId
   });
   return r.json() as Promise<{ ok: boolean; count: number }>;
 }

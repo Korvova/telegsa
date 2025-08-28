@@ -94,15 +94,20 @@ export default function CreateEventDialog({
     }
     setBusy(true);
     try {
-      const r = await createEvent({
-        chatId,
-        groupId: groupId || undefined,
-        text: name,
-        startAt: new Date(start).toISOString(),
-        endAt: new Date(end).toISOString(),
-      });
-      if (!r.ok) throw new Error('API createEvent failed');
-      const eventId = r.event.id;
+// конвертируем локальное значение инпута в ISO
+const startAtIso = new Date(start).toISOString();
+const endAtIso   = new Date(end).toISOString();
+
+const r = await createEvent({
+  chatId,
+  groupId,
+  title: name,
+  startAt: startAtIso,
+  endAt: endAtIso,
+});
+if (!r.ok) throw new Error('API createEvent failed');
+const eventId = r.event.id;
+
 
       // участники (кроме организатора)
       const chosen = Object.entries(selected)

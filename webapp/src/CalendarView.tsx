@@ -63,13 +63,15 @@ export default function CalendarView({
 
   const onSelectEvent = (e: any) => onOpenTask(String(e.id));
 
-  const mapped: CalEvent[] = events.map((e) => ({
-    id: e.id,
-    title: e.text || 'Событие',
-    start: new Date(e.startAt),
-    end: new Date(e.endAt || e.startAt),
-    allDay: false,
-  }));
+const mapped: CalEvent[] = events.map((e) => ({
+  id: e.id,
+  title: (e as any).title || (e as any).text || 'Событие',
+  start: new Date(e.startAt),
+  end: new Date(e.endAt || e.startAt),
+  allDay: false,
+}));
+
+
 
   return (
     <div style={{ height: 600 }}>

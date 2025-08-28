@@ -3,10 +3,10 @@ import WebApp from '@twa-dev/sdk';
 import {
   listEventParticipants,
   getMyEventReminders,
-  setMyEventReminders,
+  setMyEventReminders,     // возможно раньше было с chatId
   primeEventReminders,
   createEventInvite,
-  updateEvent,           // ⬅️ добавили
+  updateEvent,
 } from '../api';
 
 
@@ -27,16 +27,46 @@ export default function EventPanel({
   const [myOffsets, setMyOffsets] = useState<number[]>([]);
   const presets = [5, 15, 60, 24 * 60]; // мин
 
-  useEffect(() => {
-    (async () => {
-      const [p, r] = await Promise.all([
-        listEventParticipants(eventId),
-        getMyEventReminders(eventId, chatId),
-      ]);
-      if (p.ok) setParticipants(p.participants);
-      if (r.ok) setMyOffsets(r.reminders.map(x => x.offsetMinutes).sort((a,b)=>a-b));
-    })();
-  }, [eventId, chatId]);
+
+
+
+
+
+
+
+useEffect(() => {
+  let ignore = false;
+  (async () => {
+    try {
+      const r = await listEventParticipants(eventId);
+      if (!ignore && r?.ok) setParticipants(r.participants || []);
+    } catch {}
+  })();
+  return () => { ignore = true; };
+}, [eventId]);
+
+
+
+
+useEffect(() => {
+  let ignore = false;
+  (async () => {
+    try {
+      const r = await getMyEventReminders(eventId, chatId);
+      if (ignore || !r?.ok) return;
+      const offs = Array.isArray(r.offsets) && r.offsets.length
+        ? r.offsets
+        : (r.reminders || []).map((x: any) => x.offsetMinutes);
+      setMyOffsets([...new Set(offs)].sort((a, b) => a - b));
+    } catch {}
+  })();
+  return () => { ignore = true; };
+}, [eventId, chatId]);
+
+
+
+
+
 
   const togglePreset = async (m: number) => {
     const next = myOffsets.includes(m)
