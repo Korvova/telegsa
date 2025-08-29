@@ -246,3 +246,60 @@ model EventReminder {
   @@index([fireAt])
   @@index([eventId, chatId])
 }
+
+
+
+/// ==== Процессы (минимально, без FK на текущие модели) ====
+
+model GroupProcess {
+  id            String   @id @default(cuid())
+  groupId       String   // ID существующей группы (пока без relation, привяжем позже)
+  title         String?  // заголовок процесса (необязателен)
+  runMode       String   @default("MANUAL") // MANUAL | SCHEDULE
+  scheduleRRule String?  // RRULE, если runMode=SCHEDULE
+  timezone      String?  // например, "Europe/Moscow"
+  isActive      Boolean  @default(true)
+  createdBy     String   // chatId создателя
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ProcessNode {
+  id              String   @id @default(cuid())
+  processId       String   // GroupProcess.id
+  title           String   // <= 100 символов (лимит контролируем на уровне приложения)  assigneeChatId  String?  // по умолчанию владелец группы; можно менять
+  posX            Float    @default(0)
+  posY            Float    @default(0)
+  status          String   @default("PLANNED") // PLANNED | IN_PROGRESS | DONE | CANCELED
+  metaJson        Json?
+  createdAt       DateTime @default(now())
+}
+
+model ProcessEdge {
+  id           String @id @default(cuid())
+  processId    String // GroupProcess.id
+  sourceNodeId String // ProcessNode.id
+  targetNodeId String // ProcessNode.id
+}
+
+model ProcessRun {
+  id         String   @id @default(cuid())
+  processId  String   // GroupProcess.id
+  startedAt  DateTime @default(now())
+  startedBy  String   // chatId, кто запустил
+  status     String   @default("RUNNING") // RUNNING | COMPLETED | CANCELED
+  note       String?
+}
+
+model RunTask {
+  id                String   @id @default(cuid())
+  runId             String   // ProcessRun.id
+  nodeId            String   // ProcessNode.id
+  taskId            String?  // ID задачи (свяжем позже, когда создадим реальную задачу)
+  status            String   @default("PLANNED") // PLANNED | CREATED | IN_PROGRESS | DONE | CANCELED
+  checklistMessageId String? // Telegram message id чек-листа
+  checklistItemId    String?
+  telegramChatId     String? // кому отправили чек-лист
+  createdAt         DateTime @default(now())
+  doneAt            DateTime?
+}

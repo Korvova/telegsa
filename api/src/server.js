@@ -8,6 +8,8 @@ import { assignRouter } from './routes/assign.js';
 import { eventsRouter } from './routes/events.js';
 import { initReminderScheduler, scheduleRemindersForEvent } from './scheduler.js';
 
+import processRouter from './routes/process.js';
+
 
 
 const prisma = new PrismaClient();
@@ -272,9 +274,9 @@ app.use('/tasks', tasksRouter);
 
 app.use('/events', eventsRouter);
 
+/* ---------- Процесс ---------- */
 
-
-
+app.use(processRouter);
 
 
 /* ---------- helper: имена ответственных в колонках ---------- */

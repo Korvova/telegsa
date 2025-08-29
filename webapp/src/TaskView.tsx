@@ -328,7 +328,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               cursor: 'pointer',
             }}
           >
-            {isDone ? 'Возобновить → Doing' : 'Завершить → Done'}
+            {isDone ? 'Возобновить → Doing' : 'Завершить'}
           </button>
 
           <button
@@ -342,7 +342,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               cursor: 'pointer',
             }}
           >
-             {task?.type === 'EVENT' ? 'Удалить событие' : 'Удалить задачу'}
+             {task?.type === 'EVENT' ? 'Удалить событие' : 'Удалить'}
           </button>
 
           {/* Постановщик */}

@@ -7,11 +7,20 @@ import WriteAccessGate from './WriteAccessGate';
 import GroupMembers from './components/GroupMembers';
 import NotificationsView from './NotificationsView';
 
+import GroupProcessPage from './pages/Groups/GroupProcessPage';
+
+
+
 
 import CalendarView from './CalendarView';
 
 
 import TaskView from './TaskView';
+
+
+
+
+
 import {
   fetchBoard,
   type Column,
@@ -269,7 +278,14 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
 
 /* ---------------- App ---------------- */
 export default function App() {
+
+
   const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(false);
+
+   const [showProcess, setShowProcess] = useState(false); 
+
+
+
 
   const chatId = useChatId();
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
@@ -292,6 +308,7 @@ export default function App() {
     useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } })
   );
+
 
 
 
@@ -527,24 +544,31 @@ useEffect(() => {
 
   }, [chatId, reloadGroups, loadBoard]);
 
-  useEffect(() => {
-    const onBack = () => {
-      // Если открыта карточка — TaskView уже навесил свой обработчик
-      if (taskId) return;
+useEffect(() => {
+  const onBack = () => {
+    // ⬇️ сначала проверяем процесс
+    if (showProcess) {
+      setShowProcess(false);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('view');
+      window.history.replaceState(null, '', url.toString());
+      WebApp?.BackButton?.hide?.();
+      return;
+    }
 
-      // В детальной группе → назад к списку групп
-      if (tab === 'groups' && groupsPage === 'detail') {
-        backToGroupsList();
-        return;
-      }
+    if (taskId) return;
 
-      // В остальных случаях можно закрыть WebApp (или ничего не делать)
-      try { WebApp?.close(); } catch {}
-    };
+    if (tab === 'groups' && groupsPage === 'detail') {
+      backToGroupsList();
+      return;
+    }
+
+    try { WebApp?.close(); } catch {}
+  };
 
     WebApp?.onEvent?.('backButtonClicked', onBack);
     return () => WebApp?.offEvent?.('backButtonClicked', onBack);
-  }, [taskId, tab, groupsPage]);
+ }, [taskId, tab, groupsPage, showProcess]);
 
   // навигация к задаче
   const openTask = (id: string) => {
@@ -749,72 +773,122 @@ useEffect(() => {
   };
 
   /* ---------------- render ---------------- */
-  return (
-    <>
-      {/* Гейт всегда смонтирован сверху. Если доступ не выдан — перекрывает всё, включая TaskView */}
-      <WriteAccessGate />
+ return (
+  <>
+    <WriteAccessGate />
 
-      {taskId ? (
-        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
-      ) : (
-        <div
+    {/* ⬇️ Полноэкранная страница процесса */}
+    {showProcess && (
+      <div
+        className="rf-scope"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          background: '#fff',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: 10, borderBottom:'1px solid #e5e7eb' }}>
+          <button
+            onClick={() => {
+              setShowProcess(false);
+              const url = new URL(window.location.href);
+              url.searchParams.delete('view');
+              window.history.replaceState(null, '', url.toString());
+              WebApp?.BackButton?.hide?.();
+            }}
+            style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px' }}
+          >
+            ⟵ Назад
+          </button>
+          <div style={{ fontWeight: 700 }}>🔀 Процесс</div>
+          <div />
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <GroupProcessPage
+            chatId={chatId}
+            groupId={resolvedGroupId ?? null}
+            onOpenTask={openTask}
+          />
+        </div>
+      </div>
+    )}
+
+    {taskId ? (
+      <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
+    ) : (
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0f1216',
+          color: '#e8eaed',
+          padding: 16,
+          paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+
+
+
+
+          {/* Шапка */}
+       <div
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  }}
+>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    {tab === 'groups' && groupsPage === 'detail' ? (
+      <button
+        onClick={backToGroupsList}
+        title="К списку групп"
+        style={{
+          background: 'transparent',
+          border: '1px solid #2a3346',
+          color: '#e8eaed',
+          borderRadius: 10,
+          padding: '6px 8px',
+          cursor: 'pointer',
+        }}
+      >
+        ⟵ Назад
+      </button>
+    ) : null}
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+      {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
+        <button
+          title="Переименовать группу"
+          onClick={() => setShowGroupEdit(true)}
           style={{
-            minHeight: '100vh',
-            background: '#0f1216',
-            color: '#e8eaed',
-            padding: 16,
-            paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+            background: 'transparent',
+            border: 'none',
+            color: '#8aa0ff',
+            cursor: 'pointer',
+            fontSize: 14,
+            padding: 2,
+            lineHeight: 1,
           }}
         >
-          {/* Шапка */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {tab === 'groups' && groupsPage === 'detail' ? (
-                <button
-                  onClick={backToGroupsList}
-                  title="К списку групп"
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid #2a3346',
-                    color: '#e8eaed',
-                    borderRadius: 10,
-                    padding: '6px 8px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  ⟵ Назад
-                </button>
-              ) : null}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
-                {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
-                  <button
-                    title="Переименовать группу"
-                    onClick={() => setShowGroupEdit(true)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#8aa0ff',
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      padding: 2,
-                      lineHeight: 1,
-                    }}
-                  >
-                    ✏️
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          ✏️
+        </button>
+      ) : null}
+    </div>
+  </div>
+
+  {/* <-- вот сюда выносим кнопку RF в правую часть flex */}
+
+
+
+
+</div>
 
 {tab === 'groups' ? (
   groupsPage === 'list' ? (
@@ -900,18 +974,26 @@ useEffect(() => {
             </DndContext>
           </>
         )
-      ) : groupTab === 'process' ? (
-        <div
-          style={{
-            padding: 16,
-            background: '#1b2030',
-            border: '1px solid #2a3346',
-            borderRadius: 16,
-            minHeight: 240,
-          }}
-        >
-          Процесс 🔀: скоро подключим редактор связей (React Flow).
-        </div>
+
+
+
+) : groupTab === 'process' ? (
+  <button
+    onClick={() => {
+      setShowProcess(true);
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', 'process');
+      window.history.pushState({ view: 'process' }, '', url.toString());
+      WebApp?.BackButton?.show?.();
+    }}
+    style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px', margin:12 }}
+  >
+    🔀 Открыть процесс
+  </button>
+
+
+
+
       ) : (
         <GroupMembers
           group={selectedGroup as any}

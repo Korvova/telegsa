@@ -457,3 +457,71 @@ export async function createEventInvite(eventId: string, chatId: string) {
   });
   return r.json() as Promise<{ ok: boolean; token: string; link: string; shareText?: string }>;
 }
+
+
+
+/* ---------- Process API ---------- */
+
+export type ProcessRecord = {
+  id: string;
+  groupId: string;
+  title?: string | null;
+  runMode: 'MANUAL' | 'SCHEDULE' | string;
+  scheduleRRule?: string | null;
+  timezone?: string | null;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProcessNodeDTO = {
+  id: string;
+  processId: string;
+  title: string;
+  assigneeChatId?: string | null;
+  posX: number;
+  posY: number;
+  status: string;
+  metaJson?: any;
+  createdAt: string;
+};
+
+export type ProcessEdgeDTO = {
+  id: string;
+  processId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+};
+
+export async function fetchProcess(groupId: string) {
+  const r = await fetch(`${API_BASE}/groups/${groupId}/process`);
+  const data = await r.json().catch(() => ({}));
+  return data as {
+    ok: boolean;
+    process: ProcessRecord | null;
+    nodes: ProcessNodeDTO[];
+    edges: ProcessEdgeDTO[];
+  };
+}
+
+
+
+export async function saveProcess(params: {
+  groupId: string;
+  chatId: string;
+  nodes: Array<{ id: string; title: string; posX: number; posY: number; assigneeChatId?: string | null }>;
+  edges: Array<{ id?: string; source: string; target: string }>;
+}) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(params.groupId)}/process`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chatId: params.chatId,
+      nodes: params.nodes,
+      edges: params.edges,
+    }),
+  });
+  return r.json() as Promise<{ ok: boolean; processId?: string; error?: string }>;
+}
+
