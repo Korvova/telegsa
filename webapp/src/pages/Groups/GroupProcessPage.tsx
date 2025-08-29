@@ -1,19 +1,26 @@
+// src/pages/Groups/GroupProcessPage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Background,
   ReactFlow,
   ReactFlowProvider,
+  Background,
   useNodesState,
   useEdgesState,
   useReactFlow,
   Position,
   Handle,
   addEdge,
-  type Connection,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
   type Edge,
   type Node,
   type NodeProps,
+  type Connection,
+  type EdgeProps,
   type ReactFlowInstance,
+  type XYPosition,
+  type OnConnectStart,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -28,11 +35,15 @@ type Props = {
 
 interface EditableData {
   label: string;
+  assigneeName?: string; // исполнитель (по умолчанию владелец)
+  status?: 'NEW' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
   onChange: (id: string, label: string) => void;
   onAction?: (
     id: string,
     action: 'home' | 'status' | 'comments' | 'participant' | 'conditions' | 'delete'
   ) => void;
+  onPickAssignee?: (id: string) => void;
+  onOpenConditions?: (id: string) => void;
   autoEdit?: boolean;
 }
 
@@ -44,22 +55,29 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // --- long-press
   const LONG_MS = 550;
   const MOVE_PX = 10;
   const press = useRef<{ tid: number | null; sx: number; sy: number; pid: number | null }>({
-    tid: null, sx: 0, sy: 0, pid: null,
+    tid: null,
+    sx: 0,
+    sy: 0,
+    pid: null,
   });
-
   const openMenu = () => setMenuOpen(true);
   const closeMenu = () => setMenuOpen(false);
 
   const startLongPress = (e: React.PointerEvent) => {
     if (editing) return;
     if ((e.target as Element).closest('.react-flow__handle')) return;
-    press.current.sx = e.clientX; press.current.sy = e.clientY; press.current.pid = e.pointerId;
-    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+    press.current.sx = e.clientX;
+    press.current.sy = e.clientY;
+    press.current.pid = e.pointerId;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
     if (press.current.tid) window.clearTimeout(press.current.tid);
-    press.current.tid = window.setTimeout(() => { openMenu(); }, LONG_MS);
+    press.current.tid = window.setTimeout(openMenu, LONG_MS);
   };
   const moveLongPress = (e: React.PointerEvent) => {
     if (press.current.tid == null) return;
@@ -72,9 +90,13 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
   };
   const cancelLongPress = () => {
     if (press.current.tid) window.clearTimeout(press.current.tid);
-    press.current.tid = null; press.current.pid = null;
+    press.current.tid = null;
+    press.current.pid = null;
   };
-  const onContextMenu = (e: React.MouseEvent) => { e.preventDefault(); openMenu(); };
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    openMenu();
+  };
 
   useEffect(() => {
     const handler = (e: PointerEvent) => {
@@ -87,16 +109,28 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
     return () => window.removeEventListener('pointerdown', handler as any);
   }, []);
 
-  useEffect(() => { if (data.autoEdit) setEditing(true); }, [data.autoEdit]);
+  useEffect(() => {
+    if (data.autoEdit) setEditing(true);
+  }, [data.autoEdit]);
 
   useEffect(() => {
     if (!editing) return;
-    const i = inputRef.current; if (!i) return;
+    const i = inputRef.current;
+    if (!i) return;
     const focusNow = () => {
-      try { (i as any).focus({ preventScroll: true }); } catch { i.focus(); }
-      try { const len = i.value.length; i.setSelectionRange(len, len); } catch {}
+      try {
+        (i as any).focus({ preventScroll: true });
+      } catch {
+        i.focus();
+      }
+      try {
+        const len = i.value.length;
+        i.setSelectionRange(len, len);
+      } catch {}
     };
-    focusNow(); requestAnimationFrame(focusNow); const t = setTimeout(focusNow, 60);
+    focusNow();
+    requestAnimationFrame(focusNow);
+    const t = setTimeout(focusNow, 60);
     return () => clearTimeout(t);
   }, [editing]);
 
@@ -107,47 +141,87 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
     data.onChange(id, trimmed.length ? trimmed : 'Untitled');
   };
 
+  // цвета по статусу
+  const stylesByStatus = (() => {
+    switch (data.status) {
+      case 'DONE':
+        return { bg: '#e8fff1', border: '#22c55e' };
+      case 'IN_PROGRESS':
+        return { bg: '#eef6ff', border: '#3b82f6' };
+      case 'CANCELLED':
+        return { bg: '#fff0f0', border: '#ef4444' };
+      default:
+        return { bg: '#ffffff', border: '#e5e7eb' };
+    }
+  })();
+
   return (
     <div
       ref={rootRef}
-      className="editable-node"
       style={{
         position: 'relative',
-        minWidth: 170,
+        minWidth: 160,
         maxWidth: 260,
         padding: 10,
         borderRadius: 12,
-        background: '#fffbe6',        // заметный фон
+        background: stylesByStatus.bg,
         boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
-        border: '1px solid #f59e0b',  // заметная граница
+        border: `1px solid ${stylesByStatus.border}`,
         textAlign: 'center',
         touchAction: 'manipulation',
         userSelect: editing ? 'text' : 'none',
       }}
       onDoubleClick={startEdit}
       onContextMenu={onContextMenu}
-      onPointerDown={(e) => { e.stopPropagation(); startLongPress(e); }}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        startLongPress(e);
+      }}
       onPointerMove={moveLongPress}
       onPointerUp={cancelLongPress}
       onPointerCancel={cancelLongPress}
       onPointerLeave={cancelLongPress}
     >
+      {/* верхняя строка: ⚙️ */}
+      <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 6 }}>
+        <button
+          onClick={() => data.onOpenConditions?.(id)}
+          title="Условия запуска/отмены"
+          style={{ background: 'transparent', border: 'none', fontSize: 16 }}
+        >
+          ⚙️
+        </button>
+      </div>
+
       {editing ? (
-        <input
-          ref={inputRef}
-          type="text"
-          inputMode="text"
-          enterKeyHint="done"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={finishEdit}
-          onKeyDown={(e) => { if (e.key === 'Enter') finishEdit(); if (e.key === 'Escape') setEditing(false); }}
-          style={{
-            width: '100%', outline: 'none', border: '1px solid #d1d5db',
-            borderRadius: 8, padding: '6px 8px', fontSize: 14,
-          }}
-          placeholder="Название задачи"
-        />
+        <>
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="text"
+            enterKeyHint="done"
+            value={value}
+            maxLength={100}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={finishEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') finishEdit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            style={{
+              width: '100%',
+              outline: 'none',
+              border: '1px solid #d1d5db',
+              borderRadius: 8,
+              padding: '6px 8px',
+              fontSize: 14,
+            }}
+            placeholder="Название задачи"
+          />
+          <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.6, marginTop: 4 }}>
+            {value.length}/100
+          </div>
+        </>
       ) : (
         <div
           style={{ fontSize: 14, fontWeight: 700, color: '#111827', wordBreak: 'break-word' }}
@@ -158,44 +232,100 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
         </div>
       )}
 
+      {/* Handles */}
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
 
+      {/* футер: исполнитель */}
+      <div
+        style={{
+          marginTop: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          justifyContent: 'center',
+        }}
+      >
+        <button
+          onClick={() => data.onPickAssignee?.(id)}
+          title="Выбрать исполнителя"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: '#f3f4f6',
+            border: '1px solid #e5e7eb',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          👤
+        </button>
+        <div style={{ fontSize: 12, color: '#111827' }}>{data.assigneeName || 'Владелец группы'}</div>
+      </div>
+
+      {/* Long-press меню */}
       {menuOpen && (
         <div
           style={{
-            position: 'absolute', left: '50%', top: '100%', transform: 'translate(-50%, 10px)',
-            background: '#bfe3da', border: '1px solid #a7d0c7', borderRadius: 14, width: 280,
-            paddingTop: 10, paddingBottom: 6, boxShadow: '0 14px 28px rgba(0,0,0,0.18)',
+            position: 'absolute',
+            left: '50%',
+            top: '100%',
+            transform: 'translate(-50%, 10px)',
+            background: '#bfe3da',
+            border: '1px solid #a7d0c7',
+            borderRadius: 14,
+            width: 280,
+            paddingTop: 10,
+            paddingBottom: 6,
+            boxShadow: '0 14px 28px rgba(0,0,0,0.18)',
           }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <div
             style={{
-              position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)',
-              width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent',
+              position: 'absolute',
+              top: -8,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
               borderBottom: '8px solid #bfe3da',
             }}
           />
           <div
             style={{
-              marginTop: 120, background: '#e8eeef', borderTop: '1px solid #d5dbdc',
-              borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
-              display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-              padding: '8px 6px', gap: 4,
+              marginTop: 120,
+              background: '#e8eeef',
+              borderTop: '1px solid #d5dbdc',
+              borderBottomLeftRadius: 14,
+              borderBottomRightRadius: 14,
+              display: 'flex',
+              justifyContent: 'space-around',
+              alignItems: 'center',
+              padding: '8px 6px',
+              gap: 4,
             }}
           >
-            {([
-              { key: 'home', icon: '🏠', label: 'домой' },
-              { key: 'status', icon: '📌', label: 'статус' },
-              { key: 'comments', icon: '💬', label: 'комментарии' },
-              { key: 'participant', icon: '👤', label: 'участник' },
-              { key: 'conditions', icon: '⚙️', label: 'условия' },
-              { key: 'delete', icon: '🗑️', label: 'удалить' },
-            ] as const).map((a) => (
+            {(
+              [
+                { key: 'home', icon: '🏠', label: 'домой' },
+                { key: 'status', icon: '📌', label: 'статус' },
+                { key: 'comments', icon: '💬', label: 'комментарии' },
+                { key: 'participant', icon: '👤', label: 'участник' },
+                { key: 'conditions', icon: '⚙️', label: 'условия' },
+                { key: 'delete', icon: '🗑️', label: 'удалить' },
+              ] as const
+            ).map((a) => (
               <button
                 key={a.key}
-                onClick={() => { closeMenu(); data.onAction?.(id, a.key as any); }}
+                onClick={() => {
+                  closeMenu();
+                  data.onAction?.(id, a.key as any);
+                }}
                 title={a.label}
                 style={{ background: 'transparent', border: 'none', fontSize: 20, padding: '6px 8px', borderRadius: 10 }}
               >
@@ -211,6 +341,34 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
 
 const nodeTypes = { editable: EditableNode } as const;
 
+/* ===== Custom edge with center icon ===== */
+function CondEdge(props: EdgeProps) {
+  const [path, labelX, labelY] = getBezierPath(props);
+  const icon = (props.data as any)?.icon ?? '➡️';
+  return (
+    <>
+      <BaseEdge {...props} path={path} />
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            pointerEvents: 'all',
+            fontSize: 14,
+            background: '#fff',
+            border: '1px solid #e5e7eb',
+            borderRadius: 10,
+            padding: '2px 6px',
+          }}
+        >
+          {icon}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+const edgeTypes = { cond: CondEdge } as const;
+
 /* ================= Inner ================= */
 function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; groupId: string | null }) {
   const groupId = rawGroupId ? String(rawGroupId) : null;
@@ -222,38 +380,121 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const [nodes, setNodes, onNodesChange] = useNodesState<EditableData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const rfApi = useReactFlow();
+  const { project } = rfApi;
+
   const rfReadyRef = useRef<ReactFlowInstance | null>(null);
 
   // Диагностика
-  useEffect(() => { console.log('[RF] nodes changed →', nodes.length, nodes); }, [nodes]);
-  useEffect(() => { console.log('[RF] edges changed →', edges.length, edges); }, [edges]);
+  useEffect(() => {
+    console.log('[RF] nodes changed →', nodes.length, nodes);
+  }, [nodes]);
+  useEffect(() => {
+    console.log('[RF] edges changed →', edges.length, edges);
+  }, [edges]);
 
   /* ---------- callbacks для нод ---------- */
-  const onLabelChange = useCallback((id: string, label: string) => {
-    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, label } } : n)));
-  }, [setNodes]);
+  const onLabelChange = useCallback(
+    (id: string, label: string) => {
+      setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, label } } : n)));
+    },
+    [setNodes]
+  );
 
-  const onNodeAction = useCallback((
-    id: string,
-    action: 'home' | 'status' | 'comments' | 'participant' | 'conditions' | 'delete'
-  ) => {
-    if (action === 'delete') {
-      setNodes((nds) => nds.filter((n) => n.id !== id));
-      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
-      return;
-    }
-    console.log('[NODE ACTION]', action, '→', id);
-  }, [setNodes, setEdges]);
+  const onNodeAction = useCallback(
+    (
+      id: string,
+      action: 'home' | 'status' | 'comments' | 'participant' | 'conditions' | 'delete'
+    ) => {
+      if (action === 'delete') {
+        setNodes((nds) => nds.filter((n) => n.id !== id));
+        setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+        return;
+      }
+      if (action === 'status') {
+        // цикл статусов для демо
+        setNodes((nds) =>
+          nds.map((n) => {
+            if (n.id !== id) return n;
+            const cur = (n.data as any)?.status ?? 'NEW';
+            const order: EditableData['status'][] = ['NEW', 'IN_PROGRESS', 'DONE', 'CANCELLED'];
+            const next = order[(order.indexOf(cur as any) + 1) % order.length];
+            return { ...n, data: { ...n.data, status: next } };
+          })
+        );
+        return;
+      }
+      if (action === 'participant') {
+        setAssigneePicker({ open: true, nodeId: id });
+        return;
+      }
+      if (action === 'conditions') {
+        setCondEditor({ open: true, nodeId: id });
+        return;
+      }
+      console.log('[NODE ACTION]', action, '→', id);
+    },
+    [setNodes, setEdges]
+  );
+
+  const [assigneePicker, setAssigneePicker] = useState<{ open: boolean; nodeId: string | null }>({
+    open: false,
+    nodeId: null,
+  });
+  const [condEditor, setCondEditor] = useState<{ open: boolean; nodeId: string | null }>({
+    open: false,
+    nodeId: null,
+  });
 
   const nodesWithCallbacks = useMemo(
-    () => nodes.map((n) => ({ ...n, type: 'editable', data: { ...(n.data || { label: '' }), onChange: onLabelChange, onAction: onNodeAction } })),
+    () =>
+      nodes.map((n) => ({
+        ...n,
+        type: 'editable',
+        data: {
+          assigneeName: (n.data as any)?.assigneeName || 'Владелец группы',
+          status: (n.data as any)?.status ?? 'NEW',
+          ...(n.data || { label: '' }),
+          onChange: onLabelChange,
+          onAction: onNodeAction,
+          onPickAssignee: (nid: string) => setAssigneePicker({ open: true, nodeId: nid }),
+          onOpenConditions: (nid: string) => setCondEditor({ open: true, nodeId: nid }),
+        },
+      })),
     [nodes, onLabelChange, onNodeAction]
   );
 
-  const onConnect = useCallback((connection: Connection) => setEdges((eds) => addEdge(connection, eds)), [setEdges]);
+  const onConnect = useCallback(
+    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, type: 'cond' }, eds)),
+    [setEdges]
+  );
 
   /* ---------- добавление ноды ---------- */
   const nextIdRef = useRef<number>(1);
+
+  const addNodeAt = useCallback(
+    (pos: XYPosition, label = '', autoEdit = false) => {
+      const id = `n_${nextIdRef.current++}`;
+      const newNode: Node<EditableData> = {
+        id,
+        type: 'editable',
+        data: {
+          label,
+          assigneeName: 'Владелец группы',
+          onChange: onLabelChange,
+          onAction: onNodeAction,
+          onPickAssignee: (nid) => setAssigneePicker({ open: true, nodeId: nid }),
+          onOpenConditions: (nid) => setCondEditor({ open: true, nodeId: nid }),
+          autoEdit,
+        },
+        position: pos,
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      };
+      setNodes((nds) => [...nds, newNode]);
+      return id;
+    },
+    [onLabelChange, onNodeAction, setNodes]
+  );
 
   const fitSafe = useCallback((reason: string) => {
     const inst = rfReadyRef.current;
@@ -269,28 +510,52 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     }
   }, []);
 
-  const handleAddNode = useCallback((pos?: { x: number; y: number }) => {
-    const id = `n_${nextIdRef.current++}`;
-    const position = pos ?? { x: 120 + Math.floor(Math.random() * 80), y: 120 + Math.floor(Math.random() * 60) };
+  /* ---------- touch: create node on edge-drop in empty space ---------- */
+  const connectingNodeId = useRef<string | null>(null);
+  const connectingHandleType = useRef<'source' | 'target' | null>(null);
+  const pointerUpHandler = useRef<((e: PointerEvent) => void) | null>(null);
 
-    const newNode: Node<EditableData> = {
-      id,
-      type: 'editable',
-      data: { label: 'Новая задача', onChange: onLabelChange, onAction: onNodeAction, autoEdit: true },
-      position,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-    };
+  const detachPointerUp = () => {
+    if (pointerUpHandler.current) {
+      window.removeEventListener('pointerup', pointerUpHandler.current);
+      pointerUpHandler.current = null;
+    }
+  };
 
-    console.log('[PROCESS] handleAddNode', { id, position });
-    setNodes((prev) => [...prev, newNode]);
-    setTimeout(() => fitSafe('after add'), 60);
-  }, [onLabelChange, onNodeAction, setNodes, fitSafe]);
+  const onConnectStart: OnConnectStart = useCallback(
+    (_, params) => {
+      connectingNodeId.current = params?.nodeId ?? null;
+      connectingHandleType.current = (params?.handleType as 'source' | 'target' | undefined) ?? null;
+
+      detachPointerUp();
+      pointerUpHandler.current = (e: PointerEvent) => {
+        const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
+        const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
+        if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
+          const pos = project({ x: e.clientX, y: e.clientY });
+          const newId = addNodeAt(pos, '', true);
+          const source = connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
+          const target = connectingHandleType.current === 'source' ? newId : connectingNodeId.current;
+          setEdges((eds) =>
+            addEdge({ id: `e_${Date.now()}`, source, target, type: 'cond', data: { icon: '➡️' } }, eds)
+          );
+        }
+        connectingNodeId.current = null;
+        connectingHandleType.current = null;
+        detachPointerUp();
+      };
+
+      window.addEventListener('pointerup', pointerUpHandler.current, { passive: true, once: true });
+    },
+    [addNodeAt, project, setEdges]
+  );
+
+  useEffect(() => () => detachPointerUp(), []);
 
   /* ---------- загрузка/сохранение из API ---------- */
   async function loadProcess() {
     if (!groupId) {
-      // Демонстрационные ноды
+      // Демонстрация, если группа не выбрана
       const demo: Node<EditableData>[] = [
         {
           id: 'demo_1',
@@ -310,7 +575,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         },
       ];
       setNodes(demo);
-      setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2' }]);
+      setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond' }]);
       setLoadInfo(`Демо: узлов ${demo.length}, связей 1`);
       setTimeout(() => fitSafe('after demo load'), 120);
       return;
@@ -353,7 +618,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
             targetPosition: Position.Left,
           },
         ];
-        rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2' }];
+        rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond' }];
       } else {
         rfNodes = n.map((it: any) => ({
           id: String(it.id),
@@ -367,6 +632,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           id: String(it.id),
           source: String(it.sourceNodeId),
           target: String(it.targetNodeId),
+          type: 'cond',
         }));
       }
 
@@ -383,12 +649,19 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     }
   }
 
-  useEffect(() => { loadProcess(); /* eslint-disable-next-line */ }, [groupId]);
+  useEffect(() => {
+    loadProcess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId]);
 
   const handleSave = useCallback(async () => {
-    if (!groupId) { setLoadInfo('Сохранение доступно только для групп'); return; }
+    if (!groupId) {
+      setLoadInfo('Сохранение доступно только для групп');
+      return;
+    }
     try {
-      setLoading(true); setLoadInfo('Сохранение…');
+      setLoading(true);
+      setLoadInfo('Сохранение…');
       const payloadNodes = nodes.map((n, i) => ({
         id: String(n.id),
         title: String((n.data as any)?.label || `Новая задача ${i + 1}`),
@@ -396,7 +669,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         posY: Number(n.position.y) || 0,
         assigneeChatId: null,
       }));
-      const payloadEdges = edges.map(e => ({
+      const payloadEdges = edges.map((e) => ({
         id: e.id ? String(e.id) : undefined,
         source: String(e.source),
         target: String(e.target),
@@ -406,7 +679,9 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     } catch (e) {
       console.error('[process] save error', e);
       setLoadInfo('Ошибка сети при сохранении');
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }, [groupId, chatId, nodes, edges]);
 
   return (
@@ -414,82 +689,204 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       {/* Панель */}
       <div
         style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 10px', border: '1px solid #2a3346', borderRadius: 12,
-          background: '#f8f9fa', marginBottom: 8, overflowX: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 10px',
+          border: '1px solid #2a3346',
+          borderRadius: 12,
+          background: '#f8f9fa',
+          marginBottom: 8,
+          overflowX: 'auto',
         }}
       >
         <div style={{ fontWeight: 700, fontSize: 15, flex: '0 0 auto' }}>🔀 Процесс</div>
         <span style={{ fontSize: 12, color: '#555', whiteSpace: 'nowrap', flex: 1, minWidth: 140 }}>
           {loading ? 'Загрузка…' : loadInfo}
         </span>
-        <button onClick={() => setRunMode((m) => (m === 'MANUAL' ? 'SCHEDULE' : 'MANUAL'))}>
+
+        <button
+          onClick={() => setRunMode((m) => (m === 'MANUAL' ? 'SCHEDULE' : 'MANUAL'))}
+          title="Режим запуска"
+        >
           ⚙️ {runMode === 'MANUAL' ? 'По нажатию' : 'По дате'}
         </button>
+
+        {runMode === 'MANUAL' ? (
+          <button
+            onClick={() => {
+              const ok = confirm('Внимание: все задачи перезапустятся заново, незавершённые будут удалены. Запустить?');
+              if (!ok) return;
+              alert('Старт процесса (заглушка)');
+            }}
+            title="Старт процесса"
+          >
+            ▶️ Старт
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              alert('Настройка расписания (заглушка)');
+            }}
+            title="Настроить расписание"
+          >
+            📅 Настроить
+          </button>
+        )}
+
         <button onClick={handleSave}>💾 Сохранить</button>
-        <button onClick={() => { console.log('[PROCESS] topbar PLUS click'); handleAddNode(); }}>➕ Узел</button>
-        <button onClick={() => alert('Старт процесса (каркас)')}>▶️ Запуск</button>
+        <button
+          onClick={() => {
+            const vpCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+            const pos = project(vpCenter);
+            addNodeAt(pos, '', true);
+          }}
+        >
+          ➕ Узел
+        </button>
       </div>
 
       {/* Канва */}
-
-
-
-
-{/* растягиваем канву на весь доступный размер */}
-<div style={{ flex: 1, minHeight: 0 }}>
-  <div
-    className="rf-scope"
-    style={{
-      position: 'relative',
-      height: '100%',
-      isolation: 'isolate',
-      transform: 'none',
-      filter: 'none',
-      mixBlendMode: 'normal',
-    }}
-  >
-    <ReactFlow
-      nodes={nodesWithCallbacks}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onConnect={onConnect}
-      nodeTypes={nodeTypes}
-      fitView
-      connectOnClick
-      className="touch-flow"
-      panOnDrag={[2]}
-      zoomOnPinch={false}
-      minZoom={0.2}
-      maxZoom={1.5}
-      defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-      proOptions={{ hideAttribution: true }}
-      /* ← ВАЖНО: задаём размер самой канве */
-      style={{ width: '100%', height: '100%', background: '#fff' }}
-      onInit={(instance) => {
-        rfReadyRef.current = instance;
-        console.log('[RF] onInit: ready, viewport=', instance.getViewport());
-        setTimeout(() => instance.fitView({ padding: 0.2, includeHiddenNodes: true }), 60);
-      }}
-      onMoveEnd={(_, vp) => console.log('[RF] moveEnd viewport=', vp)}
-      onPaneClick={(e) => {
-        const inst = rfReadyRef.current ?? rfApi;
-        const pos = inst.project({ x: e.clientX, y: e.clientY });
-        console.log('[RF] paneClick at', { clientX: e.clientX, clientY: e.clientY, pos });
-        handleAddNode(pos);
-      }}
-    >
-      <Background />
-    </ReactFlow>
-  </div>
-</div>
-
-
-
-
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <div
+          className="rf-scope"
+          style={{
+            position: 'relative',
+            height: '100%',
+            isolation: 'isolate',
+            transform: 'none',
+            filter: 'none',
+            mixBlendMode: 'normal',
+          }}
+        >
+          <ReactFlow
+            nodes={nodesWithCallbacks}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            connectOnClick
+            className="touch-flow"
+            panOnDrag={[2]}
+            zoomOnPinch={false}
+            minZoom={0.2}
+            maxZoom={1.5}
+            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            proOptions={{ hideAttribution: true }}
+            style={{ width: '100%', height: '100%', background: '#fff' }}
+            onInit={(instance) => {
+              rfReadyRef.current = instance;
+              setTimeout(() => instance.fitView({ padding: 0.2, includeHiddenNodes: true }), 60);
+            }}
+          >
+            <Background />
+          </ReactFlow>
+        </div>
       </div>
-   
+
+      {/* Диалог выбора исполнителя (заглушка) */}
+      {assigneePicker.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.25)',
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => setAssigneePicker({ open: false, nodeId: null })}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 12, padding: 16, minWidth: 280 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Выбрать исполнителя</div>
+            {/* TODO: список участников группы */}
+            <button
+              onClick={() => {
+                // TODO: записать выбранного в data.assigneeName
+                setAssigneePicker({ open: false, nodeId: null });
+              }}
+            >
+              Ок
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Диалог условий ⚙️ (заглушка структуры из ТЗ) */}
+      {condEditor.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.25)',
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+          onClick={() => setCondEditor({ open: false, nodeId: null })}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 12, padding: 16, minWidth: 320, maxWidth: '92vw' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Условия запуска</div>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Блок “условия запуска”</div>
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                <li>После завершения любой связанной</li>
+                <li>После выбранных связей (с чекбоксами)</li>
+                <li>В дату (📅)</li>
+                <li>В дату (📅) и После выбранных связей</li>
+                <li>Через X дней (⏰) + После выбранных связей</li>
+              </ul>
+            </div>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Блок “условия отмены”</div>
+              <ul style={{ margin: 0, paddingLeft: 16 }}>
+                <li>Отменить, если одна из выбранных отменена (с чекбоксами)</li>
+              </ul>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
+              <button
+                style={{ color: '#ef4444' }}
+                onClick={() => {
+                  // удалить узел
+                  setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
+                  setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
+                  setCondEditor({ open: false, nodeId: null });
+                }}
+              >
+                🗑️ Удалить узел
+              </button>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setCondEditor({ open: false, nodeId: null })}>Отмена</button>
+                <button
+                  onClick={() => {
+                    // TODO: сохранить выбранные условия
+                    setCondEditor({ open: false, nodeId: null });
+                  }}
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -497,14 +894,8 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 export default function GroupProcessPage(props: Props) {
   return (
     <ReactFlowProvider>
-      <div
-        className="rf-scope"
-        style={{ textAlign: 'initial', height: '100%', minHeight: 0 }}
-      >
-        <GroupProcessInner
-          chatId={props.chatId}
-          groupId={props.groupId ? String(props.groupId) : null}
-        />
+      <div className="rf-scope" style={{ textAlign: 'initial', height: '100%', minHeight: 0 }}>
+        <GroupProcessInner chatId={props.chatId} groupId={props.groupId ? String(props.groupId) : null} />
       </div>
     </ReactFlowProvider>
   );
