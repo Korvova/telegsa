@@ -1,16 +1,17 @@
 // src/components/AssigneeToolbar.tsx
 import { NodeToolbar, Position } from 'reactflow';
 
-type Props = {
+export default function AssigneeToolbar({
+  name,
+  onClick,
+}: {
   name?: string | null;
-  onPick?: () => void;
-};
-
-export default function AssigneeToolbar({ name, onPick }: Props) {
+  onClick: () => void;
+}) {
   return (
     <NodeToolbar isVisible position={Position.Bottom} offset={8}>
       <button
-        onClick={onPick}
+        onClick={onClick}
         title="Выбрать исполнителя"
         style={{
           display: 'inline-flex',

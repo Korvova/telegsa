@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CondEdge from '../../components/CondEdge';
 import RelationsBadge from '../../components/RelationsBadge';
 import AssigneeToolbar from '../../components/AssigneeToolbar';
+import ConditionsToolbar from '../../components/ConditionsToolbar';
+import AssigneePickerModal from '../../components/AssigneePickerModal';
+import NodeConditionsModal, { type StartCondition, type CancelCondition } from '../../components/NodeConditionsModal';
 
 import { MarkerType } from 'reactflow';
 import {
@@ -27,8 +30,9 @@ import {
 import 'reactflow/dist/style.css';
 import './GroupProcessPage.css';
 
-import { fetchProcess, saveProcess, getGroupMembers, type GroupMember } from '../../api';
+import { fetchProcess, saveProcess, getGroupMembers, type GroupMember } from '../../api'; // ← участников тянем отсюда (owner+members) :contentReference[oaicite:1]{index=1}
 
+/* ================= Types ================= */
 type Props = {
   chatId: string;
   groupId?: string | null;
@@ -37,9 +41,11 @@ type Props = {
 
 interface EditableData {
   label: string;
-  assigneeName?: string;       // отображаемое ФИО
-  assigneeChatId?: string | null; // id ответственного
+  assigneeName?: string; // исполнитель (по умолчанию владелец)
   status?: 'NEW' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
+
+  conditions?: { start: StartCondition; cancel: CancelCondition }; // сохранённые условия
+
   onChange: (id: string, label: string) => void;
   onAction?: (
     id: string,
@@ -54,7 +60,7 @@ interface EditableData {
   nextTitles?: string[];
 }
 
-/* ======== Нода ======== */
+/* ======== Custom editable node ======== */
 function EditableNode({ id, data }: NodeProps<EditableData>) {
   const [editing, setEditing] = useState<boolean>(!!data.autoEdit);
   const [value, setValue] = useState<string>(data.label ?? '');
@@ -62,7 +68,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // --- long-press
+  // long-press + ПК click
   const LONG_MS = 550;
   const MOVE_PX = 10;
   const press = useRef<{ tid: number | null; sx: number; sy: number; pid: number | null }>({
@@ -102,6 +108,14 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
   };
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    openMenu();
+  };
+
+  // ПК: открыть меню по левому клику, но не на интерактивах/лейбле
+  const onRootClick = (e: React.MouseEvent) => {
+    if (editing) return;
+    const el = e.target as Element;
+    if (el.closest('input,textarea,button,.react-flow__handle,.editable-label')) return;
     openMenu();
   };
 
@@ -148,12 +162,17 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
     data.onChange(id, trimmed.length ? trimmed : 'Untitled');
   };
 
+  // цвета по статусу
   const stylesByStatus = (() => {
     switch (data.status) {
-      case 'DONE': return { bg: '#e8fff1', border: '#22c55e' };
-      case 'IN_PROGRESS': return { bg: '#eef6ff', border: '#3b82f6' };
-      case 'CANCELLED': return { bg: '#fff0f0', border: '#ef4444' };
-      default: return { bg: '#ffffff', border: '#e5e7eb' };
+      case 'DONE':
+        return { bg: '#e8fff1', border: '#22c55e' };
+      case 'IN_PROGRESS':
+        return { bg: '#eef6ff', border: '#3b82f6' };
+      case 'CANCELLED':
+        return { bg: '#fff0f0', border: '#ef4444' };
+      default:
+        return { bg: '#ffffff', border: '#e5e7eb' };
     }
   })();
 
@@ -183,18 +202,12 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
       onPointerUp={cancelLongPress}
       onPointerCancel={cancelLongPress}
       onPointerLeave={cancelLongPress}
+      onClick={onRootClick}
     >
-      {/* шестерёнка */}
-      <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 6 }}>
-        <button
-          onClick={() => data.onOpenConditions?.(id)}
-          title="Условия запуска/отмены"
-          style={{ background: 'transparent', border: 'none', fontSize: 16 }}
-        >
-          ⚙️
-        </button>
-      </div>
+      {/* ⚙️ сверху — через NodeToolbar */}
+      <ConditionsToolbar onClick={() => data.onOpenConditions?.(id)} />
 
+      {/* Заголовок */}
       {editing ? (
         <>
           <input
@@ -226,9 +239,10 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
         </>
       ) : (
         <div
+          className="editable-label"
           style={{ fontSize: 14, fontWeight: 700, color: '#111827', wordBreak: 'break-word' }}
-          onClick={startEdit}
-          title="Нажми, чтобы редактировать"
+          onDoubleClick={startEdit}
+          title="Двойной клик — редактировать"
         >
           {data.label || 'Новая задача'}
         </div>
@@ -238,16 +252,13 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
 
-      {/* связи */}
+      {/* связи (вход/выход) */}
       <RelationsBadge prevTitles={data.prevTitles} nextTitles={data.nextTitles} />
 
-      {/* тулбар ответственного под карточкой */}
-      <AssigneeToolbar
-        name={data.assigneeName || 'Владелец группы'}
-        onPick={() => data.onPickAssignee?.(id)}
-      />
+      {/* 👤 снизу — через NodeToolbar */}
+      <AssigneeToolbar name={data.assigneeName || 'Владелец группы'} onClick={() => data.onPickAssignee?.(id)} />
 
-      {/* long-press меню */}
+      {/* Long-press меню */}
       {menuOpen && (
         <div
           style={{
@@ -304,10 +315,10 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
             ).map((a) => (
               <button
                 key={a.key}
-onClick={() => {
-  closeMenu();
-  data.onAction?.(id, a.key as any);
-}}
+                onClick={() => {
+                  closeMenu();
+                  data.onAction?.(id, a.key as any);
+                }}
                 title={a.label}
                 style={{ background: 'transparent', border: 'none', fontSize: 20, padding: '6px 8px', borderRadius: 10 }}
               >
@@ -332,6 +343,10 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const [loading, setLoading] = useState(false);
   const [loadInfo, setLoadInfo] = useState<string>('');
 
+  // участники группы
+  const [owner, setOwner] = useState<GroupMember | null>(null);
+  const [members, setMembers] = useState<GroupMember[]>([]);
+
   const [nodes, setNodes, onNodesChange] = useNodesState<EditableData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const rfApi = useReactFlow();
@@ -339,66 +354,22 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 
   const rfReadyRef = useRef<ReactFlowInstance | null>(null);
 
-  // участники группы (owner + members)
-  const [owner, setOwner] = useState<GroupMember | null>(null);
-  const [members, setMembers] = useState<GroupMember[]>([]);
-  const [membersLoaded, setMembersLoaded] = useState(false);
-
+  // подтянуть участников при смене groupId
   useEffect(() => {
-    let ignore = false;
-    setMembersLoaded(false);
-    setOwner(null);
-    setMembers([]);
-
-    (async () => {
-      if (!groupId) return;
-      try {
-        const r = await getGroupMembers(groupId);
-        if (!r.ok) return;
-        if (!ignore) {
+    if (!groupId) {
+      setOwner(null);
+      setMembers([]);
+      return;
+    }
+    getGroupMembers(groupId)
+      .then((r) => {
+        if (r.ok) {
           setOwner(r.owner || null);
           setMembers(r.members || []);
-          setMembersLoaded(true);
         }
-      } catch {}
-    })();
-
-    return () => { ignore = true; };
-  }, [groupId]);
-
-  const getNameByChatId = useCallback(
-    (cid?: string | null) => {
-      if (!cid) return null;
-      if (owner && String(owner.chatId) === String(cid)) return owner.name || String(cid);
-      const m = members.find((mm) => String(mm.chatId) === String(cid));
-      return m?.name || String(cid);
-    },
-    [owner, members]
-  );
-
-  // после загрузки участников — проставим имена к узлам, где есть assigneeChatId
-  useEffect(() => {
-    if (!membersLoaded) return;
-    setNodes((nds) =>
-      nds.map((n) => {
-        const ac = (n.data as any)?.assigneeChatId;
-        if (!ac) return n;
-        const name = getNameByChatId(ac);
-        if (name && name !== (n.data as any)?.assigneeName) {
-          return { ...n, data: { ...(n.data as any), assigneeName: name } };
-        }
-        return n;
       })
-    );
-  }, [membersLoaded, getNameByChatId, setNodes]);
-
-  // Диагностика
-  useEffect(() => {
-    console.log('[RF] nodes changed →', nodes.length, nodes);
-  }, [nodes]);
-  useEffect(() => {
-    console.log('[RF] edges changed →', edges.length, edges);
-  }, [edges]);
+      .catch(() => {});
+  }, [groupId]);
 
   /* ---------- callbacks для нод ---------- */
   const onLabelChange = useCallback(
@@ -447,9 +418,10 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     open: false,
     nodeId: null,
   });
-  const [condEditor, setCondEditor] = useState<{ open: boolean; nodeId: string | null }>(
-    { open: false, nodeId: null }
-  );
+  const [condEditor, setCondEditor] = useState<{ open: boolean; nodeId: string | null }>({
+    open: false,
+    nodeId: null,
+  });
 
   // заголовки и связи для бейджа
   const titleById = useMemo(
@@ -480,7 +452,6 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           type: 'editable',
           data: {
             assigneeName: (n.data as any)?.assigneeName || 'Владелец группы',
-            assigneeChatId: (n.data as any)?.assigneeChatId ?? null,
             status: (n.data as any)?.status ?? 'NEW',
             ...(n.data || { label: '' }),
             onChange: onLabelChange,
@@ -517,17 +488,13 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const addNodeAt = useCallback(
     (pos: XYPosition, label = '', autoEdit = false) => {
       const id = `n_${nextIdRef.current++}`;
-      // ответственный по умолчанию — владелец группы
-      const defaultAssigneeChatId = owner ? String(owner.chatId) : null;
-      const defaultAssigneeName = owner?.name || 'Владелец группы';
-
+      const defaultAssignee = owner?.name || owner?.chatId || 'Владелец группы'; // ← по умолчанию владелец
       const newNode: Node<EditableData> = {
         id,
         type: 'editable',
         data: {
           label,
-          assigneeChatId: defaultAssigneeChatId,
-          assigneeName: defaultAssigneeName,
+          assigneeName: defaultAssignee,
           onChange: onLabelChange,
           onAction: onNodeAction,
           onPickAssignee: (nid) => setAssigneePicker({ open: true, nodeId: nid }),
@@ -541,22 +508,18 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setNodes((nds) => [...nds, newNode]);
       return id;
     },
-    [owner, onLabelChange, onNodeAction, setNodes]
+    [onLabelChange, onNodeAction, setNodes, owner]
   );
 
-  const fitSafe = useCallback((reason: string) => {
-
-
-   void reason; // пометили как прочитанный, без лишних логов
-
-  const inst = rfReadyRef.current;
-  if (!inst) return;
-  try {
-    inst.fitView({ padding: 0.2, includeHiddenNodes: true });
-  } catch (e) {
-    console.warn('[RF] fitView error', e);
-  }
-}, []);
+  const fitSafe = useCallback(() => {
+    const inst = rfReadyRef.current;
+    if (!inst) return;
+    try {
+      inst.fitView({ padding: 0.2, includeHiddenNodes: true });
+    } catch (e) {
+      console.warn('[RF] fitView error', e);
+    }
+  }, []);
 
   /* ---------- touch: create node on edge-drop in empty space ---------- */
   const connectingNodeId = useRef<string | null>(null);
@@ -604,7 +567,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   /* ---------- загрузка/сохранение из API ---------- */
   async function loadProcess() {
     if (!groupId) {
-      // демо
+      // Демо
       const demo: Node<EditableData>[] = [
         {
           id: 'demo_1',
@@ -626,7 +589,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setNodes(demo);
       setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond' }]);
       setLoadInfo(`Демо: узлов ${demo.length}, связей 1`);
-      setTimeout(() => fitSafe('after demo load'), 120);
+      setTimeout(() => fitSafe(), 120);
       return;
     }
 
@@ -667,24 +630,14 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         ];
         rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond' }];
       } else {
-        rfNodes = n.map((it: any) => {
-          const ac = it?.metaJson?.assigneeChatId ?? null;
-          const name = ac ? getNameByChatId(String(ac)) : null;
-          return {
-            id: String(it.id),
-            type: 'editable',
-            position: { x: Number(it.posX) || 0, y: Number(it.posY) || 0 },
-            data: {
-              label: String(it.title || 'Новая задача'),
-              assigneeChatId: ac,
-              assigneeName: name || undefined, // если участников ещё не знаем — добьём после загрузки
-              onChange: onLabelChange,
-              onAction: onNodeAction,
-            },
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
-          };
-        });
+        rfNodes = n.map((it: any) => ({
+          id: String(it.id),
+          type: 'editable',
+          position: { x: Number(it.posX) || 0, y: Number(it.posY) || 0 },
+          data: { label: String(it.title || 'Новая задача'), onChange: onLabelChange, onAction: onNodeAction },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+        }));
         rfEdges = e.map((it: any) => ({
           id: String(it.id),
           source: String(it.sourceNodeId),
@@ -697,7 +650,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setEdges(rfEdges);
       setLoadInfo(`Загружено: узлов ${rfNodes.length}, связей ${rfEdges.length}`);
 
-      setTimeout(() => fitSafe('after api load'), 120);
+      setTimeout(() => fitSafe(), 120);
     } catch (err) {
       console.error('[PROCESS] load error', err);
       setLoadInfo('Ошибка сети');
@@ -720,25 +673,16 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setLoading(true);
       setLoadInfo('Сохранение…');
 
-      const cleanId = (id: string | undefined | null, prefix: string) => {
-        if (!id) return undefined;
-        return String(id).startsWith(prefix) ? undefined : String(id);
-      };
-
       const payloadNodes = nodes.map((n, i) => ({
-        id: cleanId(n.id, 'n_'),
+        id: String(n.id), // clientId для ремапа на сервере
         title: String((n.data as any)?.label || `Новая задача ${i + 1}`),
         posX: Number(n.position.x) || 0,
         posY: Number(n.position.y) || 0,
         status: (n.data as any)?.status ?? 'NEW',
-        // сохраняем ответственного в metaJson (бек это умеет)
-        metaJson: {
-          assigneeChatId: (n.data as any)?.assigneeChatId ?? null,
-        },
+        // при желании можно отправлять conditions/assignee позже
       }));
 
       const payloadEdges = edges.map((e) => ({
-        id: e.id && !String(e.id).startsWith('e_') ? String(e.id) : undefined,
         source: String(e.source),
         target: String(e.target),
       }));
@@ -799,7 +743,9 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           </button>
         ) : (
           <button
-            onClick={() => { alert('Настройка расписания (заглушка)'); }}
+            onClick={() => {
+              alert('Настройка расписания (заглушка)');
+            }}
             title="Настроить расписание"
           >
             📅 Настроить
@@ -820,7 +766,17 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 
       {/* Канва */}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <div className="rf-scope" style={{ position: 'relative', height: '100%', isolation: 'isolate' }}>
+        <div
+          className="rf-scope"
+          style={{
+            position: 'relative',
+            height: '100%',
+            isolation: 'isolate',
+            transform: 'none',
+            filter: 'none',
+            mixBlendMode: 'normal',
+          }}
+        >
           <ReactFlow
             nodes={nodesWithCallbacks}
             edges={edges}
@@ -851,184 +807,55 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         </div>
       </div>
 
-      {/* Диалог выбора исполнителя */}
+      {/* Модалка выбора ответственного */}
       {assigneePicker.open && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.25)',
-            zIndex: 2000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+        <AssigneePickerModal
+          open={assigneePicker.open}
+          owner={owner}
+          members={members}
+          onClose={() => setAssigneePicker({ open: false, nodeId: null })}
+          onPick={(m) => {
+            if (!assigneePicker.nodeId) return;
+            const display = m.name || m.chatId;
+            setNodes((nds) =>
+              nds.map((n) => (n.id === assigneePicker.nodeId ? { ...n, data: { ...n.data, assigneeName: display } } : n))
+            );
+            setAssigneePicker({ open: false, nodeId: null });
           }}
-          onClick={() => setAssigneePicker({ open: false, nodeId: null })}
-        >
-          <div
-            style={{ background: '#fff', borderRadius: 12, padding: 16, minWidth: 300, maxWidth: '92vw' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Выбрать исполнителя</div>
-
-            <div style={{ maxHeight: '52vh', overflowY: 'auto', marginBottom: 12 }}>
-              {/* Владелец */}
-              {owner && (
-                <label
-                  key={`owner-${owner.chatId}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '6px 8px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 10,
-                    marginBottom: 6,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="assignee"
-                    defaultChecked={
-                      !!nodes.find(
-                        (n) =>
-                          n.id === assigneePicker.nodeId &&
-                          String((n.data as any)?.assigneeChatId || '') === String(owner.chatId)
-                      )
-                    }
-                    onChange={() => {
-                      const name = owner.name || String(owner.chatId);
-                      setNodes((nds) =>
-                        nds.map((n) =>
-                          n.id === assigneePicker.nodeId
-                            ? { ...n, data: { ...(n.data as any), assigneeChatId: String(owner.chatId), assigneeName: name } }
-                            : n
-                        )
-                      );
-                    }}
-                  />
-                  <span>👑 {owner.name || owner.chatId}</span>
-                </label>
-              )}
-
-              {/* Участники */}
-              {members.map((m) => (
-                <label
-                  key={String(m.chatId)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '6px 8px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: 10,
-                    marginBottom: 6,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="assignee"
-                    defaultChecked={
-                      !!nodes.find(
-                        (n) =>
-                          n.id === assigneePicker.nodeId &&
-                          String((n.data as any)?.assigneeChatId || '') === String(m.chatId)
-                      )
-                    }
-                    onChange={() => {
-                      const name = m.name || String(m.chatId);
-                      setNodes((nds) =>
-                        nds.map((n) =>
-                          n.id === assigneePicker.nodeId
-                            ? { ...n, data: { ...(n.data as any), assigneeChatId: String(m.chatId), assigneeName: name } }
-                            : n
-                        )
-                      );
-                    }}
-                  />
-                  <span>{m.name || m.chatId}</span>
-                </label>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setAssigneePicker({ open: false, nodeId: null })}>Отмена</button>
-              <button
-                onClick={() => setAssigneePicker({ open: false, nodeId: null })}
-                style={{ fontWeight: 600 }}
-              >
-                Готово
-              </button>
-            </div>
-          </div>
-        </div>
+        />
       )}
 
-      {/* Диалог условий ⚙️ (пока заглушка) */}
+      {/* Модалка условий */}
       {condEditor.open && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.25)',
-            zIndex: 2000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+        <NodeConditionsModal
+          open={condEditor.open}
+          onClose={() => setCondEditor({ open: false, nodeId: null })}
+          onDelete={() => {
+            setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
+            setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
+            setCondEditor({ open: false, nodeId: null });
           }}
-          onClick={() => setCondEditor({ open: false, nodeId: null })}
-        >
-          <div
-            style={{ background: '#fff', borderRadius: 12, padding: 16, minWidth: 320, maxWidth: '92vw' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Условия запуска</div>
-
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Блок “условия запуска”</div>
-              <ul style={{ margin: 0, paddingLeft: 16 }}>
-                <li>После завершения любой связанной</li>
-                <li>После выбранных связей (с чекбоксами)</li>
-                <li>В дату (📅)</li>
-                <li>В дату (📅) и После выбранных связей</li>
-                <li>Через X дней (⏰) + После выбранных связей</li>
-              </ul>
-            </div>
-
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Блок “условия отмены”</div>
-              <ul style={{ margin: 0, paddingLeft: 16 }}>
-                <li>Отменить, если одна из выбранных отменена (с чекбоксами)</li>
-              </ul>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-              <button
-                style={{ color: '#ef4444' }}
-                onClick={() => {
-                  setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
-                  setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
-                  setCondEditor({ open: false, nodeId: null });
-                }}
-              >
-                🗑️ Удалить узел
-              </button>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setCondEditor({ open: false, nodeId: null })}>Отмена</button>
-                <button
-                  onClick={() => {
-                    setCondEditor({ open: false, nodeId: null });
-                  }}
-                >
-                  Сохранить
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+          onSave={({ start, cancel }) => {
+            if (!condEditor.nodeId) return;
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === condEditor.nodeId
+                  ? { ...n, data: { ...n.data, conditions: { start, cancel } } }
+                  : n
+              )
+            );
+            setCondEditor({ open: false, nodeId: null });
+          }}
+          // если хочешь предзаполнять текущие значения — найдём ноду
+          initialStart={
+            (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start as StartCondition | undefined
+          }
+          initialCancel={
+            (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.cancel as
+              | CancelCondition
+              | undefined
+          }
+        />
       )}
     </div>
   );
