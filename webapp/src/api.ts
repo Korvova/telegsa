@@ -507,21 +507,27 @@ export async function fetchProcess(groupId: string) {
 
 
 
-export async function saveProcess(params: {
+
+
+
+export async function saveProcess(payload: {
   groupId: string;
   chatId: string;
-  nodes: Array<{ id: string; title: string; posX: number; posY: number; assigneeChatId?: string | null }>;
-  edges: Array<{ id?: string; source: string; target: string }>;
+  process?: { runMode?: 'MANUAL' | 'SCHEDULE' };
+  nodes: Array<{ id?: string; title: string; posX: number; posY: number; assigneeChatId: string | null; status?: string }>;
+edges: Array<{ id?: string; source: string; target: string }>;
 }) {
-  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(params.groupId)}/process`, {
+  const res = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${payload.groupId}/process`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chatId: params.chatId,
-      nodes: params.nodes,
-      edges: params.edges,
-    }),
+    body: JSON.stringify(payload),
   });
-  return r.json() as Promise<{ ok: boolean; processId?: string; error?: string }>;
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    console.error('[API saveProcess] HTTP', res.status, text);
+    return { ok: false, status: res.status, message: text || 'HTTP error' };
+  }
+  return res.json().catch(() => ({ ok: true }));
 }
 

@@ -1,3 +1,5 @@
+//App.tsx
+
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import WebApp from '@twa-dev/sdk';
 import BottomNav, { type TabKey } from './BottomNav';

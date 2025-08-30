@@ -1,5 +1,10 @@
 // src/pages/Groups/GroupProcessPage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import CondEdge from '../../components/CondEdge';
+import RelationsBadge from '../../components/RelationsBadge';
+
+import { MarkerType } from 'reactflow';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -10,19 +15,16 @@ import {
   Position,
   Handle,
   addEdge,
-  BaseEdge,
-  EdgeLabelRenderer,
-  getBezierPath,
   type Edge,
   type Node,
   type NodeProps,
   type Connection,
-  type EdgeProps,
   type ReactFlowInstance,
   type XYPosition,
   type OnConnectStart,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import './GroupProcessPage.css';
 
 import { fetchProcess, saveProcess } from '../../api';
 
@@ -45,6 +47,10 @@ interface EditableData {
   onPickAssignee?: (id: string) => void;
   onOpenConditions?: (id: string) => void;
   autoEdit?: boolean;
+
+  // добавили подписи связей
+  prevTitles?: string[];
+  nextTitles?: string[];
 }
 
 /* ======== Custom editable node (mobile long-press menu) ======== */
@@ -265,6 +271,9 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
         <div style={{ fontSize: 12, color: '#111827' }}>{data.assigneeName || 'Владелец группы'}</div>
       </div>
 
+      {/* связи (вход/выход) */}
+      <RelationsBadge prevTitles={data.prevTitles} nextTitles={data.nextTitles} />
+
       {/* Long-press меню */}
       {menuOpen && (
         <div
@@ -340,33 +349,6 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
 }
 
 const nodeTypes = { editable: EditableNode } as const;
-
-/* ===== Custom edge with center icon ===== */
-function CondEdge(props: EdgeProps) {
-  const [path, labelX, labelY] = getBezierPath(props);
-  const icon = (props.data as any)?.icon ?? '➡️';
-  return (
-    <>
-      <BaseEdge {...props} path={path} />
-      <EdgeLabelRenderer>
-        <div
-          style={{
-            position: 'absolute',
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-            pointerEvents: 'all',
-            fontSize: 14,
-            background: '#fff',
-            border: '1px solid #e5e7eb',
-            borderRadius: 10,
-            padding: '2px 6px',
-          }}
-        >
-          {icon}
-        </div>
-      </EdgeLabelRenderer>
-    </>
-  );
-}
 const edgeTypes = { cond: CondEdge } as const;
 
 /* ================= Inner ================= */
@@ -380,7 +362,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const [nodes, setNodes, onNodesChange] = useNodesState<EditableData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const rfApi = useReactFlow();
-  const { project } = rfApi;
+  const { screenToFlowPosition } = rfApi;
 
   const rfReadyRef = useRef<ReactFlowInstance | null>(null);
 
@@ -445,26 +427,62 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     nodeId: null,
   });
 
+  // заголовки и связи для бейджа
+  const titleById = useMemo(
+    () => new Map(nodes.map((n) => [n.id, String((n.data as any)?.label || '')])),
+    [nodes]
+  );
+
+  const neighborsById = useMemo(() => {
+    const map = new Map<string, { prev: string[]; next: string[] }>();
+    for (const n of nodes) map.set(n.id, { prev: [], next: [] });
+    for (const e of edges) {
+      const src = String(e.source);
+      const tgt = String(e.target);
+      const srcTitle = titleById.get(src) || src;
+      const tgtTitle = titleById.get(tgt) || tgt;
+      map.get(src)?.next.push(tgtTitle);
+      map.get(tgt)?.prev.push(srcTitle);
+    }
+    return map;
+  }, [nodes, edges, titleById]);
+
   const nodesWithCallbacks = useMemo(
     () =>
-      nodes.map((n) => ({
-        ...n,
-        type: 'editable',
-        data: {
-          assigneeName: (n.data as any)?.assigneeName || 'Владелец группы',
-          status: (n.data as any)?.status ?? 'NEW',
-          ...(n.data || { label: '' }),
-          onChange: onLabelChange,
-          onAction: onNodeAction,
-          onPickAssignee: (nid: string) => setAssigneePicker({ open: true, nodeId: nid }),
-          onOpenConditions: (nid: string) => setCondEditor({ open: true, nodeId: nid }),
-        },
-      })),
-    [nodes, onLabelChange, onNodeAction]
+      nodes.map((n) => {
+        const rel = neighborsById.get(n.id) || { prev: [], next: [] };
+        return {
+          ...n,
+          type: 'editable',
+          data: {
+            assigneeName: (n.data as any)?.assigneeName || 'Владелец группы',
+            status: (n.data as any)?.status ?? 'NEW',
+            ...(n.data || { label: '' }),
+            onChange: onLabelChange,
+            onAction: onNodeAction,
+            onPickAssignee: (nid: string) => setAssigneePicker({ open: true, nodeId: nid }),
+            onOpenConditions: (nid: string) => setCondEditor({ open: true, nodeId: nid }),
+            prevTitles: rel.prev,
+            nextTitles: rel.next,
+          },
+        };
+      }),
+    [nodes, neighborsById, onLabelChange, onNodeAction]
   );
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge({ ...connection, type: 'cond' }, eds)),
+    (connection: Connection) =>
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            type: 'cond',
+            data: { icon: '➡️' },
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+          eds
+        )
+      ),
     [setEdges]
   );
 
@@ -529,11 +547,12 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 
       detachPointerUp();
       pointerUpHandler.current = (e: PointerEvent) => {
+        const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const newId = addNodeAt(pos, '', true);
+
         const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
         const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
         if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
-          const pos = project({ x: e.clientX, y: e.clientY });
-          const newId = addNodeAt(pos, '', true);
           const source = connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
           const target = connectingHandleType.current === 'source' ? newId : connectingNodeId.current;
           setEdges((eds) =>
@@ -547,7 +566,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 
       window.addEventListener('pointerup', pointerUpHandler.current, { passive: true, once: true });
     },
-    [addNodeAt, project, setEdges]
+    [addNodeAt, screenToFlowPosition, setEdges]
   );
 
   useEffect(() => () => detachPointerUp(), []);
@@ -584,9 +603,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     try {
       setLoading(true);
       setLoadInfo('Загрузка…');
-      console.log('[PROCESS] fetchProcess start', { groupId });
       const data = await fetchProcess(groupId);
-      console.log('[PROCESS] fetchProcess resp', data);
 
       if (!data?.ok) {
         setLoadInfo('Ошибка загрузки');
@@ -662,27 +679,48 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     try {
       setLoading(true);
       setLoadInfo('Сохранение…');
-      const payloadNodes = nodes.map((n, i) => ({
-        id: String(n.id),
-        title: String((n.data as any)?.label || `Новая задача ${i + 1}`),
-        posX: Number(n.position.x) || 0,
-        posY: Number(n.position.y) || 0,
-        assigneeChatId: null,
-      }));
-      const payloadEdges = edges.map((e) => ({
-        id: e.id ? String(e.id) : undefined,
-        source: String(e.source),
-        target: String(e.target),
-      }));
-      const resp = await saveProcess({ groupId, chatId, nodes: payloadNodes, edges: payloadEdges });
-      setLoadInfo(resp?.ok ? 'Сохранено ✔︎' : 'Ошибка сохранения');
-    } catch (e) {
+
+      // helper: если id временный (n_* / e_*), не отправляем его — бэкенд сам создаст
+
+
+
+const payloadNodes = nodes.map((n, i) => ({
+  id: String(n.id), // 👈 передаём clientId для ремапа на сервере
+  title: String((n.data as any)?.label || `Новая задача ${i + 1}`),
+  posX: Number(n.position.x) || 0,
+  posY: Number(n.position.y) || 0,
+  status: (n.data as any)?.status ?? 'NEW',
+}));
+
+
+const payloadEdges = edges.map((e) => ({
+  // id не отправляем
+  source: String(e.source),
+  target: String(e.target),
+}));
+
+
+
+
+
+
+      const body = {
+        groupId,
+        chatId,
+        process: { runMode },
+        nodes: payloadNodes,
+        edges: payloadEdges,
+      };
+
+      const resp = await saveProcess(body as any);
+      setLoadInfo(resp?.ok ? 'Сохранено ✔︎' : `Ошибка сохранения${resp?.message ? ': ' + resp.message : ''}`);
+    } catch (e: any) {
       console.error('[process] save error', e);
-      setLoadInfo('Ошибка сети при сохранении');
+      setLoadInfo(`Ошибка сети при сохранении${e?.message ? ': ' + e.message : ''}`);
     } finally {
       setLoading(false);
     }
-  }, [groupId, chatId, nodes, edges]);
+  }, [groupId, chatId, nodes, edges, runMode]);
 
   return (
     <div style={{ height: '100%', minHeight: 360, display: 'flex', flexDirection: 'column', background: '#fff' }}>
@@ -705,10 +743,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           {loading ? 'Загрузка…' : loadInfo}
         </span>
 
-        <button
-          onClick={() => setRunMode((m) => (m === 'MANUAL' ? 'SCHEDULE' : 'MANUAL'))}
-          title="Режим запуска"
-        >
+        <button onClick={() => setRunMode((m) => (m === 'MANUAL' ? 'SCHEDULE' : 'MANUAL'))} title="Режим запуска">
           ⚙️ {runMode === 'MANUAL' ? 'По нажатию' : 'По дате'}
         </button>
 
@@ -738,7 +773,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         <button
           onClick={() => {
             const vpCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-            const pos = project(vpCenter);
+            const pos = screenToFlowPosition(vpCenter);
             addNodeAt(pos, '', true);
           }}
         >
@@ -770,6 +805,10 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
             edgeTypes={edgeTypes}
             fitView
             connectOnClick
+
+
+
+
             className="touch-flow"
             panOnDrag={[2]}
             zoomOnPinch={false}
@@ -778,6 +817,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
             proOptions={{ hideAttribution: true }}
             style={{ width: '100%', height: '100%', background: '#fff' }}
+            defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed } }}
             onInit={(instance) => {
               rfReadyRef.current = instance;
               setTimeout(() => instance.fitView({ padding: 0.2, includeHiddenNodes: true }), 60);
