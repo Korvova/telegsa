@@ -30,7 +30,7 @@ import {
 import 'reactflow/dist/style.css';
 import './GroupProcessPage.css';
 
-import { fetchProcess, saveProcess, getGroupMembers, type GroupMember } from '../../api'; // ← участников тянем отсюда (owner+members) :contentReference[oaicite:1]{index=1}
+import { fetchProcess, saveProcess, getGroupMembers, type GroupMember } from '../../api';
 
 /* ================= Types ================= */
 type Props = {
@@ -41,11 +41,18 @@ type Props = {
 
 interface EditableData {
   label: string;
-  assigneeName?: string; // исполнитель (по умолчанию владелец)
+
+  /** Ответственный */
+  assigneeName?: string;
+  assigneeChatId?: string | null;
+
+  /** Статус карточки (визуальный) */
   status?: 'NEW' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
 
-  conditions?: { start: StartCondition; cancel: CancelCondition }; // сохранённые условия
+  /** Условия узла (храним в metaJson) */
+  conditions?: { start: StartCondition; cancel: CancelCondition };
 
+  /** Коллбэки */
   onChange: (id: string, label: string) => void;
   onAction?: (
     id: string,
@@ -58,6 +65,17 @@ interface EditableData {
   // подписи связей
   prevTitles?: string[];
   nextTitles?: string[];
+}
+
+/* ================= Helpers ================= */
+function safeParseJson(input: any): any | null {
+  if (!input) return null;
+  if (typeof input === 'object') return input;
+  try {
+    return JSON.parse(String(input));
+  } catch {
+    return null;
+  }
 }
 
 /* ======== Custom editable node ======== */
@@ -78,7 +96,6 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
     pid: null,
   });
   const openMenu = () => setMenuOpen(true);
-  const closeMenu = () => setMenuOpen(false);
 
   const startLongPress = (e: React.PointerEvent) => {
     if (editing) return;
@@ -204,7 +221,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
       onPointerLeave={cancelLongPress}
       onClick={onRootClick}
     >
-      {/* ⚙️ сверху — через NodeToolbar */}
+      {/* ⚙️ сверху — через вынесенный Toolbar */}
       <ConditionsToolbar onClick={() => data.onOpenConditions?.(id)} />
 
       {/* Заголовок */}
@@ -255,7 +272,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
       {/* связи (вход/выход) */}
       <RelationsBadge prevTitles={data.prevTitles} nextTitles={data.nextTitles} />
 
-      {/* 👤 снизу — через NodeToolbar */}
+      {/* 👤 снизу — через вынесенный Toolbar */}
       <AssigneeToolbar name={data.assigneeName || 'Владелец группы'} onClick={() => data.onPickAssignee?.(id)} />
 
       {/* Long-press меню */}
@@ -293,7 +310,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
             style={{
               marginTop: 120,
               background: '#e8eeef',
-              borderTop: '1px solid #d5dbdc',
+              borderTop: '1px solid #d1d5db',
               borderBottomLeftRadius: 14,
               borderBottomRightRadius: 14,
               display: 'flex',
@@ -316,7 +333,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
               <button
                 key={a.key}
                 onClick={() => {
-                  closeMenu();
+                  setMenuOpen(false);
                   data.onAction?.(id, a.key as any);
                 }}
                 title={a.label}
@@ -370,6 +387,26 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       })
       .catch(() => {});
   }, [groupId]);
+
+  /* ---------- helpers для ФИО по chatId ---------- */
+  const displayNameByChatId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (owner?.chatId) map.set(String(owner.chatId), owner.name || String(owner.chatId));
+    for (const m of members) if (m.chatId) map.set(String(m.chatId), m.name || String(m.chatId));
+    return map;
+  }, [owner, members]);
+
+  const getAssigneeDisplay = useCallback(
+    (assigneeChatId?: string | null, fallback?: string) => {
+      if (assigneeChatId && displayNameByChatId.has(String(assigneeChatId))) {
+        return displayNameByChatId.get(String(assigneeChatId))!;
+      }
+      if (fallback && fallback.trim()) return fallback;
+      // дефолт — владелец группы, если есть
+      return owner?.name || 'Владелец группы';
+    },
+    [displayNameByChatId, owner]
+  );
 
   /* ---------- callbacks для нод ---------- */
   const onLabelChange = useCallback(
@@ -447,12 +484,19 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     () =>
       nodes.map((n) => {
         const rel = neighborsById.get(n.id) || { prev: [], next: [] };
+        const aChatId = (n.data as any)?.assigneeChatId as string | null | undefined;
+        const aNameStored = (n.data as any)?.assigneeName as string | undefined;
+
+        const display = getAssigneeDisplay(aChatId, aNameStored);
+
         return {
           ...n,
           type: 'editable',
           data: {
-            assigneeName: (n.data as any)?.assigneeName || 'Владелец группы',
+            assigneeName: display,
+            assigneeChatId: aChatId ?? null,
             status: (n.data as any)?.status ?? 'NEW',
+            conditions: (n.data as any)?.conditions,
             ...(n.data || { label: '' }),
             onChange: onLabelChange,
             onAction: onNodeAction,
@@ -463,7 +507,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           },
         };
       }),
-    [nodes, neighborsById, onLabelChange, onNodeAction]
+    [nodes, neighborsById, onLabelChange, onNodeAction, getAssigneeDisplay]
   );
 
   const onConnect = useCallback(
@@ -488,13 +532,16 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const addNodeAt = useCallback(
     (pos: XYPosition, label = '', autoEdit = false) => {
       const id = `n_${nextIdRef.current++}`;
-      const defaultAssignee = owner?.name || owner?.chatId || 'Владелец группы'; // ← по умолчанию владелец
+      const defaultAssigneeName = owner?.name || 'Владелец группы';
+      const defaultAssigneeChatId = owner?.chatId ? String(owner.chatId) : null;
+
       const newNode: Node<EditableData> = {
         id,
         type: 'editable',
         data: {
           label,
-          assigneeName: defaultAssignee,
+          assigneeName: defaultAssigneeName,
+          assigneeChatId: defaultAssigneeChatId,
           onChange: onLabelChange,
           onAction: onNodeAction,
           onPickAssignee: (nid) => setAssigneePicker({ open: true, nodeId: nid }),
@@ -566,8 +613,8 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 
   /* ---------- загрузка/сохранение из API ---------- */
   async function loadProcess() {
+    // демо, если группа не выбрана
     if (!groupId) {
-      // Демо
       const demo: Node<EditableData>[] = [
         {
           id: 'demo_1',
@@ -597,7 +644,6 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setLoading(true);
       setLoadInfo('Загрузка…');
       const data = await fetchProcess(groupId);
-
       if (!data?.ok) {
         setLoadInfo('Ошибка загрузки');
         return;
@@ -630,14 +676,29 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         ];
         rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond' }];
       } else {
-        rfNodes = n.map((it: any) => ({
-          id: String(it.id),
-          type: 'editable',
-          position: { x: Number(it.posX) || 0, y: Number(it.posY) || 0 },
-          data: { label: String(it.title || 'Новая задача'), onChange: onLabelChange, onAction: onNodeAction },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-        }));
+        rfNodes = n.map((it: any) => {
+          const meta = safeParseJson(it.metaJson);
+          const conditions = meta?.conditions || undefined;
+          const assigneeName = meta?.assigneeName || undefined;
+          const assigneeChatId = it.assigneeChatId ? String(it.assigneeChatId) : null;
+
+          return {
+            id: String(it.id),
+            type: 'editable',
+            position: { x: Number(it.posX) || 0, y: Number(it.posY) || 0 },
+            data: {
+              label: String(it.title || 'Новая задача'),
+              assigneeName,
+              assigneeChatId,
+              conditions,
+              onChange: onLabelChange,
+              onAction: onNodeAction,
+            },
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+          };
+        });
+
         rfEdges = e.map((it: any) => ({
           id: String(it.id),
           source: String(it.sourceNodeId),
@@ -673,14 +734,24 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setLoading(true);
       setLoadInfo('Сохранение…');
 
-      const payloadNodes = nodes.map((n, i) => ({
-        id: String(n.id), // clientId для ремапа на сервере
-        title: String((n.data as any)?.label || `Новая задача ${i + 1}`),
-        posX: Number(n.position.x) || 0,
-        posY: Number(n.position.y) || 0,
-        status: (n.data as any)?.status ?? 'NEW',
-        // при желании можно отправлять conditions/assignee позже
-      }));
+      const payloadNodes = nodes.map((n, i) => {
+        const d = (n.data || {}) as any;
+        const metaJson: any = {};
+
+        // сохраняем то, что не имеет прямых колонок
+        if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
+        if (d.conditions) metaJson.conditions = d.conditions;
+
+        return {
+          id: String(n.id), // clientId для ремапа на сервере
+          title: String(d.label || `Новая задача ${i + 1}`),
+          posX: Number(n.position.x) || 0,
+          posY: Number(n.position.y) || 0,
+          status: (d.status as EditableData['status']) ?? 'NEW',
+          assigneeChatId: d.assigneeChatId ?? null, // ← ВАЖНО: шлём chatId ответственного
+          metaJson, // ← имя и условия — в metaJson
+        };
+      });
 
       const payloadEdges = edges.map((e) => ({
         source: String(e.source),
@@ -817,8 +888,13 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           onPick={(m) => {
             if (!assigneePicker.nodeId) return;
             const display = m.name || m.chatId;
+            const chatId = m.chatId ? String(m.chatId) : null;
             setNodes((nds) =>
-              nds.map((n) => (n.id === assigneePicker.nodeId ? { ...n, data: { ...n.data, assigneeName: display } } : n))
+              nds.map((n) =>
+                n.id === assigneePicker.nodeId
+                  ? { ...n, data: { ...(n.data as any), assigneeName: display, assigneeChatId: chatId } }
+                  : n
+              )
             );
             setAssigneePicker({ open: false, nodeId: null });
           }}
@@ -840,15 +916,16 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
             setNodes((nds) =>
               nds.map((n) =>
                 n.id === condEditor.nodeId
-                  ? { ...n, data: { ...n.data, conditions: { start, cancel } } }
+                  ? { ...n, data: { ...(n.data as any), conditions: { start, cancel } } }
                   : n
               )
             );
             setCondEditor({ open: false, nodeId: null });
           }}
-          // если хочешь предзаполнять текущие значения — найдём ноду
           initialStart={
-            (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start as StartCondition | undefined
+            (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start as
+              | StartCondition
+              | undefined
           }
           initialCancel={
             (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.cancel as
