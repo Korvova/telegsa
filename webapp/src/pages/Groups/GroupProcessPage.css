@@ -36,3 +36,16 @@
 .react-flow.touch-flow .react-flow__handle.clickconnecting {
   animation: bounce 1600ms infinite ease-in;
 }
+
+
+/* Анимация пунктирных рёбер при props.animated = true */
+.react-flow__edge.animated .react-flow__edge-path {
+  animation: dashdraw 1.2s linear infinite;
+}
+
+@keyframes dashdraw {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+

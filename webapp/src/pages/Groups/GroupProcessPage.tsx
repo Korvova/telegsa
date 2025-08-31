@@ -41,6 +41,11 @@ type Props = {
   onOpenTask: (id: string) => void;
 };
 
+
+type CondEdgeData = { icon?: string };
+
+
+
 interface EditableData {
   label: string;
 
@@ -376,7 +381,18 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const [members, setMembers] = useState<GroupMember[]>([]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<EditableData>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+// у рёбер есть простые data: { icon?: string }
+
+
+
+
+
+const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
+
+
+
+
+
   const rfApi = useReactFlow();
   const { screenToFlowPosition } = rfApi;
 
@@ -527,21 +543,165 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
     [nodes, neighborsById, onLabelChange, onNodeAction, getAssigneeDisplay]
   );
 
-  const onConnect = useCallback(
-    (connection: Connection) =>
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...connection,
-            type: 'cond',
-            data: { icon: '➡️' },
-            markerEnd: { type: MarkerType.ArrowClosed },
-          },
-          eds
-        )
-      ),
-    [setEdges]
-  );
+
+
+
+
+
+
+
+
+
+// === Стилизация рёбер по условиям целевого узла ===
+// === Стилизация рёбер по условиям целевого узла ===
+// учитываем: AFTER_ANY, AFTER_SELECTED, ON_DATE, ON_DATE_AND_AFTER_SELECTED, AFTER_DAYS_AND_AFTER_SELECTED
+// + CANCEL_IF_ANY_SELECTED_CANCELLED
+useEffect(() => {
+  setEdges((prev) => {
+    if (!prev.length) return prev;
+
+    const nodeById = new Map(nodes.map((n) => [String(n.id), n]));
+    let changed = false;
+
+    const next = prev.map((e) => {
+      const target = nodeById.get(String(e.target));
+      if (!target) return e;
+
+      const cond = (target.data as any)?.conditions || {};
+      const startRaw  = cond.start;   // может быть строкой или объектом { mode, selectedEdges }
+      const cancelRaw = cond.cancel;  // строка или объект { mode, selectedEdges }
+
+      type StartCond =
+        | 'AFTER_ANY'
+        | 'AFTER_SELECTED'
+        | 'ON_DATE'
+        | 'ON_DATE_AND_AFTER_SELECTED'
+        | 'AFTER_DAYS_AND_AFTER_SELECTED';
+
+      type CancelCond = 'NONE' | 'CANCEL_IF_ANY_SELECTED_CANCELLED';
+
+const startMode: StartCond = (() => {
+  const v = (typeof startRaw === 'string' ? startRaw : startRaw?.mode) as string | undefined;
+  switch (v) {
+    case 'AFTER_ANY':
+    case 'AFTER_SELECTED':
+    case 'ON_DATE':
+    case 'ON_DATE_AND_AFTER_SELECTED':
+    case 'AFTER_DAYS_AND_AFTER_SELECTED':
+      return v;
+    default:
+      return 'AFTER_ANY';
+  }
+})();
+
+const cancelMode: CancelCond = (() => {
+  const v = (typeof cancelRaw === 'string' ? cancelRaw : cancelRaw?.mode) as string | undefined;
+  return v === 'CANCEL_IF_ANY_SELECTED_CANCELLED' ? 'CANCEL_IF_ANY_SELECTED_CANCELLED' : 'NONE';
+})();
+
+
+      // выбранные рёбра (если пусто — считаем, что выбраны все для режимов с SELECTED)
+      const selectedExplicit: string[] =
+        Array.isArray((startRaw as any)?.selectedEdges) ? (startRaw as any).selectedEdges : [];
+      const hasExplicit = selectedExplicit.length > 0;
+      const isSelectedEdge = hasExplicit ? selectedExplicit.includes(String(e.id)) : true;
+
+      // базовый стиль — синяя сплошная
+      let stroke = '#007BFF';
+      let dash: string | undefined;
+      let animated = false;
+      let icon: string | undefined;
+
+      switch (startMode) {
+        case 'AFTER_ANY':
+          stroke   = '#4CAF50';
+          dash     = '6 4';
+          animated = true;
+          icon     = '➡️';
+          break;
+        case 'AFTER_SELECTED':
+          icon = isSelectedEdge ? '➡️' : undefined;
+          break;
+        case 'ON_DATE':
+          icon = '📅';
+          break;
+        case 'ON_DATE_AND_AFTER_SELECTED':
+          icon = isSelectedEdge ? '📅' : undefined;
+          break;
+        case 'AFTER_DAYS_AND_AFTER_SELECTED':
+          icon = isSelectedEdge ? '⏰' : undefined; // (нужно — поменяй на '📅')
+          break;
+      }
+
+      // отмена: на выбранных дорисовываем 🚫
+      if (cancelMode === 'CANCEL_IF_ANY_SELECTED_CANCELLED' && isSelectedEdge) {
+        icon = icon ? `${icon} 🚫` : '🚫';
+      }
+
+      // markerEnd НЕ спредим (избегаем TS2698), просто гарантируем стрелку
+      const style: any = {
+        ...(e.style as any),
+        stroke,
+        strokeWidth: 2,
+        strokeDasharray: dash,
+      };
+
+      const label = icon || '';
+      const data: CondEdgeData = { ...(e.data as CondEdgeData), icon };
+
+      const needUpdate =
+        e.animated !== animated ||
+        (e.style as any)?.stroke !== style.stroke ||
+        (e.style as any)?.strokeDasharray !== style.strokeDasharray ||
+        ((e.data as CondEdgeData)?.icon ?? '') !== (icon ?? '') ||
+        (typeof e.label === 'string' ? e.label : '') !== label;
+
+      if (needUpdate) {
+        changed = true;
+        return {
+          ...e,
+          animated,
+          style,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          data,
+          label,
+        } as typeof e;
+      }
+      return e;
+    });
+
+    return changed ? next : prev;
+  });
+  // пересчитываем при смене nodes (условия) и edges (списки выбранных)
+}, [nodes, edges, setEdges]);
+
+
+
+
+
+
+
+
+
+const onConnect = useCallback(
+  (connection: Connection) =>
+    setEdges((eds) =>
+      addEdge(
+        {
+          id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          ...connection,
+          type: 'cond',
+          data: { icon: '➡️' },
+          markerEnd: { type: MarkerType.ArrowClosed },
+        },
+        eds
+      )
+    ),
+  [setEdges]
+);
+
+
+
 
   /* ---------- добавление ноды ---------- */
   const nextIdRef = useRef<number>(1);
@@ -652,7 +812,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         },
       ];
       setNodes(demo);
-      setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond' }]);
+setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond', data: {} }]);
       setLoadInfo(`Демо: узлов ${demo.length}, связей 1`);
       setTimeout(() => fitSafe(), 120);
       return;
@@ -670,8 +830,9 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       const { process, nodes: n = [], edges: e = [] } = data;
       setRunMode(process?.runMode === 'SCHEDULE' ? 'SCHEDULE' : 'MANUAL');
 
-      let rfNodes: Node<EditableData>[];
-      let rfEdges: Edge[];
+let rfNodes: Node<EditableData>[];
+let rfEdges: Edge<CondEdgeData>[];  // ← так
+
 
       if (n.length === 0) {
         rfNodes = [
@@ -719,12 +880,15 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           };
         });
 
-        rfEdges = e.map((it: any) => ({
-          id: String(it.id),
-          source: String(it.sourceNodeId),
-          target: String(it.targetNodeId),
-          type: 'cond',
-        }));
+rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
+  id: String(it.id),
+  source: String(it.sourceNodeId),
+  target: String(it.targetNodeId),
+  type: 'cond',
+  // data опциональна, но можно сразу положить пустой объект
+  data: {},
+}));
+
       }
 
       setNodes(rfNodes);
@@ -755,54 +919,75 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setLoadInfo('Сохранение…');
 
       // узлы
-      const payloadNodes = nodes.map((n, i) => {
-        const d = (n.data || {}) as any;
 
-        const startMode =
-          (d?.conditions?.start?.mode as
-            | 'AFTER_ANY'
-            | 'AFTER_SELECTED'
-            | 'AT_DATE'
-            | 'AT_DATE_AND_SELECTED'
-            | 'AFTER_DAYS_AND_SELECTED') ?? 'AFTER_ANY';
 
-        const startDate =
-          typeof d?.conditions?.start?.date === 'string'
-            ? d.conditions.start.date
-            : null;
 
-        const startAfterDays =
-          Number.isFinite(d?.conditions?.start?.afterDays)
-            ? Number(d.conditions.start.afterDays)
-            : null;
+const payloadNodes = nodes.map((n, i) => {
+  const d = (n.data || {}) as any;
 
-        const cancelMode =
-          (d?.conditions?.cancel?.mode as 'NONE' | 'IF_ANY_SELECTED_CANCELED') ?? 'NONE';
+  // start/cancel в UI у нас строковые (из NodeConditionsModal)
+const startMode =
+  typeof d?.conditions?.start === 'string'
+    ? d.conditions.start
+    : (d?.conditions?.start?.mode as
+        | 'AFTER_ANY'
+        | 'AFTER_SELECTED'
+        | 'ON_DATE'
+        | 'ON_DATE_AND_AFTER_SELECTED'
+        | 'AFTER_DAYS_AND_AFTER_SELECTED') ?? 'AFTER_ANY';
 
-        const metaJson: any = {};
-        if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
-        if (d.conditions)   metaJson.conditions   = d.conditions;
+const startDate =
+  typeof d?.conditions?.start === 'object' &&
+  typeof d?.conditions?.start?.date === 'string'
+    ? d.conditions.start.date
+    : null;
 
-        return {
-          id: String(n.id),
-          title: String(d.label || `Новая задача ${i + 1}`),
-          posX: Number(n.position.x) || 0,
-          posY: Number(n.position.y) || 0,
+const startAfterDays =
+  typeof d?.conditions?.start === 'object' &&
+  Number.isFinite(d?.conditions?.start?.afterDays)
+    ? Number(d.conditions.start.afterDays)
+    : null;
 
-          assigneeChatId: d.assigneeChatId != null ? String(d.assigneeChatId) : null,
-          createdByChatId: d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
+const cancelMode =
+  typeof d?.conditions?.cancel === 'string'
+    ? d.conditions.cancel
+    : (d?.conditions?.cancel?.mode as 'NONE' | 'CANCEL_IF_ANY_SELECTED_CANCELLED') ?? 'NONE';
 
-          type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
-          status: (d.status as string) ?? 'NEW',
 
-          startMode,
-          startDate,
-          startAfterDays,
-          cancelMode,
 
-          metaJson,
-        };
-      });
+
+  const metaJson: any = {};
+  if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
+  if (d.conditions)   metaJson.conditions   = d.conditions;
+
+  return {
+    id: String(n.id),
+    title: String(d.label || `Новая задача ${i + 1}`),
+    posX: Number(n.position.x) || 0,
+    posY: Number(n.position.y) || 0,
+
+    assigneeChatId: d.assigneeChatId != null ? String(d.assigneeChatId) : null,
+    createdByChatId: d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
+
+    type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
+    status: (d.status as string) ?? 'NEW',
+
+    startMode,         // ← строковый режим
+    startDate,         // ← заглушки (если нужно API)
+    startAfterDays,    // ← заглушки (если нужно API)
+    cancelMode,        // ← строковый режим
+
+    metaJson,
+  };
+});
+
+
+
+
+
+
+
+
 
       // рёбра
       const payloadEdges = edges.map((e) => ({

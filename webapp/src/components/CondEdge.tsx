@@ -7,7 +7,7 @@ export default function CondEdge(props: EdgeProps) {
 
   return (
     <>
-      {/* ВАЖНО: markerEnd = props.markerEnd (строка), иначе TS2322 */}
+      {/* markerEnd передаём как есть — не спредим (иначе TS-ошибка) */}
       <BaseEdge {...props} path={path} markerEnd={props.markerEnd} />
       <EdgeLabelRenderer>
         <div

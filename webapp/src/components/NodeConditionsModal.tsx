@@ -1,6 +1,9 @@
 // src/components/NodeConditionsModal.tsx
 import { useState } from 'react';
 
+
+
+
 export type StartCondition =
   | 'AFTER_ANY'
   | 'AFTER_SELECTED'
@@ -9,6 +12,12 @@ export type StartCondition =
   | 'AFTER_DAYS_AND_AFTER_SELECTED';
 
 export type CancelCondition = 'NONE' | 'CANCEL_IF_ANY_SELECTED_CANCELLED';
+
+
+
+
+
+
 
 export default function NodeConditionsModal({
   open,
