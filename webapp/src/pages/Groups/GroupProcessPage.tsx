@@ -393,6 +393,7 @@ const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
 
 
 
+
   const rfApi = useReactFlow();
   const { screenToFlowPosition } = rfApi;
 
@@ -403,6 +404,25 @@ const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
     open: false,
     nodeId: null,
   });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // подтянуть участников при смене groupId
   useEffect(() => {
@@ -556,6 +576,7 @@ const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
 // === Стилизация рёбер по условиям целевого узла ===
 // учитываем: AFTER_ANY, AFTER_SELECTED, ON_DATE, ON_DATE_AND_AFTER_SELECTED, AFTER_DAYS_AND_AFTER_SELECTED
 // + CANCEL_IF_ANY_SELECTED_CANCELLED
+// иконки/цвет/пунктир на рёбрах из условий целевого узла
 useEffect(() => {
   setEdges((prev) => {
     if (!prev.length) return prev;
@@ -568,84 +589,62 @@ useEffect(() => {
       if (!target) return e;
 
       const cond = (target.data as any)?.conditions || {};
-      const startRaw  = cond.start;   // может быть строкой или объектом { mode, selectedEdges }
-      const cancelRaw = cond.cancel;  // строка или объект { mode, selectedEdges }
+      const startRaw = cond.start;
+      const cancelRaw = cond.cancel;
 
       type StartCond =
         | 'AFTER_ANY'
-        | 'AFTER_SELECTED'
-        | 'ON_DATE'
-        | 'ON_DATE_AND_AFTER_SELECTED'
-        | 'AFTER_DAYS_AND_AFTER_SELECTED';
+        | { mode: 'AFTER_SELECTED'; selectedEdges: string[] }
+        | { mode: 'ON_DATE'; date: string }
+        | { mode: 'ON_DATE_AND_AFTER_SELECTED'; date: string; selectedEdges: string[] }
+        | { mode: 'AFTER_MINUTES_AND_AFTER_SELECTED'; minutes: number; selectedEdges: string[] };
 
-      type CancelCond = 'NONE' | 'CANCEL_IF_ANY_SELECTED_CANCELLED';
+      type CancelCond = 'NONE' | { mode: 'CANCEL_IF_ANY_SELECTED_CANCELLED'; selectedEdges: string[] };
 
-const startMode: StartCond = (() => {
-  const v = (typeof startRaw === 'string' ? startRaw : startRaw?.mode) as string | undefined;
-  switch (v) {
-    case 'AFTER_ANY':
-    case 'AFTER_SELECTED':
-    case 'ON_DATE':
-    case 'ON_DATE_AND_AFTER_SELECTED':
-    case 'AFTER_DAYS_AND_AFTER_SELECTED':
-      return v;
-    default:
-      return 'AFTER_ANY';
-  }
-})();
+      const startMode: StartCond = startRaw || 'AFTER_ANY';
+      const cancelMode: CancelCond = cancelRaw || 'NONE';
 
-const cancelMode: CancelCond = (() => {
-  const v = (typeof cancelRaw === 'string' ? cancelRaw : cancelRaw?.mode) as string | undefined;
-  return v === 'CANCEL_IF_ANY_SELECTED_CANCELLED' ? 'CANCEL_IF_ANY_SELECTED_CANCELLED' : 'NONE';
-})();
+      const getSelected = (s: any) => (Array.isArray(s?.selectedEdges) ? s.selectedEdges : []);
+      const startSelected = typeof startMode === 'object' ? getSelected(startMode) : [];
+      const cancelSelected = typeof cancelMode === 'object' ? getSelected(cancelMode) : [];
 
+      const hasExplicit = startSelected.length > 0;
+      const isSelectedEdge = hasExplicit ? startSelected.includes(String(e.id)) : true;
 
-      // выбранные рёбра (если пусто — считаем, что выбраны все для режимов с SELECTED)
-      const selectedExplicit: string[] =
-        Array.isArray((startRaw as any)?.selectedEdges) ? (startRaw as any).selectedEdges : [];
-      const hasExplicit = selectedExplicit.length > 0;
-      const isSelectedEdge = hasExplicit ? selectedExplicit.includes(String(e.id)) : true;
-
-      // базовый стиль — синяя сплошная
       let stroke = '#007BFF';
       let dash: string | undefined;
       let animated = false;
       let icon: string | undefined;
 
-      switch (startMode) {
-        case 'AFTER_ANY':
-          stroke   = '#4CAF50';
-          dash     = '6 4';
-          animated = true;
-          icon     = '➡️';
-          break;
-        case 'AFTER_SELECTED':
-          icon = isSelectedEdge ? '➡️' : undefined;
-          break;
-        case 'ON_DATE':
-          icon = '📅';
-          break;
-        case 'ON_DATE_AND_AFTER_SELECTED':
-          icon = isSelectedEdge ? '📅' : undefined;
-          break;
-        case 'AFTER_DAYS_AND_AFTER_SELECTED':
-          icon = isSelectedEdge ? '⏰' : undefined; // (нужно — поменяй на '📅')
-          break;
+      if (startMode === 'AFTER_ANY') {
+        stroke = '#4CAF50';
+        dash = '6 4';
+        animated = true;
+        icon = '➡️';
+      } else if (typeof startMode === 'object') {
+        switch (startMode.mode) {
+          case 'AFTER_SELECTED':
+            icon = isSelectedEdge ? '➡️' : undefined;
+            break;
+          case 'ON_DATE':
+            icon = '📅';
+            break;
+          case 'ON_DATE_AND_AFTER_SELECTED':
+            icon = isSelectedEdge ? '📅' : undefined;
+            break;
+          case 'AFTER_MINUTES_AND_AFTER_SELECTED':
+            icon = isSelectedEdge ? '⏰' : undefined; // по просьбе можно заменить на '📅'
+            break;
+        }
       }
 
-      // отмена: на выбранных дорисовываем 🚫
-      if (cancelMode === 'CANCEL_IF_ANY_SELECTED_CANCELLED' && isSelectedEdge) {
-        icon = icon ? `${icon} 🚫` : '🚫';
+      if (typeof cancelMode === 'object' && cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
+        if (cancelSelected.includes(String(e.id))) {
+          icon = icon ? `${icon} 🚫` : '🚫';
+        }
       }
 
-      // markerEnd НЕ спредим (избегаем TS2698), просто гарантируем стрелку
-      const style: any = {
-        ...(e.style as any),
-        stroke,
-        strokeWidth: 2,
-        strokeDasharray: dash,
-      };
-
+      const style: any = { ...(e.style as any), stroke, strokeWidth: 2, strokeDasharray: dash };
       const label = icon || '';
       const data: CondEdgeData = { ...(e.data as CondEdgeData), icon };
 
@@ -658,28 +657,126 @@ const cancelMode: CancelCond = (() => {
 
       if (needUpdate) {
         changed = true;
-        return {
-          ...e,
-          animated,
-          style,
-          markerEnd: { type: MarkerType.ArrowClosed },
-          data,
-          label,
-        } as typeof e;
+        return { ...e, animated, style, markerEnd: { type: MarkerType.ArrowClosed }, data, label } as typeof e;
       }
       return e;
     });
 
     return changed ? next : prev;
   });
-  // пересчитываем при смене nodes (условия) и edges (списки выбранных)
 }, [nodes, edges, setEdges]);
 
 
 
+// Автоматический переход статуса узлов по условиям + таймер для "через X минут"
+const startTimersRef = useRef<Record<string, number>>({});
 
+useEffect(() => {
+  const byId = new Map(nodes.map((n) => [String(n.id), n]));
+  const incomingByTarget = new Map<string, string[]>(); // target -> edgeIds[]
+  edges.forEach((e) => {
+    const arr = incomingByTarget.get(String(e.target)) || [];
+    arr.push(String(e.id));
+    incomingByTarget.set(String(e.target), arr);
+  });
 
+  const sourceDone = (edgeIds: string[]) =>
+    edgeIds.some((eid) => {
+      const e = edges.find((x) => String(x.id) === eid);
+      const src = e ? byId.get(String(e.source)) : undefined;
+      return ((src?.data as any)?.status || 'NEW') === 'DONE';
+    });
 
+  const sourceCanceled = (edgeIds: string[]) =>
+    edgeIds.some((eid) => {
+      const e = edges.find((x) => String(x.id) === eid);
+      const src = e ? byId.get(String(e.source)) : undefined;
+      return ((src?.data as any)?.status || 'NEW') === 'CANCELLED';
+    });
+
+  const updates: Array<{ id: string; status: import('../../components/NodeTopToolbar').NodeStatus }> = [];
+
+  nodes.forEach((n) => {
+    const d: any = n.data || {};
+    const cur: string = d.status || 'NEW';
+    const cond = d.conditions || {};
+    const start = cond.start || 'AFTER_ANY';
+    const cancel = cond.cancel || 'NONE';
+    const incoming = incomingByTarget.get(String(n.id)) || [];
+
+    // отмена
+    if (typeof cancel === 'object' && cancel.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
+      const sel = Array.isArray(cancel.selectedEdges) ? cancel.selectedEdges : [];
+      if (sel.length > 0 && sourceCanceled(sel) && cur !== 'DONE' && cur !== 'CANCELLED') {
+        updates.push({ id: n.id, status: 'CANCELLED' });
+        return;
+      }
+    }
+
+    // старт уже работающих/завершённых не трогаем
+    if (cur !== 'NEW' && cur !== 'WAITING') return;
+
+    if (start === 'AFTER_ANY') {
+      if (sourceDone(incoming)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
+    } else if (typeof start === 'object') {
+      const sel = Array.isArray(start.selectedEdges) ? start.selectedEdges : incoming;
+      switch (start.mode) {
+        case 'AFTER_SELECTED':
+          if (sourceDone(sel)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
+          break;
+        case 'ON_DATE':
+          if (start.date && Date.now() >= Date.parse(start.date)) {
+            updates.push({ id: n.id, status: 'IN_PROGRESS' });
+          }
+          break;
+        case 'ON_DATE_AND_AFTER_SELECTED':
+          if (start.date && Date.now() >= Date.parse(start.date) && sourceDone(sel)) {
+            updates.push({ id: n.id, status: 'IN_PROGRESS' });
+          }
+          break;
+        case 'AFTER_MINUTES_AND_AFTER_SELECTED': {
+          // если кто-то из выбранных завершился — ставим таймер
+          if (sourceDone(sel)) {
+            const key = String(n.id);
+            if (!startTimersRef.current[key]) {
+              const ms = Math.max(1, Number(start.minutes || 1)) * 60_000;
+              startTimersRef.current[key] = window.setTimeout(() => {
+                setNodes((nds) =>
+                  nds.map((x) =>
+                    x.id === n.id ? { ...x, data: { ...(x.data as any), status: 'IN_PROGRESS' } } : x
+                  )
+                );
+                delete startTimersRef.current[key];
+              }, ms);
+            }
+          }
+          break;
+        }
+      }
+    }
+  });
+
+  if (updates.length) {
+    setNodes((nds) =>
+      nds.map((n) => {
+        const u = updates.find((x) => x.id === n.id);
+        return u ? { ...n, data: { ...(n.data as any), status: u.status } } : n;
+      })
+    );
+  }
+
+  // чистим таймеры у удалённых узлов
+  Object.keys(startTimersRef.current).forEach((id) => {
+    if (!nodes.some((n) => String(n.id) === id)) {
+      window.clearTimeout(startTimersRef.current[id]);
+      delete startTimersRef.current[id];
+    }
+  });
+
+  return () => {
+    // на размонтировании очищать не нужно, но оставлю для безопасности
+  };
+}, [nodes, edges, setNodes]);
 
 
 
@@ -758,34 +855,50 @@ const onConnect = useCallback(
     }
   };
 
-  const onConnectStart: OnConnectStart = useCallback(
-    (_, params) => {
-      connectingNodeId.current = params?.nodeId ?? null;
-      connectingHandleType.current = (params?.handleType as 'source' | 'target' | undefined) ?? null;
+const onConnectStart: OnConnectStart = useCallback(
+  (_, params) => {
+    connectingNodeId.current = params?.nodeId ?? null;
+    connectingHandleType.current = (params?.handleType as 'source' | 'target' | undefined) ?? null;
 
+    detachPointerUp();
+    pointerUpHandler.current = (e: PointerEvent) => {
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const newId = addNodeAt(pos, '', true);
+
+      const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
+      const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
+
+      if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
+        const source =
+          connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
+        const target =
+          connectingHandleType.current === 'source' ? newId : connectingNodeId.current;
+
+        setEdges((eds) =>
+          addEdge(
+            {
+              id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              source,
+              target,
+              type: 'cond',
+              data: { icon: '➡️' },
+              markerEnd: { type: MarkerType.ArrowClosed },
+            },
+            eds
+          )
+        );
+      }
+
+      connectingNodeId.current = null;
+      connectingHandleType.current = null;
       detachPointerUp();
-      pointerUpHandler.current = (e: PointerEvent) => {
-        const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-        const newId = addNodeAt(pos, '', true);
+    };
 
-        const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
-        const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
-        if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
-          const source = connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
-          const target = connectingHandleType.current === 'source' ? newId : connectingNodeId.current;
-          setEdges((eds) =>
-            addEdge({ id: `e_${Date.now()}`, source, target, type: 'cond', data: { icon: '➡️' } }, eds)
-          );
-        }
-        connectingNodeId.current = null;
-        connectingHandleType.current = null;
-        detachPointerUp();
-      };
+    window.addEventListener('pointerup', pointerUpHandler.current, { passive: true, once: true });
+  },
+  [addNodeAt, screenToFlowPosition, setEdges]
+);
 
-      window.addEventListener('pointerup', pointerUpHandler.current, { passive: true, once: true });
-    },
-    [addNodeAt, screenToFlowPosition, setEdges]
-  );
 
   useEffect(() => () => detachPointerUp(), []);
 
@@ -853,7 +966,7 @@ let rfEdges: Edge<CondEdgeData>[];  // ← так
             targetPosition: Position.Left,
           },
         ];
-        rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond' }];
+rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} }];
       } else {
         rfNodes = n.map((it: any) => {
           const meta = safeParseJson(it.metaJson);
@@ -925,61 +1038,23 @@ rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
 const payloadNodes = nodes.map((n, i) => {
   const d = (n.data || {}) as any;
 
-  // start/cancel в UI у нас строковые (из NodeConditionsModal)
-const startMode =
-  typeof d?.conditions?.start === 'string'
-    ? d.conditions.start
-    : (d?.conditions?.start?.mode as
-        | 'AFTER_ANY'
-        | 'AFTER_SELECTED'
-        | 'ON_DATE'
-        | 'ON_DATE_AND_AFTER_SELECTED'
-        | 'AFTER_DAYS_AND_AFTER_SELECTED') ?? 'AFTER_ANY';
-
-const startDate =
-  typeof d?.conditions?.start === 'object' &&
-  typeof d?.conditions?.start?.date === 'string'
-    ? d.conditions.start.date
-    : null;
-
-const startAfterDays =
-  typeof d?.conditions?.start === 'object' &&
-  Number.isFinite(d?.conditions?.start?.afterDays)
-    ? Number(d.conditions.start.afterDays)
-    : null;
-
-const cancelMode =
-  typeof d?.conditions?.cancel === 'string'
-    ? d.conditions.cancel
-    : (d?.conditions?.cancel?.mode as 'NONE' | 'CANCEL_IF_ANY_SELECTED_CANCELLED') ?? 'NONE';
-
-
-
-
   const metaJson: any = {};
   if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
-  if (d.conditions)   metaJson.conditions   = d.conditions;
+  if (d.conditions)   metaJson.conditions   = d.conditions; // <-- все условия тут
 
   return {
     id: String(n.id),
     title: String(d.label || `Новая задача ${i + 1}`),
     posX: Number(n.position.x) || 0,
     posY: Number(n.position.y) || 0,
-
     assigneeChatId: d.assigneeChatId != null ? String(d.assigneeChatId) : null,
     createdByChatId: d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
-
     type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
     status: (d.status as string) ?? 'NEW',
-
-    startMode,         // ← строковый режим
-    startDate,         // ← заглушки (если нужно API)
-    startAfterDays,    // ← заглушки (если нужно API)
-    cancelMode,        // ← строковый режим
-
     metaJson,
   };
 });
+
 
 
 
@@ -1159,36 +1234,43 @@ const cancelMode =
 
       {/* Модалка условий */}
       {condEditor.open && (
-        <NodeConditionsModal
-          open={condEditor.open}
-          onClose={() => setCondEditor({ open: false, nodeId: null })}
-          onDelete={() => {
-            setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
-            setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
-            setCondEditor({ open: false, nodeId: null });
-          }}
-          onSave={({ start, cancel }) => {
-            if (!condEditor.nodeId) return;
-            setNodes((nds) =>
-              nds.map((n) =>
-                n.id === condEditor.nodeId
-                  ? { ...n, data: { ...(n.data as any), conditions: { start, cancel } } }
-                  : n
-              )
-            );
-            setCondEditor({ open: false, nodeId: null });
-          }}
-          initialStart={
-            (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start as
-              | StartCondition
-              | undefined
-          }
-          initialCancel={
-            (nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.cancel as
-              | CancelCondition
-              | undefined
-          }
-        />
+<NodeConditionsModal
+  open={condEditor.open}
+  onClose={() => setCondEditor({ open: false, nodeId: null })}
+  onDelete={() => {
+    setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
+    setCondEditor({ open: false, nodeId: null });
+  }}
+  onSave={({ start, cancel }) => {
+    if (!condEditor.nodeId) return;
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.id === condEditor.nodeId ? { ...n, data: { ...(n.data as any), conditions: { start, cancel } } } : n
+      )
+    );
+    setCondEditor({ open: false, nodeId: null });
+  }}
+  initialStart={(nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start}
+  initialCancel={(nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.cancel}
+  prevEdges={
+    (() => {
+      const nid = condEditor.nodeId;
+      if (!nid) return [];
+      return edges
+        .filter((e) => String(e.target) === String(nid))
+        .map((e) => ({
+          id: String(e.id),
+          label: (() => {
+            const srcId = String(e.source);
+            const title = (nodes.find((n) => String(n.id) === srcId)?.data as any)?.label;
+            return title || srcId;
+          })(),
+        }));
+    })()
+  }
+/>
+
       )}
     </div>
   );
