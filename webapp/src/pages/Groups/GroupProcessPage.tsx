@@ -611,42 +611,103 @@ useEffect(() => {
       const hasExplicit = startSelected.length > 0;
       const isSelectedEdge = hasExplicit ? startSelected.includes(String(e.id)) : true;
 
+    
+
+
+
+
+         // ---- базовые значения
       let stroke = '#007BFF';
       let dash: string | undefined;
       let animated = false;
       let icon: string | undefined;
 
-      if (startMode === 'AFTER_ANY') {
+      // исходный и целевой узлы/статусы
+      const sourceNode = nodeById.get(String(e.source));
+      const srcStatus = ((sourceNode?.data as any)?.status || 'NEW') as NodeStatus;
+
+      // helper: применяем зелёный пунктир + анимацию
+      const makeSelectedGreen = () => {
         stroke = '#4CAF50';
         dash = '6 4';
         animated = true;
-        icon = '➡️';
+      };
+
+      // какие рёбра считаем «релевантными» для старта (их подсвечиваем пунктиром)
+      const relevantForStart =
+        startMode === 'AFTER_ANY'
+          ? true
+          : typeof startMode === 'object' &&
+            (startMode.mode === 'AFTER_SELECTED' ||
+             startMode.mode === 'ON_DATE_AND_AFTER_SELECTED' ||
+             startMode.mode === 'AFTER_MINUTES_AND_AFTER_SELECTED') &&
+            isSelectedEdge;
+
+      // иконка по режиму старта
+      if (startMode === 'AFTER_ANY') {
+        if (relevantForStart) {
+          makeSelectedGreen();
+          icon = '➡️';
+        }
       } else if (typeof startMode === 'object') {
         switch (startMode.mode) {
           case 'AFTER_SELECTED':
-            icon = isSelectedEdge ? '➡️' : undefined;
+            if (relevantForStart) {
+              makeSelectedGreen();
+              icon = '➡️';
+            }
             break;
           case 'ON_DATE':
             icon = '📅';
             break;
           case 'ON_DATE_AND_AFTER_SELECTED':
-            icon = isSelectedEdge ? '📅' : undefined;
+            if (relevantForStart) {
+              makeSelectedGreen();
+              icon = '📅';
+            }
             break;
           case 'AFTER_MINUTES_AND_AFTER_SELECTED':
-            icon = isSelectedEdge ? '⏰' : undefined; // по просьбе можно заменить на '📅'
+            if (relevantForStart) {
+              makeSelectedGreen();
+              icon = '⏰';
+            }
             break;
         }
       }
 
-      if (typeof cancelMode === 'object' && cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
-        if (cancelSelected.includes(String(e.id))) {
-          icon = icon ? `${icon} 🚫` : '🚫';
+      // --- Переход в сплошную ЗЕЛЁНУЮ, когда источник DONE
+      if (relevantForStart && srcStatus === 'DONE') {
+        stroke = '#22C55E'; // сплошной зелёный
+        dash = undefined;
+        animated = false;
+      }
+
+      // --- Отмена: для выбранных отменных рёбер добавляем 🚫 и,
+      // если источник CANCELLED — делаем сплошную КРАСНУЮ
+      const isCancelEdge =
+        typeof cancelMode === 'object' &&
+        cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED' &&
+        cancelSelected.includes(String(e.id));
+
+      if (isCancelEdge) {
+        icon = icon ? `${icon} 🚫` : '🚫';
+        if (srcStatus === 'CANCELLED') {
+          stroke = '#EF4444'; // сплошной красный
+          dash = undefined;
+          animated = false;
         }
       }
 
       const style: any = { ...(e.style as any), stroke, strokeWidth: 2, strokeDasharray: dash };
       const label = icon || '';
       const data: CondEdgeData = { ...(e.data as CondEdgeData), icon };
+
+
+
+
+
+
+
 
       const needUpdate =
         e.animated !== animated ||
