@@ -916,6 +916,9 @@ const onConnect = useCallback(
     }
   };
 
+
+
+
 const onConnectStart: OnConnectStart = useCallback(
   (_, params) => {
     connectingNodeId.current = params?.nodeId ?? null;
@@ -923,13 +926,14 @@ const onConnectStart: OnConnectStart = useCallback(
 
     detachPointerUp();
     pointerUpHandler.current = (e: PointerEvent) => {
-      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      const newId = addNodeAt(pos, '', true);
-
       const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
       const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
 
+      // Если отпустили в ПУСТОМ месте — создаём новую ноду и соединяем
       if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
+        const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const newId = addNodeAt(pos, '', true);
+
         const source =
           connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
         const target =
@@ -949,6 +953,8 @@ const onConnectStart: OnConnectStart = useCallback(
           )
         );
       }
+      // Если отпустили на узле/хэндле — ничего не делаем здесь:
+      // штатный onConnect сам создаст связь
 
       connectingNodeId.current = null;
       connectingHandleType.current = null;
@@ -959,6 +965,11 @@ const onConnectStart: OnConnectStart = useCallback(
   },
   [addNodeAt, screenToFlowPosition, setEdges]
 );
+
+
+
+
+
 
 
   useEffect(() => () => detachPointerUp(), []);
