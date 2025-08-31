@@ -211,6 +211,29 @@ enum InviteStatus {
   EXPIRED
 }
 
+
+
+enum ProcessNodeType {
+  TASK
+  EVENT
+}
+
+enum StartMode {
+  AFTER_ANY
+  AFTER_SELECTED
+  AT_DATE
+  AT_DATE_AND_SELECTED
+  AFTER_DAYS_AND_SELECTED
+}
+
+enum CancelMode {
+  NONE
+  IF_ANY_SELECTED_CANCELED
+}
+
+
+
+
 /* -------------------- NEW: УЧАСТНИКИ СОБЫТИЯ -------------------- */
 
 model EventParticipant {
@@ -265,22 +288,71 @@ model GroupProcess {
 }
 
 model ProcessNode {
-  id              String   @id @default(cuid())
-  processId       String   // GroupProcess.id
-  title           String   // <= 100 символов (лимит контролируем на уровне приложения)  assigneeChatId  String?  // по умолчанию владелец группы; можно менять
-  posX            Float    @default(0)
-  posY            Float    @default(0)
-  status          String   @default("PLANNED") // PLANNED | IN_PROGRESS | DONE | CANCELED
-  metaJson        Json?
-  createdAt       DateTime @default(now())
+  id               String   @id @default(cuid())
+  processId        String
+  title            String
+  posX             Float    @default(0)
+  posY             Float    @default(0)
+
+  // жизненный цикл узла
+  status           String   @default("PLANNED")
+  type             ProcessNodeType @default(TASK)
+
+  // роли
+  assigneeChatId   String?
+  createdByChatId  String?
+
+  // условия запуска
+  startMode        StartMode  @default(AFTER_ANY)
+  startDate        DateTime?
+  startAfterDays   Int?
+
+  // условия отмены
+  cancelMode       CancelMode @default(NONE)
+
+  // связь с реальной задачей (когда узел породил Task)
+  taskId           String?
+  // если хочешь — можно сделать relation: task Task? @relation(fields: [taskId], references: [id])
+
+  // расширяемый карман
+  metaJson         Json?
+
+  // наблюдатели
+  watchers         ProcessNodeWatcher[]
+
+  createdAt        DateTime @default(now())
 }
+
 
 model ProcessEdge {
   id           String @id @default(cuid())
-  processId    String // GroupProcess.id
-  sourceNodeId String // ProcessNode.id
-  targetNodeId String // ProcessNode.id
+  processId    String
+  sourceNodeId String
+  targetNodeId String
+  enabled      Boolean @default(true)
 }
+
+
+
+
+model ProcessNodeWatcher {
+  id      String @id @default(cuid())
+  nodeId  String
+  chatId  String
+
+  node    ProcessNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, chatId])
+  @@index([chatId])
+}
+
+
+
+
+
+
+
+
 
 model ProcessRun {
   id         String   @id @default(cuid())

@@ -6,6 +6,11 @@ import { listGroups } from './api';
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
 import EventPanel from './components/EventPanel';
+import ShareNewTaskMenu from './components/ShareNewTaskMenu';
+
+
+
+
 import {
   getTask,
   getTaskWithGroup,
@@ -277,11 +282,14 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
 
 
-<label style={{ display: 'block', fontSize: 14, opacity: 0.85, marginBottom: 8 }}>
-  {task?.type === 'EVENT' ? 'Событие' : 'Текст задачи'}
-</label>
 
 
+<div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 8 }}>
+  <label style={{ display: 'block', fontSize: 14, opacity: 0.85 }}>
+    {task?.type === 'EVENT' ? 'Событие' : 'Текст задачи'}
+  </label>
+  {task?.id ? <ShareNewTaskMenu taskId={task.id} /> : null}
+</div>
 
 
 

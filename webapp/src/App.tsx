@@ -84,23 +84,25 @@ function getTaskIdFromURL() {
 
 // заменить parseStartParam на:
 function parseStartParam(sp: string) {
-  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task'; id: string; token?: string };
+  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask'; id: string; token?: string };
 
-  // 1) Полный вид: assign/join/event
-  let m = sp.match(/^(assign|join|event)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
+  // 1) Полный вид
+  let m = sp.match(/^(assign|join|event|newtask)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
   if (m) return { type: m[1] as any, id: m[2], token: m[3] };
 
-  // 2) task_<id> (кнопка в напоминании)
+  // 2) task_<id>
   m = sp.match(/^task_([a-z0-9]+)$/i);
   if (m) return { type: 'task', id: m[1] };
 
-  // 3) Компактный assign/join/event: head<ID><TOKEN>
+  // 3) Компактный assign/join/event/newtask
   const head = sp.startsWith('assign')
     ? 'assign'
     : sp.startsWith('join')
     ? 'join'
     : sp.startsWith('event')
     ? 'event'
+    : sp.startsWith('newtask')
+    ? 'newtask'
     : null;
   if (!head) return null;
 
@@ -539,7 +541,29 @@ useEffect(() => {
 
 
 
-
+// 👇 Новое: “Новая задача по ссылке”
+if (parsed.type === 'newtask') {
+  const url = new URL(window.location.href);
+  // пока не знаем ID копии — примем, сервер вернёт taskId
+  fetch(`${import.meta.env.VITE_API_BASE}/sharenewtask/accept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chatId: me,
+      taskId: parsed.id,
+      token: parsed.token, // сейчас сервер не валидирует, но оставим для будущего
+    }),
+  })
+    .then((r) => r.json())
+    .then((r) => {
+      if (r?.ok && r.taskId) {
+        url.searchParams.set('task', r.taskId);
+        window.history.replaceState(null, '', url.toString());
+        setTaskId(r.taskId);
+      }
+    })
+    .catch(() => {});
+}
 
 
 

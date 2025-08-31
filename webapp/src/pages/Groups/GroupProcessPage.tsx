@@ -575,10 +575,6 @@ const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
 
 
 // === Стилизация рёбер по условиям целевого узла ===
-// === Стилизация рёбер по условиям целевого узла ===
-// учитываем: AFTER_ANY, AFTER_SELECTED, ON_DATE, ON_DATE_AND_AFTER_SELECTED, AFTER_DAYS_AND_AFTER_SELECTED
-// + CANCEL_IF_ANY_SELECTED_CANCELLED
-// иконки/цвет/пунктир на рёбрах из условий целевого узла
 useEffect(() => {
   setEdges((prev) => {
     if (!prev.length) return prev;
@@ -599,7 +595,8 @@ useEffect(() => {
         | { mode: 'AFTER_SELECTED'; selectedEdges: string[] }
         | { mode: 'ON_DATE'; date: string }
         | { mode: 'ON_DATE_AND_AFTER_SELECTED'; date: string; selectedEdges: string[] }
-        | { mode: 'AFTER_MINUTES_AND_AFTER_SELECTED'; minutes: number; selectedEdges: string[] };
+        | { mode: 'AFTER_MINUTES_AND_AFTER_SELECTED'; minutes: number; selectedEdges: string[] }
+        | { mode: 'AFTER_SELECTED_CANCELLED'; selectedEdges: string[] }; // ⟵ НОВОЕ
 
       type CancelCond = 'NONE' | { mode: 'CANCEL_IF_ANY_SELECTED_CANCELLED'; selectedEdges: string[] };
 
@@ -613,109 +610,119 @@ useEffect(() => {
       const hasExplicit = startSelected.length > 0;
       const isSelectedEdge = hasExplicit ? startSelected.includes(String(e.id)) : true;
 
-    
+      // статус исходной ноды
+      const srcNode = nodeById.get(String(e.source));
+      const srcStatus = ((srcNode?.data as any)?.status || 'NEW') as import('../../components/NodeTopToolbar').NodeStatus;
 
-
-
-
-         // ---- базовые значения
       let stroke = '#007BFF';
       let dash: string | undefined;
       let animated = false;
-      let icon: string | undefined;
 
-      // исходный и целевой узлы/статусы
-      const sourceNode = nodeById.get(String(e.source));
-      const srcStatus = ((sourceNode?.data as any)?.status || 'NEW') as NodeStatus;
+      const iconParts: string[] = [];
 
-      // helper: применяем зелёный пунктир + анимацию
-      const makeSelectedGreen = () => {
+      // START rules → зелёные
+      if (startMode === 'AFTER_ANY') {
+        // пока не выполнено — пунктирая зелёная
         stroke = '#4CAF50';
         dash = '6 4';
         animated = true;
-      };
+        iconParts.push('➡️');
 
-      // какие рёбра считаем «релевантными» для старта (их подсвечиваем пунктиром)
-      const relevantForStart =
-        startMode === 'AFTER_ANY'
-          ? true
-          : typeof startMode === 'object' &&
-            (startMode.mode === 'AFTER_SELECTED' ||
-             startMode.mode === 'ON_DATE_AND_AFTER_SELECTED' ||
-             startMode.mode === 'AFTER_MINUTES_AND_AFTER_SELECTED') &&
-            isSelectedEdge;
-
-      // иконка по режиму старта
-      if (startMode === 'AFTER_ANY') {
-        if (relevantForStart) {
-          makeSelectedGreen();
-          icon = '➡️';
+        // если источник уже DONE → сделать сплошной зелёной
+        if (srcStatus === 'DONE') {
+          dash = undefined;
+          animated = false;
+          stroke = '#22c55e';
         }
       } else if (typeof startMode === 'object') {
         switch (startMode.mode) {
-          case 'AFTER_SELECTED':
-            if (relevantForStart) {
-              makeSelectedGreen();
-              icon = '➡️';
+          case 'AFTER_SELECTED': {
+            if (isSelectedEdge) {
+              iconParts.push('➡️');
+              stroke = '#4CAF50';
+              dash = '6 4';
+              animated = true;
+              if (srcStatus === 'DONE') {
+                dash = undefined;
+                animated = false;
+                stroke = '#22c55e';
+              }
             }
             break;
-          case 'ON_DATE':
-            icon = '📅';
+          }
+          case 'ON_DATE': {
+            iconParts.push('📅');
+            // визуально однотипно с ожиданием: тонкий зелёный пунктир
+            stroke = '#4CAF50';
+            dash = '6 4';
+            animated = true;
             break;
-          case 'ON_DATE_AND_AFTER_SELECTED':
-            if (relevantForStart) {
-              makeSelectedGreen();
-              icon = '📅';
+          }
+          case 'ON_DATE_AND_AFTER_SELECTED': {
+            if (isSelectedEdge) {
+              iconParts.push('📅');
+              stroke = '#4CAF50';
+              dash = '6 4';
+              animated = true;
+              if (srcStatus === 'DONE') {
+                dash = undefined;
+                animated = false;
+                stroke = '#22c55e';
+              }
             }
             break;
-          case 'AFTER_MINUTES_AND_AFTER_SELECTED':
-            if (relevantForStart) {
-              makeSelectedGreen();
-              icon = '⏰';
+          }
+          case 'AFTER_MINUTES_AND_AFTER_SELECTED': {
+            if (isSelectedEdge) {
+              iconParts.push('⏰');
+              stroke = '#4CAF50';
+              dash = '6 4';
+              animated = true;
+              // переход в сплошную зелёную произойдёт таймером — тут оставляем пунктир
             }
             break;
+          }
+          case 'AFTER_SELECTED_CANCELLED': { // ⟵ НОВОЕ
+            if (isSelectedEdge) {
+              iconParts.push('🚫');
+              stroke = '#4CAF50';
+              dash = '6 4';
+              animated = true;
+              // как только источник ОТМЕНЁН — считаем триггер выполнен → сплошная зелёная
+              if (srcStatus === 'CANCELLED') {
+                dash = undefined;
+                animated = false;
+                stroke = '#22c55e';
+              }
+            }
+            break;
+          }
         }
       }
 
-      // --- Переход в сплошную ЗЕЛЁНУЮ, когда источник DONE
-      if (relevantForStart && srcStatus === 'DONE') {
-        stroke = '#22C55E'; // сплошной зелёный
-        dash = undefined;
-        animated = false;
-      }
-
-      // --- Отмена: для выбранных отменных рёбер добавляем 🚫 и,
-      // если источник CANCELLED — делаем сплошную КРАСНУЮ
-      const isCancelEdge =
-        typeof cancelMode === 'object' &&
-        cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED' &&
-        cancelSelected.includes(String(e.id));
-
-      if (isCancelEdge) {
-        icon = icon ? `${icon} 🚫` : '🚫';
-        if (srcStatus === 'CANCELLED') {
-          stroke = '#EF4444'; // сплошной красный
-          dash = undefined;
-          animated = false;
+      // CANCEL rules overlay → добавляем 🚫 к подписи + сплошная красная, если триггер сработал
+      if (typeof cancelMode === 'object' && cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
+        if (cancelSelected.includes(String(e.id))) {
+          // рядом с текущей иконкой
+          iconParts.push('🚫');
+          // если источник отменён → сплошная красная
+          if (srcStatus === 'CANCELLED') {
+            stroke = '#ef4444';
+            dash = undefined;
+            animated = false;
+          }
         }
       }
 
       const style: any = { ...(e.style as any), stroke, strokeWidth: 2, strokeDasharray: dash };
-      const label = icon || '';
-      const data: CondEdgeData = { ...(e.data as CondEdgeData), icon };
-
-
-
-
-
-
-
+      const label = iconParts.join(' ');
+      const data = { ...(e.data as any), icon: label };
 
       const needUpdate =
         e.animated !== animated ||
         (e.style as any)?.stroke !== style.stroke ||
         (e.style as any)?.strokeDasharray !== style.strokeDasharray ||
-        ((e.data as CondEdgeData)?.icon ?? '') !== (icon ?? '') ||
+        ((e.data as any)?.icon ?? '') !== (label ?? '') ||
         (typeof e.label === 'string' ? e.label : '') !== label;
 
       if (needUpdate) {
@@ -728,6 +735,7 @@ useEffect(() => {
     return changed ? next : prev;
   });
 }, [nodes, edges, setEdges]);
+
 
 
 
@@ -763,8 +771,8 @@ useEffect(() => {
     const d: any = n.data || {};
     const cur: string = d.status || 'NEW';
     const cond = d.conditions || {};
-    const start = cond.start || 'AFTER_ANY';
-    const cancel = cond.cancel || 'NONE';
+  const start = (cond.start ?? 'AFTER_ANY') as StartCondition;
+const cancel = (cond.cancel ?? 'NONE') as CancelCondition;
     const incoming = incomingByTarget.get(String(n.id)) || [];
 
     // отмена
@@ -782,11 +790,30 @@ useEffect(() => {
     if (start === 'AFTER_ANY') {
       if (sourceDone(incoming)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
     } else if (typeof start === 'object') {
-      const sel = Array.isArray(start.selectedEdges) ? start.selectedEdges : incoming;
+      const sel =
+  typeof start === 'object' && Array.isArray((start as any).selectedEdges)
+    ? (start as any).selectedEdges as string[]
+    : incoming;
       switch (start.mode) {
         case 'AFTER_SELECTED':
           if (sourceDone(sel)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
           break;
+
+
+
+
+case 'AFTER_SELECTED_CANCELLED': {
+  if (sourceCanceled(sel)) {
+    updates.push({ id: n.id, status: 'IN_PROGRESS' });
+  }
+  break;
+}
+
+
+
+
+
+
         case 'ON_DATE':
           if (start.date && Date.now() >= Date.parse(start.date)) {
             updates.push({ id: n.id, status: 'IN_PROGRESS' });

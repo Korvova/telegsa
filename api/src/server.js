@@ -1,3 +1,4 @@
+//server.js
 import 'dotenv/config';
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
@@ -9,6 +10,8 @@ import { eventsRouter } from './routes/events.js';
 import { initReminderScheduler, scheduleRemindersForEvent } from './scheduler.js';
 
 import processRouter from './routes/process.js';
+
+import { shareNewTaskRouter } from './routes/sharenewtask.js';
 
 
 
@@ -265,6 +268,11 @@ app.use('/notifications', notificationsRouter({ prisma }));
 
 /* ---------- Назначения / приглашения ответственных ---------- */
 app.use('/assign', assignRouter({ prisma })); 
+
+
+/* ---------- Поделиться задачей для коппии ---------- */
+app.use('/sharenewtask', shareNewTaskRouter({ prisma })); // ⬅️ новый
+
 
 
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
