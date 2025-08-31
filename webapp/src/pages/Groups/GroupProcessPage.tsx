@@ -1,10 +1,12 @@
-// src/pages/Groups/GroupProcessPage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import CondEdge from '../../components/CondEdge';
 import RelationsBadge from '../../components/RelationsBadge';
 import AssigneeToolbar from '../../components/AssigneeToolbar';
-import ConditionsToolbar from '../../components/ConditionsToolbar';
+
+import NodeTopToolbar, { type NodeStatus } from '../../components/NodeTopToolbar';
+import StatusPickerModal from '../../components/StatusPickerModal';
+
 import AssigneePickerModal from '../../components/AssigneePickerModal';
 import NodeConditionsModal, { type StartCondition, type CancelCondition } from '../../components/NodeConditionsModal';
 
@@ -46,8 +48,8 @@ interface EditableData {
   assigneeName?: string;
   assigneeChatId?: string | null;
 
-  /** Статус карточки (визуальный) */
-  status?: 'NEW' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
+  /** Статус карточки (визуальный и сохраняемый) */
+  status?: NodeStatus;
 
   /** Условия узла (храним в metaJson) */
   conditions?: { start: StartCondition; cancel: CancelCondition };
@@ -60,6 +62,7 @@ interface EditableData {
   ) => void;
   onPickAssignee?: (id: string) => void;
   onOpenConditions?: (id: string) => void;
+  onOpenStatus?: (id: string) => void;
   autoEdit?: boolean;
 
   // подписи связей
@@ -183,13 +186,17 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
   const stylesByStatus = (() => {
     switch (data.status) {
       case 'DONE':
-        return { bg: '#e8fff1', border: '#22c55e' };
+        return { bg: '#e8fff1', border: '#22c55e' }; // зелёный
       case 'IN_PROGRESS':
-        return { bg: '#eef6ff', border: '#3b82f6' };
+        return { bg: '#eef6ff', border: '#3b82f6' }; // синий
       case 'CANCELLED':
-        return { bg: '#fff0f0', border: '#ef4444' };
+        return { bg: '#fff0f0', border: '#ef4444' }; // красный
+      case 'APPROVAL':
+        return { bg: '#fff7ed', border: '#f59e0b' }; // оранжевый
+      case 'WAITING':
+        return { bg: '#effaff', border: '#06b6d4' }; // голубой
       default:
-        return { bg: '#ffffff', border: '#e5e7eb' };
+        return { bg: '#ffffff', border: '#e5e7eb' }; // новое
     }
   })();
 
@@ -221,8 +228,12 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
       onPointerLeave={cancelLongPress}
       onClick={onRootClick}
     >
-      {/* ⚙️ сверху — через вынесенный Toolbar */}
-      <ConditionsToolbar onClick={() => data.onOpenConditions?.(id)} />
+      {/* ⚙️ + 🏷 сверху — единый тулбар */}
+      <NodeTopToolbar
+        currentStatus={data.status || 'NEW'}
+        onOpenConditions={() => data.onOpenConditions?.(id)}
+        onOpenStatus={() => data.onOpenStatus?.(id)}
+      />
 
       {/* Заголовок */}
       {editing ? (
@@ -272,7 +283,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
       {/* связи (вход/выход) */}
       <RelationsBadge prevTitles={data.prevTitles} nextTitles={data.nextTitles} />
 
-      {/* 👤 снизу — через вынесенный Toolbar */}
+      {/* 👤 снизу — выбор исполнителя */}
       <AssigneeToolbar name={data.assigneeName || 'Владелец группы'} onClick={() => data.onPickAssignee?.(id)} />
 
       {/* Long-press меню */}
@@ -371,6 +382,12 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 
   const rfReadyRef = useRef<ReactFlowInstance | null>(null);
 
+  // модалка статуса
+  const [statusPicker, setStatusPicker] = useState<{ open: boolean; nodeId: string | null }>({
+    open: false,
+    nodeId: null,
+  });
+
   // подтянуть участников при смене groupId
   useEffect(() => {
     if (!groupId) {
@@ -402,7 +419,6 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         return displayNameByChatId.get(String(assigneeChatId))!;
       }
       if (fallback && fallback.trim()) return fallback;
-      // дефолт — владелец группы, если есть
       return owner?.name || 'Владелец группы';
     },
     [displayNameByChatId, owner]
@@ -431,8 +447,8 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           nds.map((n) => {
             if (n.id !== id) return n;
             const cur = (n.data as any)?.status ?? 'NEW';
-            const order: EditableData['status'][] = ['NEW', 'IN_PROGRESS', 'DONE', 'CANCELLED'];
-            const next = order[(order.indexOf(cur as any) + 1) % order.length];
+            const order: NodeStatus[] = ['NEW', 'IN_PROGRESS', 'DONE', 'CANCELLED', 'APPROVAL', 'WAITING'];
+            const next = order[(order.indexOf(cur as NodeStatus) + 1) % order.length];
             return { ...n, data: { ...n.data, status: next } };
           })
         );
@@ -493,6 +509,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           ...n,
           type: 'editable',
           data: {
+            onOpenStatus: (nid: string) => setStatusPicker({ open: true, nodeId: nid }),
             assigneeName: display,
             assigneeChatId: aChatId ?? null,
             status: (n.data as any)?.status ?? 'NEW',
@@ -546,6 +563,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           onAction: onNodeAction,
           onPickAssignee: (nid) => setAssigneePicker({ open: true, nodeId: nid }),
           onOpenConditions: (nid) => setCondEditor({ open: true, nodeId: nid }),
+          onOpenStatus: (nid) => setStatusPicker({ open: true, nodeId: nid }),
           autoEdit,
         },
         position: pos,
@@ -681,6 +699,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           const conditions = meta?.conditions || undefined;
           const assigneeName = meta?.assigneeName || undefined;
           const assigneeChatId = it.assigneeChatId ? String(it.assigneeChatId) : null;
+          const statusFromDb = (String(it.status || 'NEW').toUpperCase() as NodeStatus);
 
           return {
             id: String(it.id),
@@ -691,6 +710,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
               assigneeName,
               assigneeChatId,
               conditions,
+              status: statusFromDb,
               onChange: onLabelChange,
               onAction: onNodeAction,
             },
@@ -734,72 +754,57 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setLoading(true);
       setLoadInfo('Сохранение…');
 
+      // узлы
+      const payloadNodes = nodes.map((n, i) => {
+        const d = (n.data || {}) as any;
 
+        const startMode =
+          (d?.conditions?.start?.mode as
+            | 'AFTER_ANY'
+            | 'AFTER_SELECTED'
+            | 'AT_DATE'
+            | 'AT_DATE_AND_SELECTED'
+            | 'AFTER_DAYS_AND_SELECTED') ?? 'AFTER_ANY';
 
-// ⚙️ внутри handleSave: заменяем формирование payloadNodes
-const payloadNodes = nodes.map((n, i) => {
-  const d = (n.data || {}) as any;
+        const startDate =
+          typeof d?.conditions?.start?.date === 'string'
+            ? d.conditions.start.date
+            : null;
 
-  // условия запуска/отмены сужаем до литеральных типов
-  const startMode =
-    (d?.conditions?.start?.mode as
-      | 'AFTER_ANY'
-      | 'AFTER_SELECTED'
-      | 'AT_DATE'
-      | 'AT_DATE_AND_SELECTED'
-      | 'AFTER_DAYS_AND_SELECTED') ?? 'AFTER_ANY';
+        const startAfterDays =
+          Number.isFinite(d?.conditions?.start?.afterDays)
+            ? Number(d.conditions.start.afterDays)
+            : null;
 
-  const startDate =
-    typeof d?.conditions?.start?.date === 'string'
-      ? d.conditions.start.date
-      : null;
+        const cancelMode =
+          (d?.conditions?.cancel?.mode as 'NONE' | 'IF_ANY_SELECTED_CANCELED') ?? 'NONE';
 
-  const startAfterDays =
-    Number.isFinite(d?.conditions?.start?.afterDays)
-      ? Number(d.conditions.start.afterDays)
-      : null;
+        const metaJson: any = {};
+        if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
+        if (d.conditions)   metaJson.conditions   = d.conditions;
 
-  const cancelMode =
-    (d?.conditions?.cancel?.mode as 'NONE' | 'IF_ANY_SELECTED_CANCELED') ?? 'NONE';
+        return {
+          id: String(n.id),
+          title: String(d.label || `Новая задача ${i + 1}`),
+          posX: Number(n.position.x) || 0,
+          posY: Number(n.position.y) || 0,
 
-  // карман для UI (неструктурные штуки)
-  const metaJson: any = {};
-  if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
-  if (d.conditions)   metaJson.conditions   = d.conditions;
+          assigneeChatId: d.assigneeChatId != null ? String(d.assigneeChatId) : null,
+          createdByChatId: d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
 
-  return {
-    id: String(n.id),
-    title: String(d.label || `Новая задача ${i + 1}`),
-    posX: Number(n.position.x) || 0,
-    posY: Number(n.position.y) || 0,
+          type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
+          status: (d.status as string) ?? 'NEW',
 
-    // роли — явно к string|null
-    assigneeChatId:
-      d.assigneeChatId != null ? String(d.assigneeChatId) : null,
-    createdByChatId:
-      d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
+          startMode,
+          startDate,
+          startAfterDays,
+          cancelMode,
 
-    // тип — сузили до 'TASK' | 'EVENT'
-    type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
+          metaJson,
+        };
+      });
 
-    // статус можно оставить строкой (схема ждёт string)
-    status: (d.status as string) ?? 'PLANNED',
-
-    // условия
-    startMode,
-    startDate,
-    startAfterDays,
-    cancelMode,
-
-    metaJson,
-  };
-});
-
-
-
-
-
-
+      // рёбра
       const payloadEdges = edges.map((e) => ({
         source: String(e.source),
         target: String(e.target),
@@ -813,9 +818,8 @@ const payloadNodes = nodes.map((n, i) => {
         edges: payloadEdges,
       };
 
-    const resp = await saveProcess(body);
-setLoadInfo(resp.ok ? 'Сохранено ✔︎' : `Ошибка сохранения${resp.error ? ': ' + resp.error : ''}`);
-
+      const resp: any = await (saveProcess as any)(body);
+      setLoadInfo(resp?.ok ? 'Сохранено ✔︎' : `Ошибка сохранения${resp?.error ? ': ' + resp.error : ''}`);
     } catch (e: any) {
       console.error('[process] save error', e);
       setLoadInfo(`Ошибка сети при сохранении${e?.message ? ': ' + e.message : ''}`);
@@ -945,6 +949,25 @@ setLoadInfo(resp.ok ? 'Сохранено ✔︎' : `Ошибка сохране
               )
             );
             setAssigneePicker({ open: false, nodeId: null });
+          }}
+        />
+      )}
+
+      {/* Модалка статуса */}
+      {statusPicker.open && (
+        <StatusPickerModal
+          open={statusPicker.open}
+          current={
+            ((nodes.find((n) => n.id === statusPicker.nodeId)?.data as any)?.status as NodeStatus) || 'NEW'
+          }
+          onClose={() => setStatusPicker({ open: false, nodeId: null })}
+          onPick={(newStatus) => {
+            if (!statusPicker.nodeId) return;
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === statusPicker.nodeId ? { ...n, data: { ...(n.data as any), status: newStatus } } : n
+              )
+            );
           }}
         />
       )}
