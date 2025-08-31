@@ -38,10 +38,12 @@ export default function NodeTopToolbar({
   currentStatus,
   onOpenConditions,
   onOpenStatus,
+  visible = false, // 👈 новое
 }: {
   currentStatus: NodeStatus;
   onOpenConditions: () => void;
   onOpenStatus: () => void;
+  visible?: boolean;
 }) {
   const zoom = useRfZoom();
   const contentScale = zoom * zoom;
@@ -52,7 +54,7 @@ export default function NodeTopToolbar({
   };
 
   return (
-    <NodeToolbar isVisible position={Position.Top} offset={8}>
+    <NodeToolbar isVisible={visible} position={Position.Top} offset={8}>
       <div
         style={{
           transform: `scale(${contentScale})`,

@@ -87,7 +87,7 @@ function safeParseJson(input: any): any | null {
 }
 
 /* ======== Custom editable node ======== */
-function EditableNode({ id, data }: NodeProps<EditableData>) {
+function EditableNode({ id, data, selected }: NodeProps<EditableData>) {  
   const [editing, setEditing] = useState<boolean>(!!data.autoEdit);
   const [value, setValue] = useState<string>(data.label ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -141,7 +141,7 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
     if (editing) return;
     const el = e.target as Element;
     if (el.closest('input,textarea,button,.react-flow__handle,.editable-label')) return;
-    openMenu();
+    //openMenu();
   };
 
   useEffect(() => {
@@ -235,6 +235,8 @@ function EditableNode({ id, data }: NodeProps<EditableData>) {
     >
       {/* ⚙️ + 🏷 сверху — единый тулбар */}
       <NodeTopToolbar
+
+       visible={!!selected}          
         currentStatus={data.status || 'NEW'}
         onOpenConditions={() => data.onOpenConditions?.(id)}
         onOpenStatus={() => data.onOpenStatus?.(id)}
