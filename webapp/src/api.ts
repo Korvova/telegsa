@@ -479,11 +479,29 @@ export type ProcessNodeDTO = {
   id: string;
   processId: string;
   title: string;
-  assigneeChatId?: string | null;
   posX: number;
   posY: number;
+
+  // роли
+  assigneeChatId?: string | null;
+  createdByChatId?: string | null;
+
+  // тип/статус
+  type: 'TASK' | 'EVENT';
   status: string;
+
+  // условия запуска/отмены
+  startMode: 'AFTER_ANY' | 'AFTER_SELECTED' | 'AT_DATE' | 'AT_DATE_AND_SELECTED' | 'AFTER_DAYS_AND_SELECTED';
+  startDate?: string | null;
+  startAfterDays?: number | null;
+  cancelMode: 'NONE' | 'IF_ANY_SELECTED_CANCELED';
+
+  // реальная задача (если создана)
+  taskId?: string | null;
+
+  // расширение
   metaJson?: any;
+
   createdAt: string;
 };
 
@@ -492,7 +510,9 @@ export type ProcessEdgeDTO = {
   processId: string;
   sourceNodeId: string;
   targetNodeId: string;
+  enabled: boolean;
 };
+
 
 export async function fetchProcess(groupId: string) {
   const r = await fetch(`${API_BASE}/groups/${groupId}/process`);
@@ -514,20 +534,44 @@ export async function saveProcess(payload: {
   groupId: string;
   chatId: string;
   process?: { runMode?: 'MANUAL' | 'SCHEDULE' };
-  nodes: Array<{ id?: string; title: string; posX: number; posY: number; assigneeChatId: string | null; status?: string }>;
-edges: Array<{ id?: string; source: string; target: string }>;
-}) {
-  const res = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${payload.groupId}/process`, {
+  nodes: Array<{
+    id?: string;
+    title: string;
+    posX: number;
+    posY: number;
+
+    assigneeChatId?: string | null;
+    createdByChatId?: string | null;
+
+    type?: 'TASK' | 'EVENT';
+    status?: string;
+
+    startMode?: 'AFTER_ANY' | 'AFTER_SELECTED' | 'AT_DATE' | 'AT_DATE_AND_SELECTED' | 'AFTER_DAYS_AND_SELECTED';
+    startDate?: string | null;       // ISO
+    startAfterDays?: number | null;
+
+    cancelMode?: 'NONE' | 'IF_ANY_SELECTED_CANCELED';
+
+    watchers?: string[]; // chatIds наблюдателей (опционально)
+
+    taskId?: string | null;
+    metaJson?: any;
+  }>;
+  edges: Array<{ id?: string; source: string; target: string; enabled?: boolean }>;
+}): Promise<{ ok: boolean; processId?: string; error?: string }> {
+  const r = await fetch(`${API_BASE}/groups/${payload.groupId}/process`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      chatId: payload.chatId,
+      nodes: payload.nodes,
+      edges: payload.edges,
+      // backend сейчас это поле может игнорировать — прокидываем на будущее
+      process: payload.process ?? undefined,
+    }),
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    console.error('[API saveProcess] HTTP', res.status, text);
-    return { ok: false, status: res.status, message: text || 'HTTP error' };
-  }
-  return res.json().catch(() => ({ ok: true }));
+  const data = await r.json().catch(() => ({}));
+  return data as { ok: boolean; processId?: string; error?: string };
 }
 

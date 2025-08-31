@@ -734,24 +734,71 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
       setLoading(true);
       setLoadInfo('Сохранение…');
 
-      const payloadNodes = nodes.map((n, i) => {
-        const d = (n.data || {}) as any;
-        const metaJson: any = {};
 
-        // сохраняем то, что не имеет прямых колонок
-        if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
-        if (d.conditions) metaJson.conditions = d.conditions;
 
-        return {
-          id: String(n.id), // clientId для ремапа на сервере
-          title: String(d.label || `Новая задача ${i + 1}`),
-          posX: Number(n.position.x) || 0,
-          posY: Number(n.position.y) || 0,
-          status: (d.status as EditableData['status']) ?? 'NEW',
-          assigneeChatId: d.assigneeChatId ?? null, // ← ВАЖНО: шлём chatId ответственного
-          metaJson, // ← имя и условия — в metaJson
-        };
-      });
+// ⚙️ внутри handleSave: заменяем формирование payloadNodes
+const payloadNodes = nodes.map((n, i) => {
+  const d = (n.data || {}) as any;
+
+  // условия запуска/отмены сужаем до литеральных типов
+  const startMode =
+    (d?.conditions?.start?.mode as
+      | 'AFTER_ANY'
+      | 'AFTER_SELECTED'
+      | 'AT_DATE'
+      | 'AT_DATE_AND_SELECTED'
+      | 'AFTER_DAYS_AND_SELECTED') ?? 'AFTER_ANY';
+
+  const startDate =
+    typeof d?.conditions?.start?.date === 'string'
+      ? d.conditions.start.date
+      : null;
+
+  const startAfterDays =
+    Number.isFinite(d?.conditions?.start?.afterDays)
+      ? Number(d.conditions.start.afterDays)
+      : null;
+
+  const cancelMode =
+    (d?.conditions?.cancel?.mode as 'NONE' | 'IF_ANY_SELECTED_CANCELED') ?? 'NONE';
+
+  // карман для UI (неструктурные штуки)
+  const metaJson: any = {};
+  if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
+  if (d.conditions)   metaJson.conditions   = d.conditions;
+
+  return {
+    id: String(n.id),
+    title: String(d.label || `Новая задача ${i + 1}`),
+    posX: Number(n.position.x) || 0,
+    posY: Number(n.position.y) || 0,
+
+    // роли — явно к string|null
+    assigneeChatId:
+      d.assigneeChatId != null ? String(d.assigneeChatId) : null,
+    createdByChatId:
+      d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
+
+    // тип — сузили до 'TASK' | 'EVENT'
+    type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
+
+    // статус можно оставить строкой (схема ждёт string)
+    status: (d.status as string) ?? 'PLANNED',
+
+    // условия
+    startMode,
+    startDate,
+    startAfterDays,
+    cancelMode,
+
+    metaJson,
+  };
+});
+
+
+
+
+
 
       const payloadEdges = edges.map((e) => ({
         source: String(e.source),
@@ -766,8 +813,9 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
         edges: payloadEdges,
       };
 
-      const resp = await saveProcess(body as any);
-      setLoadInfo(resp?.ok ? 'Сохранено ✔︎' : `Ошибка сохранения${resp?.message ? ': ' + resp.message : ''}`);
+    const resp = await saveProcess(body);
+setLoadInfo(resp.ok ? 'Сохранено ✔︎' : `Ошибка сохранения${resp.error ? ': ' + resp.error : ''}`);
+
     } catch (e: any) {
       console.error('[process] save error', e);
       setLoadInfo(`Ошибка сети при сохранении${e?.message ? ': ' + e.message : ''}`);
