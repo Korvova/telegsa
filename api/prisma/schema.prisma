@@ -79,6 +79,10 @@ model Task {
    reminders    EventReminder[]   // one-to-many: Task -> EventReminder
 
   comments  Comment[]
+
+  media TaskMedia[]   // вложения из Telegram (photo/voice/document)
+
+
 }
 
 /* -------------------- GROUPS -------------------- */
@@ -331,6 +335,35 @@ model ProcessEdge {
   targetNodeId String
   enabled      Boolean @default(true)
 }
+
+
+
+
+model TaskMedia {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  kind        String   // 'photo' | 'voice' | 'document'
+  tgFileId    String
+  tgUniqueId  String?
+  mimeType    String?
+  fileName    String?
+  fileSize    Int?
+  width       Int?
+  height      Int?
+  duration    Int?
+
+  createdAt   DateTime @default(now())
+
+  @@index([taskId])
+}
+
+
+
+
+
+
 
 
 

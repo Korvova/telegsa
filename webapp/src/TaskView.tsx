@@ -1,12 +1,18 @@
 // src/TaskView.tsx
-import { useEffect, useRef, useState } from 'react';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
-import type { Task } from './api';
-import { listGroups } from './api';
+import type { Task, TaskMedia } from './api';
+import { listGroups, API_BASE } from './api';
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
 import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
+
+
+
+
+
 
 
 
@@ -56,6 +62,21 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       ''
   );
 
+
+
+const [media, setMedia] = useState<TaskMedia[]>([]);
+
+
+
+
+// NEW: для модалки с фото
+const photos = useMemo(() => media.filter(m => m.kind === 'photo'), [media]);
+const [isLightboxOpen, setLightboxOpen] = useState(false);
+const [lightboxIndex, setLightboxIndex] = useState(0);
+
+
+
+
   // участники текущей группы (для «Выбрать из группы»)
   const [members, setMembers] = useState<GroupMember[]>([]);
 
@@ -68,6 +89,28 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       })
       .catch(() => {});
   }, [groupId]);
+
+
+
+
+
+
+useEffect(() => {
+  if (!isLightboxOpen) return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') setLightboxOpen(false);
+    if (e.key === 'ArrowRight') setLightboxIndex(i => (i + 1) % Math.max(photos.length, 1));
+    if (e.key === 'ArrowLeft') setLightboxIndex(i => (i - 1 + Math.max(photos.length, 1)) % Math.max(photos.length, 1));
+  };
+  window.addEventListener('keydown', onKey);
+  return () => window.removeEventListener('keydown', onKey);
+}, [isLightboxOpen, photos.length]);
+
+
+
+
+
+
 
   /* --- системная кнопка "Назад" --- */
   useEffect(() => {
@@ -103,10 +146,18 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         setTask(tResp.task);
         setText(tResp.task.text);
         try {
-          const gResp = await getTaskWithGroup(taskId);
-          groupIdRef.current = gResp?.groupId ?? null;
-          setGroupId(groupIdRef.current);
-          setPhase(gResp?.phase);
+
+
+
+const gResp = await getTaskWithGroup(taskId);
+groupIdRef.current = gResp?.groupId ?? null;
+setGroupId(groupIdRef.current);
+setPhase(gResp?.phase);
+setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
+
+
+
+
         } catch {
           const gid = new URLSearchParams(location.search).get('group');
           groupIdRef.current = gid || null;
@@ -417,6 +468,176 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
 
         </div>
+
+
+
+
+
+{media.length > 0 && (
+  <div style={{ marginTop: 12 }}>
+    <div style={{ fontSize: 14, opacity: .85, marginBottom: 6 }}>Вложения</div>
+
+    {/* Фото */}
+<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+  {photos.map((m, idx) => (
+    <button
+      key={m.id}
+      onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+      title="Открыть фото"
+      style={{
+        display: 'inline-block',
+        border: '1px solid #2a3346',
+        borderRadius: 8,
+        overflow: 'hidden',
+        padding: 0,
+        background: 'transparent',
+        cursor: 'zoom-in'
+      }}
+    >
+      <img
+        src={`${API_BASE}${m.url}`}
+        alt={m.fileName || 'Фото'}
+        style={{ maxWidth: 160, maxHeight: 160, display: 'block' }}
+      />
+    </button>
+  ))}
+</div>
+
+    {/* Голосовые */}
+    {media.some(m => m.kind === 'voice') && (
+      <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+        {media.filter(m => m.kind === 'voice').map(m => (
+          <div key={m.id} style={{ padding: 8, border: '1px solid #2a3346', borderRadius: 8 }}>
+            <audio controls src={`${API_BASE}${m.url}`} style={{ width: '100%' }} />
+            <div style={{ fontSize: 12, opacity: .7 }}>
+              {m.duration ? `Длительность ~${m.duration}s` : 'Голосовое'}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {/* Документы */}
+    {media.some(m => m.kind === 'document') && (
+      <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+        {media.filter(m => m.kind === 'document').map(m => (
+          <a key={m.id}
+             href={`${API_BASE}${m.url}`}
+             target="_blank"
+             rel="noreferrer"
+             style={{ padding: 8, border: '1px solid #2a3346', borderRadius: 8, color: '#8aa0ff' }}>
+            📎 {m.fileName || 'Документ'}{m.fileSize ? ` · ${(m.fileSize/1024/1024).toFixed(2)} MB` : ''}
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+)}
+
+
+
+
+
+{isLightboxOpen && photos.length > 0 && (
+  <div
+    onClick={() => setLightboxOpen(false)}
+    style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.7)',
+      zIndex: 9999,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16
+    }}
+  >
+    {/* контейнер картинки: клики по фону закрывают, по содержимому — нет */}
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}
+    >
+      {/* изображение */}
+      <img
+        src={`${API_BASE}${photos[lightboxIndex].url}`}
+        alt={photos[lightboxIndex].fileName || 'Фото'}
+        style={{
+          maxWidth: '90vw',
+          maxHeight: '90vh',
+          display: 'block',
+          borderRadius: 12,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+        }}
+      />
+
+      {/* Крестик */}
+      <button
+        onClick={() => setLightboxOpen(false)}
+        aria-label="Закрыть"
+        style={{
+          position: 'absolute',
+          top: 8, right: 8,
+          background: 'rgba(0,0,0,0.5)',
+          color: '#fff',
+          border: 'none',
+          borderRadius: 8,
+          padding: '6px 10px',
+          cursor: 'pointer',
+          fontSize: 14
+        }}
+      >
+        ✕
+      </button>
+
+      {/* Навигация (если несколько фото) */}
+      {photos.length > 1 && (
+        <>
+          <button
+            onClick={() => setLightboxIndex(i => (i - 1 + photos.length) % photos.length)}
+            aria-label="Предыдущее"
+            style={{
+              position: 'absolute',
+              top: '50%', left: -8,
+              transform: 'translateY(-50%)',
+              background: 'rgba(0,0,0,0.5)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '8px 10px',
+              cursor: 'pointer'
+            }}
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => setLightboxIndex(i => (i + 1) % photos.length)}
+            aria-label="Следующее"
+            style={{
+              position: 'absolute',
+              top: '50%', right: -8,
+              transform: 'translateY(-50%)',
+              background: 'rgba(0,0,0,0.5)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '8px 10px',
+              cursor: 'pointer'
+            }}
+          >
+            ›
+          </button>
+        </>
+      )}
+    </div>
+  </div>
+)}
+
+
+
+
+
+
+
       </div>
 
 

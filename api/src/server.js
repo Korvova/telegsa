@@ -3,6 +3,10 @@ import 'dotenv/config';
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
+
+import { Readable } from 'node:stream'; // ⬅️ ДОБАВИЛИ
+
+
 import { tasksRouter } from './routes/tasks.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { assignRouter } from './routes/assign.js';  
@@ -150,6 +154,7 @@ function makeToken() {
   return crypto.randomBytes(16).toString('base64url');
 }
 
+
 /* ---------- Groups / Columns helpers ---------- */
 const GROUP_SEP = '::';
 const nameWithGroup = (groupId, plainName) =>
@@ -182,6 +187,77 @@ async function getUserGroups(chatId) {
     ...memberLinks.map(m => ({ id: m.group.id, title: m.group.title, kind: 'member' })),
   ];
 }
+
+
+
+
+
+
+
+
+// --- Telegram getFile helper ---
+async function tgGetFile(fileId) {
+  const r = await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/getFile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_id: fileId }),
+  });
+  const j = await r.json();
+  if (!j?.ok || !j?.result?.file_path) throw new Error('getFile failed');
+  return j.result.file_path; // e.g. "photos/file_123.jpg"
+}
+
+// --- Прокси: отдать файл по mediaId, не раскрывая токен ---
+app.get('/files/:mediaId', async (req, res) => {
+  try {
+    const mediaId = String(req.params.mediaId);
+    const m = await prisma.taskMedia.findUnique({ where: { id: mediaId } });
+    if (!m) return res.status(404).send('not found');
+
+    // Получаем путь к файлу в Telegram
+    const filePath = await tgGetFile(m.tgFileId);
+    const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`;
+
+    const tgResp = await fetch(url);
+    if (!tgResp.ok) return res.status(502).send('tg file fetch failed');
+
+    // Контент-тайп: сначала наш из БД, иначе — из ответа Telegram
+    const mime = m.mimeType || tgResp.headers.get('content-type') || undefined;
+    if (mime) res.setHeader('Content-Type', mime);
+
+    const len = tgResp.headers.get('content-length');
+    if (len) res.setHeader('Content-Length', len);
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+
+    // Поддержка HEAD: только заголовки — без тела
+    if (req.method === 'HEAD') return res.end();
+
+    // В Node 18+ fetch() -> Web stream. Конвертируем в Node stream.
+    const body = tgResp.body;
+    if (!body) return res.status(502).send('tg empty body');
+
+    // Конвертация и проксирование потока
+    const nodeStream = Readable.fromWeb(body);
+    nodeStream.on('error', (err) => {
+      console.warn('[files proxy] stream error', err?.message || err);
+      try { res.destroy(err); } catch {}
+    });
+    nodeStream.pipe(res);
+  } catch (e) {
+    console.error('[files proxy] error', e?.message || e);
+    res.status(500).send('internal');
+  }
+});
+
+
+
+
+
+
+
+
+
 
 // по chatId + optional groupId создаёт Inbox/Doing/Done если их нет
 async function ensureDefaultColumns(chatId, groupId = null) {
@@ -342,6 +418,67 @@ async function ensureMyGroupId(ownerChatId) {
 
 
 
+
+
+
+/* ---------- helper: отправить «Задача создана…» c тем же типом, что исходник ---------- */
+async function sendTaskCreated(tg, { chatId, media, taskId, title }) {
+  const caption = `Задача создана: ${title}`;
+  const markup = {
+    inline_keyboard: [[
+      { text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${taskId}` }
+    ]]
+  };
+
+  // приоритет: photo > document > voice > text
+  const photo = media.find(m => m.kind === 'photo');
+  if (photo) {
+    return tg('sendPhoto', {
+      chat_id: chatId,
+      photo: photo.tgFileId,        // используем file_id TG
+      caption,
+      reply_markup: markup,
+    });
+  }
+  const doc = media.find(m => m.kind === 'document');
+  if (doc) {
+    return tg('sendDocument', {
+      chat_id: chatId,
+      document: doc.tgFileId,
+      caption,
+      reply_markup: markup,
+    });
+  }
+  const voice = media.find(m => m.kind === 'voice');
+  if (voice) {
+    return tg('sendVoice', {
+      chat_id: chatId,
+      voice: voice.tgFileId,
+      caption,
+      reply_markup: markup,
+    });
+  }
+  // fallback — просто текст
+  return tg('sendMessage', {
+    chat_id: chatId,
+    text: caption,
+    disable_notification: true,
+    reply_markup: markup,
+  });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ---------- миграция: перенести колонки группы к владельцу ---------- */
 async function adoptGroupColumnsToOwner(boardChatId, groupId) {
   const all = await prisma.column.findMany({
@@ -440,6 +577,10 @@ app.get('/tasks', async (req, res) => {
 });
 
 /* ---------- Webhook (ТОЛЬКО через /g) ---------- */
+
+
+
+/* ---------- Webhook (любой апдейт) ---------- */
 app.post('/webhook', async (req, res) => {
   try {
     const secret = req.header('X-Telegram-Bot-Api-Secret-Token');
@@ -447,12 +588,13 @@ app.post('/webhook', async (req, res) => {
 
     const update = req.body;
     const msg = update?.message;
+    if (!msg) return res.sendStatus(200);
 
+    const chatId = String(msg.chat?.id || '');
 
-    // ===== РЕПЛАЙ НА КАРТОЧКУ ЗАДАЧИ -> КОММЕНТАРИЙ =====
+    // ===== 1) РЕПЛАЙ на карточку задачи -> КОММЕНТАРИЙ (оставляем как у тебя) =====
     if (msg?.reply_to_message && (msg.text || msg.caption)) {
       try {
-        const chatId = String(msg.chat?.id);
         const repliedId = Number(msg.reply_to_message.message_id);
         const authorChatId = String(msg.from?.id || '');
         const text = String(msg.text || msg.caption || '').trim();
@@ -461,17 +603,14 @@ app.post('/webhook', async (req, res) => {
             where: { sourceChatId: chatId, sourceMessageId: repliedId },
           });
           if (task) {
-            // 1) пишем комментарий в БД
-            await prisma.comment.create({
-              data: { taskId: task.id, authorChatId, text },
-            });
-            // 2) шлём DM исполнителю и постановщику (логика такая же, как в routes/tasks.js)
+            // комментарий
+            await prisma.comment.create({ data: { taskId: task.id, authorChatId, text } });
+
+            // уведомления (как было)
             const posterId = task.sourceChatId ? String(task.sourceChatId) : String(task.chatId);
-            const recipients = [task.assigneeChatId ? String(task.assigneeChatId) : null, posterId]
-              .filter(Boolean);
+            const recipients = [task.assigneeChatId ? String(task.assigneeChatId) : null, posterId].filter(Boolean);
 
             if (recipients.length) {
-              // имя автора
               const authorUser = await prisma.user.findUnique({ where: { chatId: authorChatId } });
               const authorName = [authorUser?.firstName, authorUser?.lastName].filter(Boolean).join(' ')
                 || (authorUser?.username ? `@${authorUser.username}` : authorChatId);
@@ -489,8 +628,8 @@ app.post('/webhook', async (req, res) => {
               await Promise.all(
                 recipients
                   .filter(id => allowed.has(id))
-                  .map(chat_id => tg('sendMessage', {
-                    chat_id,
+                  .map(cid => tg('sendMessage', {
+                    chat_id: cid,
                     text: dmText,
                     disable_web_page_preview: true,
                     reply_markup: markup,
@@ -505,38 +644,30 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-
-
-
-
-    if (msg?.text) {
-      const chatId = String(msg.chat?.id || '');
+    // ===== 2) /g_* команда (создание в конкретной группе из ТЕКСТА) =====
+    if (msg.text) {
       const text = String(msg.text).trim();
 
       // /g — обновить список команд
-      if (text === '/g' || text === '/group' || text === '/groups' || text === '/refresh') {
+      if (['/g', '/group', '/groups', '/refresh'].includes(text)) {
         await updateChatCommands(chatId);
         await tg('sendMessage', {
           chat_id: chatId,
-          text: 'Команды обновлены. Наберите "/" и выберите группу. Подсказка: можно долго удерживать команду, чтобы вставить её в поле ввода.',
+          text: 'Команды обновлены. Наберите "/" и выберите группу. Можно долго удерживать команду, чтобы вставить её в поле ввода.',
         });
         return res.sendStatus(200);
       }
 
-      // /g_<short> <текст>  или /g_default <текст>
       const m = text.match(/^\/g_([a-z0-9]+)\s*(.*)$/i);
       if (m) {
         const short = m[1];
         const rest = (m[2] || '').trim();
-
         if (!rest) {
-          await tg('sendMessage', {
-            chat_id: chatId,
-            text: `Добавьте текст после команды. Пример: /g_${short} Купить молоко`,
-          });
+          await tg('sendMessage', { chat_id: chatId, text: `Добавьте текст после команды. Пример: /g_${short} Купить молоко` });
           return res.sendStatus(200);
         }
 
+        // вычисляем groupId по short
         let groupId = null; // default
         if (short !== 'default') {
           const all = await getUserGroups(chatId);
@@ -544,28 +675,31 @@ app.post('/webhook', async (req, res) => {
           const shortById = buildShortCodes(nonDefault.map(g => g.id));
           const hit = Object.entries(shortById).find(([, s]) => s === short);
           if (!hit) {
-            await tg('sendMessage', {
-              chat_id: chatId,
-              text: 'Неизвестный код группы. Наберите /g чтобы обновить список.',
-            });
+            await tg('sendMessage', { chat_id: chatId, text: 'Неизвестный код группы. Наберите /g чтобы обновить список.' });
             return res.sendStatus(200);
           }
           groupId = hit[0];
         }
 
         try {
+          // создаём задачу ТОЛЬКО из текста rest (как и раньше для /g)
           const task = await createTaskInGroup({ chatId, groupId, text: rest });
 
-          const sent = await tg('sendMessage', {
-            chat_id: chatId,
-            text: `Задача создана: ${task.text}`,
-            disable_notification: true,
-            reply_markup: {
-              inline_keyboard: [[
-                { text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}/${process.env.APP_SHORT_NAME}?startapp=task_${task.id}` }
-              ]]
-            }
-          });
+          // сервиска с корректной ссылкой на мини-апп
+const sent = await sendTaskCreated(tg, {
+  chatId,
+  media,
+  taskId: task.id,
+  title: task.text
+});
+
+
+
+
+
+
+
+
           try {
             if (sent?.ok && sent.result?.message_id) {
               await prisma.task.update({
@@ -574,48 +708,101 @@ app.post('/webhook', async (req, res) => {
               });
             }
           } catch (e) { console.warn('store source msg failed', e); }
-
         } catch (e) {
           console.error('create by /g_<short> error:', e);
           await tg('sendMessage', { chat_id: chatId, text: 'Не удалось создать задачу.' });
         }
+
         return res.sendStatus(200);
       }
-
-      // любое сообщение → задача в дефолтной группе
-      if (msg?.chat?.type === 'private') {
-        try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
-      }
-      const created = await createTaskInGroup({ chatId, groupId: null, text });
-      const sent = await tg('sendMessage', {
-        chat_id: chatId,
-        text: `Задача создана: ${created.text}`,
-        disable_notification: true,
-        reply_markup: {
-          inline_keyboard: [[
-            { text: 'Открыть задачу',
-              url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }
-          ]]
-        }
-      });
-      try {
-        if (sent?.ok && sent.result?.message_id) {
-          await prisma.task.update({
-            where: { id: created.id },
-            data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
-          });
-        }
-      } catch (e) { console.warn('store source msg failed', e); }
-
-      return res.sendStatus(200);
+      // если это просто текст без /g_* — продолжим обработку ниже как «любое сообщение»
     }
 
-    res.sendStatus(200);
+    // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (текст/фото/док/голос) -> Задача в default-группе =====
+    // Собираем медиа
+    const media = [];
+    if (Array.isArray(msg?.photo) && msg.photo.length) {
+      const p = msg.photo[msg.photo.length - 1]; // самое большое фото
+      media.push({ kind: 'photo', tgFileId: p.file_id, tgUniqueId: p.file_unique_id, width: p.width, height: p.height, fileSize: p.file_size });
+    }
+    if (msg?.document) {
+      const d = msg.document;
+      media.push({ kind: 'document', tgFileId: d.file_id, tgUniqueId: d.file_unique_id, mimeType: d.mime_type, fileName: d.file_name, fileSize: d.file_size });
+    }
+    if (msg?.voice) {
+      const v = msg.voice;
+      media.push({ kind: 'voice', tgFileId: v.file_id, tgUniqueId: v.file_unique_id, mimeType: 'audio/ogg', duration: v.duration, fileSize: v.file_size });
+    }
+
+    const caption = String(msg.caption || '').trim();
+    const fileName = msg?.document?.file_name ? String(msg.document.file_name) : '';
+    const textForTask = String(
+      msg.text ||
+      caption ||
+      fileName ||
+      (media[0]?.kind === 'photo' ? 'Фото'
+        : media[0]?.kind === 'voice' ? 'Голосовое'
+        : media[0]?.kind === 'document' ? 'Файл'
+        : 'Задача')
+    ).slice(0, 4096);
+
+    // если ни текста, ни медиа — просто выходим
+    if (!textForTask && !media.length) return res.sendStatus(200);
+
+    // приват: удаляем исходник
+    if (msg?.chat?.type === 'private') {
+      try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
+    }
+
+    // создаём задачу
+    const created = await createTaskInGroup({ chatId, groupId: null, text: textForTask });
+
+    // сохраняем вложения
+    if (media.length) {
+      try {
+        await prisma.$transaction(media.map(m => prisma.taskMedia.create({ data: { taskId: created.id, ...m } })));
+      } catch (e) {
+        console.warn('[taskMedia:create] failed', e);
+      }
+    }
+
+    // сервиска с кнопкой
+
+
+
+
+const sent = await sendTaskCreated(tg, {
+  chatId,
+  media,
+  taskId: created.id,
+  title: created.text
+});
+
+
+
+
+
+
+
+    try {
+      if (sent?.ok && sent.result?.message_id) {
+        await prisma.task.update({
+          where: { id: created.id },
+          data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
+        });
+      }
+    } catch (e) { console.warn('store source msg failed', e); }
+
+    return res.sendStatus(200);
   } catch (e) {
-    console.error('Webhook error:', e);
-    res.sendStatus(200);
+    console.error('POST /webhook error:', e);
+    res.sendStatus(200); // не рушим вебхук
   }
 });
+
+
+
+
 
 /* ============ Tasks API (move/get/update/complete/create) ============ */
 app.patch('/tasks/:id/move', async (req, res) => {
@@ -681,6 +868,13 @@ app.patch('/tasks/:id/move', async (req, res) => {
   }
 });
 
+
+
+
+/* ============ ============ */
+
+
+
 app.get('/tasks/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
@@ -693,7 +887,7 @@ app.get('/tasks/:id', async (req, res) => {
     try {
       const col = await prisma.column.findUnique({ where: { id: task.columnId } });
       if (col) {
-        const nm = stripGroupName(col.name); // 'Inbox' | 'Doing' | 'Done' | ...
+        const nm = stripGroupName(col.name);
         phase = nm;
         const i = col.name.indexOf(GROUP_SEP);
         groupId = i > 0 ? col.name.slice(0, i) : null;
@@ -708,7 +902,6 @@ app.get('/tasks/:id', async (req, res) => {
       } catch {}
     }
 
-    // NEW: постановщик (creator) по sourceChatId (или createdByChatId, если добавишь поле)
     let creatorName = null;
     try {
       const creatorId = task.sourceChatId ? String(task.sourceChatId) : null;
@@ -720,12 +913,57 @@ app.get('/tasks/:id', async (req, res) => {
       }
     } catch {}
 
-    res.json({ ok: true, task: { ...task, assigneeName, creatorName }, groupId, phase });
+    // NEW: вложения
+    let media = [];
+    try {
+      const rows = await prisma.taskMedia.findMany({
+        where: { taskId: id },
+        orderBy: { createdAt: 'asc' },
+      });
+      media = rows.map(m => ({
+        id: m.id,
+        kind: m.kind,               // 'photo' | 'document' | 'voice'
+        url: `/files/${m.id}`,      // прокси-URL
+        fileName: m.fileName,
+        mimeType: m.mimeType,
+        width: m.width,
+        height: m.height,
+        duration: m.duration,
+        fileSize: m.fileSize,
+      }));
+    } catch {}
+
+    res.json({
+      ok: true,
+      task: { ...task, assigneeName, creatorName },
+      groupId,
+      phase,
+      media, // <-- добавили
+    });
   } catch (e) {
     console.error('GET /tasks/:id error', e);
     res.status(500).json({ ok: false });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* ---------- User profile (для ownerName/assigneeName) ---------- */
 app.post('/me', async (req, res) => {
@@ -1982,11 +2220,6 @@ app.post('/groups/:id/share-prepared', async (req, res) => {
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
-
-
-
-
-
 
 
 

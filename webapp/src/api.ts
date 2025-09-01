@@ -43,8 +43,31 @@ export type Group = {
   ownerName?: string | null;
 };
 
+
+
+
+export type TaskMedia = {
+  id: string;
+  kind: 'photo' | 'document' | 'voice';
+  url: string;            // /files/<mediaId>
+  fileName?: string | null;
+  mimeType?: string | null;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
+  fileSize?: number | null;
+};
+
+
+
+
+
+
+
+
+
 /* ---------- Config ---------- */
-const API_BASE = import.meta.env.VITE_API_BASE || ''; // '/telegsar-api'
+export const API_BASE = import.meta.env.VITE_API_BASE || ''; // '/telegsar-api'
 
 /* ---------- Helpers ---------- */
 const normGroup = (gid?: string) => (gid && gid !== 'default' ? gid : undefined);
@@ -169,8 +192,15 @@ export function reopenTask(id: string) {
 export function getTaskWithGroup(id: string) {
   return ky
     .get(`${API_BASE}/tasks/${id}`)
-    .json<{ ok: boolean; task: Task; groupId: string | null; phase?: 'Inbox' | 'Doing' | 'Done' | string }>();
+    .json<{
+      ok: boolean;
+      task: Task;
+      groupId: string | null;
+      phase?: 'Inbox' | 'Doing' | 'Done' | string;
+      media?: TaskMedia[];
+    }>();
 }
+
 
 /* ---------- Forward ---------- */
 
