@@ -11,7 +11,7 @@ import NotificationsView from './NotificationsView';
 
 import GroupProcessPage from './pages/Groups/GroupProcessPage';
 
-
+import CreateTaskFab from './components/CreateTaskFab';
 
 
 import CalendarView from './CalendarView';
@@ -22,18 +22,16 @@ import TaskView from './TaskView';
 
 
 
-
 import {
   fetchBoard,
   type Column,
   moveTask as apiMoveTask,
-  createTask,
-  createColumn,
   renameColumn,
   type Group,
   listGroups,
   upsertMe,
 } from './api';
+
 
 import {
   DndContext,
@@ -213,43 +211,7 @@ function SortableTask({
 }
 
 
-/* + Колонка */
-function AddColumnButton({ chatId, groupId, onAdded }: { chatId: string; groupId?: string; onAdded: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const click = async () => {
-    const name = prompt('Название новой колонки?')?.trim();
-    if (!name) return;
-    setBusy(true);
-    try {
-      console.log('[UI] createColumn ->', { chatId, groupId, name });
-      await createColumn(chatId, name, groupId);
-      onAdded();
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-    } catch (e) {
-      console.error('[UI] createColumn error', e);
-      alert('Не удалось создать колонку (возможно, имя занято)');
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button
-      onClick={click}
-      disabled={busy}
-      style={{
-        padding: '10px 14px',
-        borderRadius: 12,
-        background: '#203428',
-        color: '#d7ffd7',
-        border: '1px solid #2a3346',
-        cursor: busy ? 'default' : 'pointer',
-      }}
-    >
-      + Колонка
-    </button>
-  );
-}
+
 
 /* Заглушка для неготовых вкладок */
 function TabPlaceholder({ tab }: { tab: TabKey }) {
@@ -936,18 +898,7 @@ useEffect(() => {
         ) : (
           <>
             {/* Создание */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <NewTaskBar
-                chatId={chatId}
-                groupId={resolvedGroupId}
-                onCreated={reloadBoard}
-              />
-              <AddColumnButton
-                chatId={chatId}
-                groupId={resolvedGroupId}
-                onAdded={reloadBoard}
-              />
-            </div>
+
 
             <DndContext
               sensors={sensors}
@@ -1056,6 +1007,24 @@ useEffect(() => {
 )}
 
 
+
+
+
+
+
+<CreateTaskFab
+  defaultGroupId={resolvedGroupId ?? null}
+  chatId={chatId}
+  groups={groups}
+  onCreated={reloadBoard}
+/>
+
+
+
+
+
+
+
           {/* Нижняя панель */}
           <BottomNav
             current={tab}
@@ -1100,62 +1069,8 @@ useEffect(() => {
   );
 }
 
-/* ---------------- subviews ---------------- */
-function NewTaskBar({ chatId, groupId, onCreated }: { chatId: string; groupId?: string; onCreated: () => void }) {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    const val = text.trim();
-    if (!val || busy) return;
-    setBusy(true);
-    try {
-      console.log('[UI] createTask ->', { chatId, groupId, text: val });
-      await createTask(chatId, val, groupId);
-      setText('');
-      onCreated();
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-    } catch (e) {
-      console.error('[UI] createTask error', e);
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    } finally {
-      setBusy(false);
-    }
-  };
 
-  return (
-    <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Новая задача…"
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-        style={{
-          flex: '0 1 60%',
-          padding: '10px 12px',
-          borderRadius: 12,
-          background: '#121722',
-          color: '#e8eaed',
-          border: '1px solid #2a3346',
-          minWidth: 160,
-        }}
-      />
-      <button
-        onClick={submit}
-        disabled={busy || !text.trim()}
-        style={{
-          padding: '10px 14px',
-          borderRadius: 12,
-          background: '#202840',
-          color: '#e8eaed',
-          border: '1px solid #2a3346',
-          cursor: busy ? 'default' : 'pointer',
-        }}
-      >
-        Создать
-      </button>
-    </div>
-  );
-}
+
 
 function ColumnView({
   column,
