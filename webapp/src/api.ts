@@ -605,3 +605,14 @@ export async function saveProcess(payload: {
   return data as { ok: boolean; processId?: string; error?: string };
 }
 
+
+
+export async function uploadTaskMedia(taskId: string, chatId: string, file: File) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/media?chatId=${encodeURIComponent(chatId)}`, {
+    method: 'POST',
+    body: form,
+  });
+  return r.json() as Promise<{ ok: boolean; media?: TaskMedia }>;
+}

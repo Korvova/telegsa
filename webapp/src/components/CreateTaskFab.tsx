@@ -1,5 +1,6 @@
 // webapp/src/components/CreateTaskFab.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
 import WebApp from '@twa-dev/sdk';
 import {
   createTask,
@@ -7,6 +8,7 @@ import {
   type Group,
   getGroupMembers,
   type GroupMember,
+    uploadTaskMedia, 
 } from '../api';
 
 type Props = {
@@ -47,6 +49,27 @@ export default function CreateTaskFab({
 
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [assignee, setAssignee] = useState<string | null>(null);
+
+
+
+
+
+
+// ⬇️ NEW: локальный список выбранных файлов до отправки
+const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+const fileAnyRef = useRef<HTMLInputElement | null>(null);
+const filePhotoRef = useRef<HTMLInputElement | null>(null);
+
+const onPickFiles = (files: FileList | null) => {
+  if (!files || !files.length) return;
+  const arr = Array.from(files).slice(0, 10); // ограничимся 10 за раз
+  setPendingFiles((prev) => [...prev, ...arr]);
+};
+
+
+
+
+
 
   // подгружаем группы при необходимости
   useEffect(() => {
@@ -119,13 +142,15 @@ export default function CreateTaskFab({
     setStep(0);
   };
 
-  const closeModal = () => {
-    setOpen(false);
-    setBusy(false);
-    setText('');
-    setAssignee(null);
-    setGroupId(defaultGroupId ?? null);
-  };
+ const closeModal = () => {
+  setOpen(false);
+  setBusy(false);
+  setText('');
+  setAssignee(null);
+  setGroupId(defaultGroupId ?? null);
+  setPendingFiles([]); // ⬅️ NEW
+};
+
 
   // PATCH ассignee сразу после создания
 
@@ -148,29 +173,40 @@ async function patchAssignee(taskId: string, assigneeChatId: string | null) {
 }
 
 
-  const submit = async () => {
-    const val = text.trim();
-    if (!val || busy) return;
-    setBusy(true);
-    try {
-      // создаём задачу
-      const r = await createTask(chatId, val, groupId ?? undefined);
-      if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
+const submit = async () => {
+  const val = text.trim();
+  if (!val || busy) return;
+  setBusy(true);
+  try {
+    const r = await createTask(chatId, val, groupId ?? undefined);
+    if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
+    const taskId = r.task.id;
 
-      // если выбран ответственный — ставим сразу
-      if (assignee) {
-        await patchAssignee(r.task.id, assignee);
-      }
-
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      onCreated?.();
-      closeModal();
-    } catch (e) {
-      console.error('[CreateTaskFab] createTask error', e);
-      WebApp?.HapticFeedback?.notificationOccurred?.('error');
-      setBusy(false);
+    if (assignee) {
+      await patchAssignee(taskId, assignee);
     }
-  };
+
+    // ⬇️ NEW: если пользователь прикрепил файлы — отправим их в Telegram через бэкенд
+    if (pendingFiles.length) {
+      for (const f of pendingFiles) {
+        try {
+          await uploadTaskMedia(taskId, chatId, f);
+        } catch (e) {
+          console.warn('[CreateTaskFab] uploadTaskMedia error', e);
+        }
+      }
+    }
+
+    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    onCreated?.();       // перезагрузка доски
+    closeModal();        // очистит состояние
+  } catch (e) {
+    console.error('[CreateTaskFab] createTask error', e);
+    WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    setBusy(false);
+  }
+};
+
 
   // мастер-режим: навигация по шагам
   const next = () => {
@@ -351,6 +387,60 @@ async function patchAssignee(taskId: string, assigneeChatId: string | null) {
                   >
                     {busy ? 'Создаю…' : 'Создать'}
                   </button>
+
+
+
+
+   {/* NEW: панель вложений */}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => fileAnyRef.current?.click()}
+                    title="Прикрепить файл"
+                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                  >
+                    @
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => filePhotoRef.current?.click()}
+                    title="Сделать фото"
+                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                  >
+                    📸
+                  </button>
+
+                  {/* скрытые инпуты */}
+                  <input
+                    ref={fileAnyRef}
+                    type="file"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={(e) => onPickFiles(e.target.files)}
+                  />
+                  <input
+                    ref={filePhotoRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    style={{ display: 'none' }}
+                    onChange={(e) => onPickFiles(e.target.files)}
+                  />
+                </div>
+
+                {/* NEW: мини-список выбранных файлов */}
+                {pendingFiles.length ? (
+                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
+                    Прикреплено: {pendingFiles.map(f => f.name || 'файл').join(', ')}
+                  </div>
+                ) : null}
+
+
+
+
+
+
+
                 </div>
               </>
             ) : (
@@ -374,6 +464,62 @@ async function patchAssignee(taskId: string, assigneeChatId: string | null) {
                         resize: 'vertical',
                       }}
                     />
+
+
+
+
+    {/* NEW: панель вложений */}
+    <div style={{ display: 'flex', gap: 8 }}>
+      <button
+        type="button"
+        onClick={() => fileAnyRef.current?.click()}
+        title="Прикрепить файл"
+        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+      >
+        @
+      </button>
+      <button
+        type="button"
+        onClick={() => filePhotoRef.current?.click()}
+        title="Сделать фото"
+        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+      >
+        📸
+      </button>
+
+      {/* скрытые инпуты */}
+      <input
+        ref={fileAnyRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => onPickFiles(e.target.files)}
+      />
+      <input
+        ref={filePhotoRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={(e) => onPickFiles(e.target.files)}
+      />
+    </div>
+
+    {/* NEW: мини-список выбранных файлов */}
+    {pendingFiles.length ? (
+      <div style={{ fontSize: 12, opacity: 0.85 }}>
+        Прикреплено: {pendingFiles.map(f => f.name || 'файл').join(', ')}
+      </div>
+    ) : null}
+
+
+
+
+
+
+
+
+
                   </div>
                 )}
 
@@ -455,6 +601,15 @@ async function patchAssignee(taskId: string, assigneeChatId: string | null) {
                   >
                     {step < 2 ? '→ Далее' : busy ? 'Создаю…' : 'Создать'}
                   </button>
+
+
+
+
+
+
+{/* поле ввода текста ... */}
+
+
                 </div>
               </>
             )}

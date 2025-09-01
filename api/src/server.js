@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import crypto from 'crypto';
 
 import { Readable } from 'node:stream'; // ⬅️ ДОБАВИЛИ
+import Busboy from 'busboy'; // ⬅️ NEW
 
 
 import { tasksRouter } from './routes/tasks.js';
@@ -1299,6 +1300,128 @@ app.post('/invites/accept', async (req, res) => {
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
+
+
+
+
+
+
+// POST /tasks/:id/media?chatId=<number>
+// multipart: field name="file"
+app.post('/tasks/:id/media', async (req, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const chatId = String(req.query.chatId || '').trim();
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    // Проверим, что задача есть
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    const bb = Busboy({ headers: req.headers });
+    let fileBufs = [];
+    let fileName = '';
+    let mimeType = '';
+
+    bb.on('file', (_name, file, info) => {
+      fileName = info?.filename || 'file.bin';
+      mimeType = info?.mimeType || 'application/octet-stream';
+      file.on('data', (d) => fileBufs.push(d));
+    });
+
+    bb.on('finish', async () => {
+      try {
+        const buf = Buffer.concat(fileBufs);
+        if (!buf.length) return res.status(400).json({ ok: false, error: 'empty_file' });
+
+        // Готовим multipart на сторону Telegram (Node18+: FormData/Blob доступны глобально)
+        const form = new FormData();
+        form.append('chat_id', chatId);
+
+        const isPhoto = /^image\//i.test(mimeType);
+        if (isPhoto) {
+          form.append('photo', new Blob([buf], { type: mimeType }), fileName || 'photo.jpg');
+        } else {
+          form.append('document', new Blob([buf], { type: mimeType }), fileName);
+        }
+
+        const method = isPhoto ? 'sendPhoto' : 'sendDocument';
+        const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
+        const r = await fetch(url, { method: 'POST', body: form });
+        const data = await r.json();
+
+        if (!data?.ok) {
+          console.error('[media upload] Telegram error:', data);
+          return res.status(502).json({ ok: false, error: 'telegram_error', details: data?.description || '' });
+        }
+
+        // Достаём file_id и метадату из ответа
+        let payloadForDb = null;
+        if (isPhoto) {
+          const sizes = data.result?.photo || [];
+          const p = sizes[sizes.length - 1] || sizes[0];
+          payloadForDb = {
+            taskId,
+            kind: 'photo',
+            tgFileId: p.file_id,
+            tgUniqueId: p.file_unique_id,
+            width: p.width,
+            height: p.height,
+            fileSize: p.file_size || null,
+            fileName: fileName || null,
+            mimeType: mimeType || null,
+          };
+        } else {
+          const d = data.result?.document;
+          payloadForDb = {
+            taskId,
+            kind: 'document',
+            tgFileId: d.file_id,
+            tgUniqueId: d.file_unique_id,
+            fileSize: d.file_size || null,
+            fileName: d.file_name || fileName || null,
+            mimeType: d.mime_type || mimeType || null,
+          };
+        }
+
+        const saved = await prisma.taskMedia.create({ data: payloadForDb });
+
+        // По возможности удалим "временное" сообщение у пользователя
+        try {
+          const msgId = data.result?.message_id;
+          if (msgId) await tg('deleteMessage', { chat_id: chatId, message_id: msgId });
+        } catch {}
+
+        return res.json({
+          ok: true,
+          media: {
+            id: saved.id,
+            kind: saved.kind,
+            url: `/files/${saved.id}`,
+            fileName: saved.fileName,
+            mimeType: saved.mimeType,
+            width: saved.width,
+            height: saved.height,
+            duration: saved.duration,
+            fileSize: saved.fileSize,
+          }
+        });
+      } catch (e) {
+        console.error('[media upload] finish handler error', e);
+        return res.status(500).json({ ok: false, error: 'internal' });
+      }
+    });
+
+    req.pipe(bb);
+  } catch (e) {
+    console.error('POST /tasks/:id/media error', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+
 
 
 
