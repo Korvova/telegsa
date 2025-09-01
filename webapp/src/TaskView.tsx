@@ -696,6 +696,29 @@ return; // не сбрасываем saving до завершения анима
         }}
       />
 
+
+
+
+
+{task?.type === 'EVENT' && (
+  <EventPanel
+    eventId={task.id}
+    startAt={String(task.startAt || '')}   // строка
+    endAt={task.endAt ?? null}
+    chatId={meChatId}
+    isOrganizer={Boolean((task as any)?.meIsOrganizer)}
+  />
+)}
+
+      
+
+<CommentsThread taskId={taskId} meChatId={meChatId} />
+
+
+
+
+
+
       {/* Крестик */}
       <button
         onClick={() => setLightboxOpen(false)}
@@ -805,19 +828,6 @@ return; // не сбрасываем saving до завершения анима
 
 
 
-{task?.type === 'EVENT' && (
-  <EventPanel
-    eventId={task.id}
-    startAt={String(task.startAt || '')}   // строка
-    endAt={task.endAt ?? null}
-    chatId={meChatId}
-    isOrganizer={Boolean((task as any)?.meIsOrganizer)}
-  />
-)}
-
-      
-
-<CommentsThread taskId={taskId} meChatId={meChatId} />
 
 
     </div>
