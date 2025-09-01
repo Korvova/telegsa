@@ -128,18 +128,25 @@ export default function CreateTaskFab({
   };
 
   // PATCH ассignee сразу после создания
-  async function patchAssignee(taskId: string, assigneeChatId: string | null) {
-    const API = (import.meta as any).env.VITE_API_BASE || '';
-    try {
-      await fetch(`${API}/tasks/${encodeURIComponent(taskId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assigneeChatId }),
-      });
-    } catch (e) {
-      console.warn('[CreateTaskFab] patchAssignee failed', e);
-    }
+
+async function patchAssignee(taskId: string, assigneeChatId: string | null) {
+  const API = (import.meta as any).env.VITE_API_BASE || '';
+  const me = String(WebApp?.initDataUnsafe?.user?.id || chatId);
+
+  try {
+    await fetch(`${API}/tasks/${encodeURIComponent(taskId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assigneeChatId,
+        actorChatId: me, // 👈 кто назначает
+      }),
+    });
+  } catch (e) {
+    console.warn('[CreateTaskFab] patchAssignee failed', e);
   }
+}
+
 
   const submit = async () => {
     const val = text.trim();
@@ -281,7 +288,7 @@ export default function CreateTaskFab({
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     style={{
-                      width: '100%',
+                      width: '95%',
                       background: '#0b1220',
                       color: '#e5e7eb',
                       border: '1px solid #1f2937',

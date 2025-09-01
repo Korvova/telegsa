@@ -455,7 +455,7 @@ return; // не сбрасываем saving до завершения анима
   }}
 >
 
-        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div>
+     
 
 
 
@@ -484,6 +484,8 @@ return; // не сбрасываем saving до завершения анима
             resize: 'vertical',
           }}
         />
+
+         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div> 
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <button
@@ -700,19 +702,6 @@ return; // не сбрасываем saving до завершения анима
 
 
 
-{task?.type === 'EVENT' && (
-  <EventPanel
-    eventId={task.id}
-    startAt={String(task.startAt || '')}   // строка
-    endAt={task.endAt ?? null}
-    chatId={meChatId}
-    isOrganizer={Boolean((task as any)?.meIsOrganizer)}
-  />
-)}
-
-      
-
-<CommentsThread taskId={taskId} meChatId={meChatId} />
 
 
 
@@ -782,7 +771,33 @@ return; // не сбрасываем saving до завершения анима
 )}
 
 
+
+
+{task?.type === 'EVENT' && (
+  <EventPanel
+    eventId={task.id}
+    startAt={String(task.startAt || '')}   // строка
+    endAt={task.endAt ?? null}
+    chatId={meChatId}
+    isOrganizer={Boolean((task as any)?.meIsOrganizer)}
+  />
+)}
+
+      
+
+<CommentsThread taskId={taskId} meChatId={meChatId} />
+
+
+
       </div>
+
+
+
+
+
+
+
+
 
 
 
