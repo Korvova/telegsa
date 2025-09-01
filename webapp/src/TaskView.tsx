@@ -9,8 +9,7 @@ import CommentsThread from './components/CommentsThread';
 import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 
-
-
+import { createPortal } from 'react-dom';
 
 
 
@@ -45,6 +44,16 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [phase, setPhase] = useState<string | undefined>(undefined);
   const isDone = phase === 'Done';
 
+
+
+
+
+
+const [isClosing, setIsClosing] = useState(false);
+const [thumbStage, setThumbStage] = useState<0 | 1 | 2>(0); // 0=скрыт, 1=появление, 2=затухание
+
+
+
   // заголовок группы
   const [groupTitle, setGroupTitle] = useState<string | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -73,6 +82,18 @@ const [media, setMedia] = useState<TaskMedia[]>([]);
 const photos = useMemo(() => media.filter(m => m.kind === 'photo'), [media]);
 const [isLightboxOpen, setLightboxOpen] = useState(false);
 const [lightboxIndex, setLightboxIndex] = useState(0);
+
+
+
+
+
+
+const cardRef = useRef<HTMLDivElement | null>(null);
+
+// куда «тянуть» карточку (в пикселях) при закрытии
+const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+
 
 
 
@@ -216,6 +237,67 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
     return () => { alive = false; clearTimeout(t); };
   }, [taskId, refreshTick]);
 
+
+
+
+
+// Плавное сворачивание карточки в 👍 и возврат на канбан
+
+const animateCloseWithThumb = (finalGroupId?: string | null) => {
+  // 0) снимаем остатки прошлого прогона
+  setIsClosing(false);
+  setPull({ x: 0, y: 0 });
+  setThumbStage(0);
+
+  // 1) показать 👍 по центру (слегка «впрыгивает»)
+  setThumbStage(1);
+
+  // 2) через небольшой лаг начинаем стягивать карточку в 👍
+  setTimeout(() => {
+    const el = cardRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const centerX = vw / 2;
+      const centerY = vh / 2;
+
+      setPull({
+        x: centerX - cx,
+        y: centerY - cy,
+      });
+    }
+    setIsClosing(true);
+  }, 120); // карточка «зеленеет», затем старт «всасывания»
+
+  // 3) 👍 делает «бум» — увеличивается и начинает исчезать
+  setTimeout(() => {
+    setThumbStage(2);
+  }, 620);
+
+  // 4) завершение
+  setTimeout(() => {
+    setThumbStage(0);
+    setIsClosing(false);
+    setPull({ x: 0, y: 0 });
+    onClose(finalGroupId ?? groupIdRef.current);
+  }, 920);
+};
+
+
+
+
+
+
+
+
+
+
+
+
   /* --- действия с задачей --- */
   const save = async () => {
     const val = text.trim();
@@ -232,24 +314,38 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
     }
   };
 
-  const toggleDone = async () => {
-    setSaving(true);
-    try {
-      if (isDone) {
-        await reopenTask(taskId);
-        setPhase('Doing');
-      } else {
-        await completeTask(taskId);
-        setPhase('Done');
-      }
+const toggleDone = async () => {
+  setSaving(true);
+  try {
+    if (isDone) {
+      await reopenTask(taskId);
+      setPhase('Doing');
       onChanged?.();
       WebApp?.HapticFeedback?.impactOccurred?.('medium');
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка операции');
-    } finally {
-      setSaving(false);
+    } else {
+await completeTask(taskId);
+setPhase('Done');
+onChanged?.();
+WebApp?.HapticFeedback?.notificationOccurred?.('success');
+
+// даём карточке "позеленеть" 140–180мс и запускаем эффект
+setTimeout(() => {
+  animateCloseWithThumb(groupIdRef.current);
+}, 160);
+
+return; // не сбрасываем saving до завершения анимации
     }
-  };
+  } catch (e: any) {
+    setError(e?.message || 'Ошибка операции');
+  } finally {
+    setSaving(false);
+  }
+};
+
+
+
+
+
 
   const handleDelete = async () => {
     if (!confirm('Удалить задачу? Действие необратимо.')) return;
@@ -288,7 +384,25 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
 
   if (!task) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
+   
+
+<div
+  style={{
+    minHeight: '100vh',
+    background: '#0f1216',
+    color: '#e8eaed',
+    padding: 16,
+    transition: 'opacity 360ms ease, transform 360ms ease, filter 360ms ease',
+    opacity: isClosing ? 0 : 1,
+    transform: isClosing ? 'scale(0.92)' : 'scale(1)',
+    filter: isClosing ? 'blur(2px)' : 'none',
+  }}
+>
+
+
+
+
+
         {Header}
 
         <div style={{ background: '#1b2030', border: '1px solid #2a3346', borderRadius: 16, padding: 16 }}>
@@ -321,14 +435,26 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
     <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
       {Header}
 
-      <div
-        style={{
-          background: isDone ? '#15251a' : '#1b2030',
-          border: `1px solid ${isDone ? '#2c4a34' : '#2a3346'}`,
-          borderRadius: 16,
-          padding: 16,
-        }}
-      >
+<div
+  ref={cardRef}
+  style={{
+    background: isDone ? '#15251a' : '#1b2030',
+    border: `1px solid ${isDone ? '#2c4a34' : '#2a3346'}`,
+    borderRadius: 16,
+    padding: 16,
+
+    // анимация «всасывания»
+    transition:
+      'transform 520ms cubic-bezier(.2,.9,.2,1), opacity 520ms ease, filter 520ms ease',
+    transformOrigin: '50% 50%',
+    transform: isClosing
+      ? `translate(${pull.x}px, ${pull.y}px) scale(0.72)`
+      : 'translate(0,0) scale(1)',
+    opacity: isClosing ? 0 : 1,
+    filter: isClosing ? 'blur(2px)' : 'none',
+  }}
+>
+
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div>
 
 
@@ -633,12 +759,48 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
 )}
 
 
-
-
-
-
-
       </div>
+
+
+
+
+
+{/* Портал с 👍, вне любых трансформов */}
+{(isClosing || thumbStage !== 0) &&
+  createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+        zIndex: 99999,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 96,
+          transform:
+            thumbStage === 1 ? 'scale(1.0)' : thumbStage === 2 ? 'scale(1.22)' : 'scale(0.8)',
+          opacity: thumbStage === 1 ? 1 : 0,
+          transition: 'transform 300ms cubic-bezier(.2,.9,.2,1), opacity 300ms ease',
+          filter: 'drop-shadow(0 10px 32px rgba(0,0,0,.45))',
+          willChange: 'transform, opacity',
+        }}
+      >
+        👍
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+
+
+
+
 
 
 
