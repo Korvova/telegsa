@@ -142,9 +142,24 @@ function TaskCard({
       userSelect: 'none', cursor: 'pointer', boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
     }}>
       <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
-      <div style={{ fontSize: 15, marginBottom: 6 }}>
-        {isEvent ? '📅 ' : ''}{text}
-      </div>
+
+
+<div
+  style={{
+    fontSize: 15,
+    marginBottom: 6,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere',
+  }}
+>
+  {isEvent ? '📅 ' : ''}{text}
+</div>
+
+
+
+
+
       {dateLine && (
         <div style={{ fontSize: 12, opacity: .75, marginBottom: 6 }}>{dateLine}</div>
       )}

@@ -1,8 +1,15 @@
+// src/components/ShareNewTaskMenu.tsx
 import { useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { createShareLink } from '../api/sharenewtask';
 
-export default function ShareNewTaskMenu({ taskId }: { taskId: string }) {
+type Props = {
+  taskId: string;
+  onDelete?: () => void;     // 👈 колбэк удаления
+  isEvent?: boolean;         // 👈 чтобы подписать "Удалить событие"
+};
+
+export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false }: Props) {
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,6 +40,11 @@ export default function ShareNewTaskMenu({ taskId }: { taskId: string }) {
     }
   };
 
+  const doDelete = () => {
+    setOpen(false);
+    onDelete?.(); // вызовем обработчик из TaskView
+  };
+
   return (
     <div style={{ position: 'relative' }}>
       <button
@@ -49,8 +61,8 @@ export default function ShareNewTaskMenu({ taskId }: { taskId: string }) {
       {open && (
         <div
           style={{
-            position: 'absolute', right: 0, marginTop: 6, minWidth: 220,
-            background: '#0f1422', border: '1px solid #2a3346', borderRadius: 10, padding: 8, zIndex: 5
+            position: 'absolute', right: 0, marginTop: 6, minWidth: 240,
+            background: '#0f1422', border: '1px solid #2a3346', borderRadius: 10, padding: 8, zIndex: 20
           }}
         >
           <button
@@ -74,6 +86,20 @@ export default function ShareNewTaskMenu({ taskId }: { taskId: string }) {
               </button>
             </div>
           )}
+
+          <div style={{ height: 8 }} />
+
+          {/* 🔻 Опасное действие: Удалить */}
+          <button
+            onClick={doDelete}
+            style={{
+              width: '100%', textAlign: 'left', padding: '8px 10px',
+              background: '#291919', color: '#ffd7d7',
+              border: '1px solid #472a2a', borderRadius: 8, cursor: 'pointer'
+            }}
+          >
+            {isEvent ? 'Удалить событие' : 'Удалить'}
+          </button>
         </div>
       )}
     </div>

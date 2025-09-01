@@ -459,14 +459,21 @@ return; // не сбрасываем saving до завершения анима
 
 
 
-
-
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 8 }}>
   <label style={{ display: 'block', fontSize: 14, opacity: 0.85 }}>
     {task?.type === 'EVENT' ? 'Событие' : 'Текст задачи'}
   </label>
-  {task?.id ? <ShareNewTaskMenu taskId={task.id} /> : null}
+
+  {task?.id ? (
+    <ShareNewTaskMenu
+      taskId={task.id}
+      isEvent={task?.type === 'EVENT'}
+      onDelete={handleDelete}      // 👈 сюда передаём текущий обработчик удаления
+    />
+  ) : null}
 </div>
+
+
 
 
 
@@ -518,19 +525,7 @@ return; // не сбрасываем saving до завершения анима
             {isDone ? 'Возобновить → Doing' : 'Завершить'}
           </button>
 
-          <button
-            onClick={handleDelete}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #472a2a',
-              background: '#3a1f1f',
-              color: '#ffd7d7',
-              cursor: 'pointer',
-            }}
-          >
-             {task?.type === 'EVENT' ? 'Удалить событие' : 'Удалить'}
-          </button>
+
 
           {/* Постановщик */}
      {/* Организатор / Постановщик */}
