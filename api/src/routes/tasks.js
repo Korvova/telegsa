@@ -307,4 +307,97 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+
+
+
+// GET /tasks/feed
+// --- Лента задач для "Главной": только мои как постановщик или ответственный ---
+router.get('/feed', async (req, res) => {
+  try {
+    const me = String(req.query.chatId || '').trim();
+    if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
+    const limit  = Math.min(50, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
+
+    const tasks = await prisma.task.findMany({
+      where: {
+        OR: [{ chatId: me }, { assigneeChatId: me }],
+      },
+      include: { column: { select: { name: true } } },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      skip: offset,
+      take: limit,
+    });
+
+    // подтянем заголовки групп по префиксу до "::"
+    const groupIds = Array.from(new Set(
+      tasks.map(t => {
+        const nm = t.column?.name || '';
+        const i = nm.indexOf(GROUP_SEP);
+        return i > 0 ? nm.slice(0, i) : null;
+      }).filter(Boolean)
+    ));
+    const groups = groupIds.length
+      ? await prisma.group.findMany({
+          where: { id: { in: groupIds } },
+          select: { id: true, title: true },
+        })
+      : [];
+    const gmap = new Map(groups.map(g => [g.id, g.title]));
+
+    // имена людей
+    const ids = Array.from(new Set([
+      ...tasks.map(t => String(t.chatId)),
+      ...tasks.map(t => (t.assigneeChatId ? String(t.assigneeChatId) : '')).filter(Boolean),
+    ]));
+    const users = ids.length
+      ? await prisma.user.findMany({
+          where: { chatId: { in: ids } },
+          select: { chatId: true, firstName: true, lastName: true, username: true },
+        })
+      : [];
+    const fullName = (cid) => {
+      const u = users.find(u => String(u.chatId) === String(cid));
+      if (!u) return String(cid);
+      const fn = (u.firstName || '').trim();
+      const ln = (u.lastName || '').trim();
+      if (fn || ln) return [fn, ln].filter(Boolean).join(' ');
+      return u.username ? `@${u.username}` : String(cid);
+    };
+
+    const items = tasks.map(t => {
+      const cname = t.column?.name || '';
+      const i = cname.indexOf(GROUP_SEP);
+      const status  = i >= 0 ? cname.slice(i + GROUP_SEP.length) : cname;
+      const groupId = i >= 0 ? cname.slice(0, i) : null;
+
+      return {
+        id: t.id,
+        text: t.text,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        status,
+        groupId,
+        groupTitle: groupId ? (gmap.get(groupId) || 'Без группы') : 'Моя группа',
+        creatorChatId: String(t.chatId),
+        creatorName: fullName(t.chatId),
+        assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
+        assigneeName: t.assigneeChatId ? fullName(t.assigneeChatId) : null,
+      };
+    });
+
+    res.json({
+      ok: true,
+      items,
+      nextOffset: offset + items.length,
+      hasMore: items.length === limit,
+    });
+  } catch (e) {
+    console.error('GET /tasks/feed simple error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
 export { router as tasksRouter };

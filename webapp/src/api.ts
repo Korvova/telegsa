@@ -556,7 +556,7 @@ export async function fetchProcess(groupId: string) {
 }
 
 
-
+ // для главной
 
 
 
@@ -616,3 +616,43 @@ export async function uploadTaskMedia(taskId: string, chatId: string, file: File
   });
   return r.json() as Promise<{ ok: boolean; media?: TaskMedia }>;
 }
+
+
+
+
+export type TaskFeedItem = {
+  id: string;
+  text: string;
+  updatedAt: string;
+  createdAt: string;
+  status: string;
+  groupId: string | null;
+  groupTitle: string;
+  creatorChatId: string;
+  creatorName: string;
+  assigneeChatId: string | null;
+  assigneeName: string | null;
+};
+
+export async function listMyFeed(params: {
+  chatId: string;
+  role?: 'all' | 'creator' | 'assignee' | 'watcher';
+  statuses?: string[]; // ['Новые','В работе',...]
+  q?: string;
+  sort?: 'updated_desc' | 'updated_asc';
+  offset?: number;
+  limit?: number;
+}): Promise<{ ok: boolean; items: TaskFeedItem[]; nextOffset: number; hasMore: boolean }> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const qs = new URLSearchParams();
+  qs.set('chatId', params.chatId);
+  if (params.role) qs.set('role', params.role);
+  if (params.statuses?.length) qs.set('statuses', params.statuses.join(','));
+  if (params.q) qs.set('q', params.q);
+  if (params.sort) qs.set('sort', params.sort);
+  if (typeof params.offset === 'number') qs.set('offset', String(params.offset));
+  if (typeof params.limit === 'number') qs.set('limit', String(params.limit));
+  const r = await fetch(`${API}/tasks/feed?` + qs.toString());
+  return r.json();
+}
+

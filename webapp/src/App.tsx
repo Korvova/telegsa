@@ -19,6 +19,8 @@ import CalendarView from './CalendarView';
 
 import TaskView from './TaskView';
 
+import HomePage from './pages/Home/HomePage';
+
 
 
 
@@ -727,20 +729,17 @@ useEffect(() => {
     });
   };
 
-  const title =
-    tab === 'groups'
-      ? groupsPage === 'list'
+const title =
+  tab === 'home' ? 'Главная'
+  : tab === 'groups'
+    ? (groupsPage === 'list'
         ? 'Группы'
+        : ` ${selectedGroup?.title || 'Группа'}`)
+  : tab === 'calendar' ? 'Календарь'
+  : tab === 'notifications' ? 'Уведомления'
+  : 'Настройки';
 
-
-        : ` ${selectedGroup?.title || 'Группа'}`
-      : tab === 'calendar'
-      ? 'Календарь'
-
-
-      : tab === 'notifications'
-      ? 'Уведомления'
-      : 'Настройки';
+  
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragging(false);
@@ -893,7 +892,15 @@ useEffect(() => {
 
 </div>
 
-{tab === 'groups' ? (
+{tab === 'home' ? (
+
+  <HomePage
+    chatId={chatId}
+    onOpenTask={openTask}
+  />
+
+) : tab === 'groups' ? (
+
   groupsPage === 'list' ? (
     <GroupList
       chatId={chatId}
@@ -913,8 +920,6 @@ useEffect(() => {
         ) : (
           <>
             {/* Создание */}
-
-
             <DndContext
               sensors={sensors}
               collisionDetection={closestCorners}
@@ -966,26 +971,19 @@ useEffect(() => {
             </DndContext>
           </>
         )
-
-
-
-) : groupTab === 'process' ? (
-  <button
-    onClick={() => {
-      setShowProcess(true);
-      const url = new URL(window.location.href);
-      url.searchParams.set('view', 'process');
-      window.history.pushState({ view: 'process' }, '', url.toString());
-      WebApp?.BackButton?.show?.();
-    }}
-    style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px', margin:12 }}
-  >
-    🔀 Открыть процесс
-  </button>
-
-
-
-
+      ) : groupTab === 'process' ? (
+        <button
+          onClick={() => {
+            setShowProcess(true);
+            const url = new URL(window.location.href);
+            url.searchParams.set('view', 'process');
+            window.history.pushState({ view: 'process' }, '', url.toString());
+            WebApp?.BackButton?.show?.();
+          }}
+          style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px', margin:12 }}
+        >
+          🔀 Открыть процесс
+        </button>
       ) : (
         <GroupMembers
           group={selectedGroup as any}
@@ -1004,22 +1002,25 @@ useEffect(() => {
       )}
     </>
   )
+
 ) : tab === 'calendar' ? (
 
-
-<CalendarView
-  chatId={chatId}
-  groupId={resolvedGroupId}
-  onOpenTask={openTask}
-/>
-
-
+  <CalendarView
+    chatId={chatId}
+    groupId={resolvedGroupId}
+    onOpenTask={openTask}
+  />
 
 ) : tab === 'notifications' ? (
+
   <NotificationsView />
+
 ) : (
+
   <TabPlaceholder tab={tab} />
+
 )}
+
 
 
 

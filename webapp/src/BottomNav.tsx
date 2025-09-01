@@ -1,9 +1,7 @@
+// webapp/src/BottomNav.tsx
 import { useMemo } from 'react';
 
-export type TabKey = 'groups' | 'calendar' | 'notifications' | 'settings';
-
-
-
+export type TabKey = 'home' | 'groups' | 'calendar' | 'notifications' | 'settings';
 
 export default function BottomNav({
   current,
@@ -14,11 +12,12 @@ export default function BottomNav({
 }) {
   const items = useMemo(
     () => [
-      { id: 'groups' as const, icon: '🗂️', label: 'Группы' },
-      { id: 'calendar' as const, icon: '📅', label: 'Календарь' },
-      { id: 'notifications' as const, icon: '🔔', label: 'Уведомления' },
-      { id: 'settings' as const, icon: '⚙️', label: 'Настройки' },
-    ],
+      { key: 'home',          icon: '🏠︎', label: 'Главная' },
+      { key: 'groups',        icon: '🗂️', label: 'Группы' },
+      { key: 'calendar',      icon: '📅', label: 'Календарь' },
+      { key: 'notifications', icon: '🔔', label: 'Уведомления' },
+      { key: 'settings',      icon: '⚙️', label: 'Настройки' },
+    ] as const,
     []
   );
 
@@ -29,57 +28,35 @@ export default function BottomNav({
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 50,
-        background: '#0b1020',
-        borderTop: '1px solid #2a3346',
-        padding: '8px 10px calc(8px + env(safe-area-inset-bottom, 0px))',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)',
+        background: '#0b1220',
+        borderTop: '1px solid #1f2937',
+        zIndex: 40,
       }}
     >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 6,
-          maxWidth: 720,
-          margin: '0 auto',
-        }}
-      >
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 4, padding: 8 }}>
         {items.map((it) => {
-          const active = current === it.id;
+          const active = current === (it.key as TabKey);
           return (
-
-
-
-
-
-
-
-
-            
             <button
-              key={it.id}
-              onClick={() => onChange(it.id)}
+              key={it.key}
+              onClick={() => onChange(it.key as TabKey)}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: 4,
                 padding: '8px 4px',
-                borderRadius: 12,
-                border: '1px solid #2a3346',
-                background: active ? '#1b2030' : '#121722',
-                color: active ? '#8aa0ff' : '#e8eaed',
+                borderRadius: 10,
+                border: '1px solid #1f2937',
+                background: active ? '#18223b' : 'transparent',
+                color: active ? '#e5e7eb' : '#9ca3af',
                 cursor: 'pointer',
               }}
-              aria-current={active ? 'page' : undefined}
             >
               <span style={{ fontSize: 18, lineHeight: 1 }}>{it.icon}</span>
               <span style={{ fontSize: 11 }}>{it.label}</span>
             </button>
-            
-
-
-
           );
         })}
       </div>
