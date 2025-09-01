@@ -243,45 +243,106 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
       />
 
       {/* Заголовок */}
-      {editing ? (
-        <>
-          <input
-            ref={inputRef}
-            type="text"
-            inputMode="text"
-            enterKeyHint="done"
-            value={value}
-            maxLength={100}
-            onChange={(e) => setValue(e.target.value)}
-            onBlur={finishEdit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') finishEdit();
-              if (e.key === 'Escape') setEditing(false);
-            }}
-            style={{
-              width: '100%',
-              outline: 'none',
-              border: '1px solid #d1d5db',
-              borderRadius: 8,
-              padding: '6px 8px',
-              fontSize: 14,
-            }}
-            placeholder="Название задачи"
-          />
-          <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.6, marginTop: 4 }}>
-            {value.length}/100
-          </div>
-        </>
-      ) : (
-        <div
-          className="editable-label"
-          style={{ fontSize: 14, fontWeight: 700, color: '#111827', wordBreak: 'break-word' }}
-          onDoubleClick={startEdit}
-          title="Двойной клик — редактировать"
-        >
-          {data.label || 'Новая задача'}
-        </div>
-      )}
+
+
+{editing ? (
+  <>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 8,
+        border: '1px solid #d1d5db',
+        borderRadius: 12,
+        background: '#fff',
+        padding: 8,
+        marginRight: 8,          // чтобы не задевать правый порт
+        maxWidth: '100%',
+      }}
+    >
+      <textarea
+        ref={inputRef as any}
+        value={value}
+        maxLength={100}
+        placeholder="Название задачи"
+        onChange={(e) => {
+          setValue(e.target.value);
+          const el = e.currentTarget;
+          el.style.height = 'auto';
+          el.style.height = Math.min(el.scrollHeight, 160) + 'px'; // авто-рост до 160px
+        }}
+        onFocus={(e) => {
+          const el = e.currentTarget;
+          el.style.height = 'auto';
+          el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+        }}
+        onKeyDown={(e) => {
+          // Ctrl/Cmd+Enter — сохранить. Enter — перенос строки
+          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            finishEdit();
+          }
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        onBlur={finishEdit}
+        style={{
+          flex: 1,
+          border: 'none',
+          outline: 'none',
+          resize: 'none',
+          background: 'transparent',
+          fontSize: 14,
+          lineHeight: 1.35,
+          padding: '2px 0',
+          minHeight: 34,
+          maxHeight: 160,
+          overflow: 'auto',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      />
+
+      <button
+        onClick={finishEdit}
+        disabled={!value.trim()}
+        title="Сохранить (Ctrl/⌘+Enter)"
+        style={{
+          height: 36,
+          minWidth: 36,
+          padding: '0 10px',
+          borderRadius: 10,
+          border: '1px solid transparent',
+          background: value.trim() ? '#2563eb' : '#94a3b8',
+          color: '#fff',
+          cursor: value.trim() ? 'pointer' : 'not-allowed',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 16,
+          fontWeight: 700,
+        }}
+      >
+        ➤
+      </button>
+    </div>
+
+    <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.6, marginTop: 4 }}>
+      {value.length}/100
+    </div>
+  </>
+) : (
+  <div
+    className="editable-label"
+    style={{ fontSize: 14, fontWeight: 700, color: '#111827', wordBreak: 'break-word' }}
+    onDoubleClick={startEdit}
+    title="Двойной клик — редактировать"
+  >
+    {data.label || 'Новая задача'}
+  </div>
+)}
+
+
+
 
       {/* Handles */}
       <Handle type="target" position={Position.Left} />
