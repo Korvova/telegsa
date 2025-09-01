@@ -1,5 +1,6 @@
 // webapp/src/components/CreateTaskFab.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
+import CameraCaptureModal from './CameraCaptureModal'; // ⬅️ NEW
 
 import WebApp from '@twa-dev/sdk';
 import {
@@ -60,12 +61,23 @@ const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 const fileAnyRef = useRef<HTMLInputElement | null>(null);
 const filePhotoRef = useRef<HTMLInputElement | null>(null);
 
+const [cameraOpen, setCameraOpen] = useState(false); // ⬅️ NEW
+
 const onPickFiles = (files: FileList | null) => {
   if (!files || !files.length) return;
-  const arr = Array.from(files).slice(0, 10); // ограничимся 10 за раз
+  const arr = Array.from(files).slice(0, 10);
   setPendingFiles((prev) => [...prev, ...arr]);
 };
 
+const openCamera = () => {
+  // если есть getUserMedia — используем нашу камеру; иначе — фоллбэк на input
+  const hasGUM = typeof (navigator as any)?.mediaDevices?.getUserMedia === 'function';
+  if (hasGUM) {
+    setCameraOpen(true);
+  } else {
+    filePhotoRef.current?.click();
+  }
+};
 
 
 
@@ -266,6 +278,7 @@ const submit = async () => {
       </button>
 
       {/* Модалка */}
+            {/* Модалка */}
       {open && (
         <div
           onClick={closeModal}
@@ -289,7 +302,7 @@ const submit = async () => {
               borderTopLeftRadius: 16,
               borderTopRightRadius: 16,
               padding: 16,
-              borderTop: '1px solid #1f2937',
+              borderTop: '1px solid #1f2937', // ✅ фикс кавычек
             }}
           >
             {/* Заголовок */}
@@ -357,41 +370,7 @@ const submit = async () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-                  <button
-                    onClick={back}
-                    disabled={busy}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 12,
-                      background: '#1f2937',
-                      color: '#e5e7eb',
-                      border: '1px solid #374151',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    onClick={submit}
-                    disabled={busy || !text.trim()}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 12,
-                      background: '#2563eb',
-                      color: '#fff',
-                      border: '1px solid transparent',
-                      cursor: 'pointer',
-                      minWidth: 120,
-                    }}
-                  >
-                    {busy ? 'Создаю…' : 'Создать'}
-                  </button>
-
-
-
-
-   {/* NEW: панель вложений */}
+                {/* NEW: панель вложений (простой режим) */}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button
                     type="button"
@@ -401,13 +380,25 @@ const submit = async () => {
                   >
                     @
                   </button>
+
+                  {/* 📸 — системная галерея / выбор фото */}
                   <button
                     type="button"
                     onClick={() => filePhotoRef.current?.click()}
-                    title="Сделать фото"
+                    title="Выбрать фото"
                     style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                   >
                     📸
+                  </button>
+
+                  {/* 🎥 — НАША камера (getUserMedia) */}
+                  <button
+                    type="button"
+                    onClick={openCamera}
+                    title="Открыть камеру"
+                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                  >
+                    🎥
                   </button>
 
                   {/* скрытые инпуты */}
@@ -431,16 +422,40 @@ const submit = async () => {
                 {/* NEW: мини-список выбранных файлов */}
                 {pendingFiles.length ? (
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-                    Прикреплено: {pendingFiles.map(f => f.name || 'файл').join(', ')}
+                    Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
                   </div>
                 ) : null}
 
-
-
-
-
-
-
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 10 }}>
+                  <button
+                    onClick={back}
+                    disabled={busy}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 12,
+                      background: '#1f2937',
+                      color: '#e5e7eb',
+                      border: '1px solid #374151',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={submit}
+                    disabled={busy || !text.trim()}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 12,
+                      background: '#2563eb',
+                      color: '#fff',
+                      border: '1px solid transparent', // ✅ фикс кавычек
+                      cursor: 'pointer',
+                      minWidth: 120,
+                    }}
+                  >
+                    {busy ? 'Создаю…' : 'Создать'}
+                  </button>
                 </div>
               </>
             ) : (
@@ -465,61 +480,57 @@ const submit = async () => {
                       }}
                     />
 
+                    {/* NEW: панель вложений (мастер, шаг 0) */}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => fileAnyRef.current?.click()}
+                        title="Прикрепить файл"
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                      >
+                        @
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => filePhotoRef.current?.click()}
+                        title="Выбрать фото"
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                      >
+                        📸
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openCamera}
+                        title="Открыть камеру"
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                      >
+                        🎥
+                      </button>
 
+                      {/* скрытые инпуты */}
+                      <input
+                        ref={fileAnyRef}
+                        type="file"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => onPickFiles(e.target.files)}
+                      />
+                      <input
+                        ref={filePhotoRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        style={{ display: 'none' }}
+                        onChange={(e) => onPickFiles(e.target.files)}
+                      />
+                    </div>
 
-
-    {/* NEW: панель вложений */}
-    <div style={{ display: 'flex', gap: 8 }}>
-      <button
-        type="button"
-        onClick={() => fileAnyRef.current?.click()}
-        title="Прикрепить файл"
-        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-      >
-        @
-      </button>
-      <button
-        type="button"
-        onClick={() => filePhotoRef.current?.click()}
-        title="Сделать фото"
-        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-      >
-        📸
-      </button>
-
-      {/* скрытые инпуты */}
-      <input
-        ref={fileAnyRef}
-        type="file"
-        multiple
-        style={{ display: 'none' }}
-        onChange={(e) => onPickFiles(e.target.files)}
-      />
-      <input
-        ref={filePhotoRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        style={{ display: 'none' }}
-        onChange={(e) => onPickFiles(e.target.files)}
-      />
-    </div>
-
-    {/* NEW: мини-список выбранных файлов */}
-    {pendingFiles.length ? (
-      <div style={{ fontSize: 12, opacity: 0.85 }}>
-        Прикреплено: {pendingFiles.map(f => f.name || 'файл').join(', ')}
-      </div>
-    ) : null}
-
-
-
-
-
-
-
-
-
+                    {/* NEW: мини-список выбранных файлов */}
+                    {pendingFiles.length ? (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>
+                        Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
@@ -594,28 +605,26 @@ const submit = async () => {
                       borderRadius: 12,
                       background: '#2563eb',
                       color: '#fff',
-                      border: '1px solid transparent',
+                      border: '1px solid transparent', // ✅ фикс кавычек
                       cursor: 'pointer',
                       minWidth: 120,
                     }}
                   >
                     {step < 2 ? '→ Далее' : busy ? 'Создаю…' : 'Создать'}
                   </button>
-
-
-
-
-
-
-{/* поле ввода текста ... */}
-
-
                 </div>
               </>
             )}
           </div>
         </div>
       )}
+
+      {/* NEW: модалка камеры (для любого режима) */}
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(file) => setPendingFiles((prev) => [...prev, file])}
+      />
     </>
   );
 }
