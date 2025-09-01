@@ -41,10 +41,7 @@ type Props = {
   onOpenTask: (id: string) => void;
 };
 
-
 type CondEdgeData = { icon?: string };
-
-
 
 interface EditableData {
   label: string;
@@ -86,11 +83,18 @@ function safeParseJson(input: any): any | null {
   }
 }
 
+/** Лимит по видимым юникод-графемам (эмодзи/суррогаты считаются как 1) */
+function clampGraphemes(s: string, max = 100) {
+  const arr = Array.from(s);
+  return arr.length <= max ? s : arr.slice(0, max).join('');
+}
+
 /* ======== Custom editable node ======== */
-function EditableNode({ id, data, selected }: NodeProps<EditableData>) {  
+function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
+  const rf = useReactFlow();
   const [editing, setEditing] = useState<boolean>(!!data.autoEdit);
   const [value, setValue] = useState<string>(data.label ?? '');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -141,7 +145,6 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
     if (editing) return;
     const el = e.target as Element;
     if (el.closest('input,textarea,button,.react-flow__handle,.editable-label')) return;
-    //openMenu();
   };
 
   useEffect(() => {
@@ -187,21 +190,32 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
     data.onChange(id, trimmed.length ? trimmed : 'Untitled');
   };
 
+  /** Центрируем текущий узел в вьюпорте (ещё раз — после поднятия клавиатуры) */
+  const centerThisNode = () => {
+    const node = rf.getNode(id);
+    if (!node) return;
+    const w = node.width ?? 220;
+    const h = node.height ?? 80;
+    const cx = (node.positionAbsolute?.x ?? node.position.x) + w / 2;
+    const cy = (node.positionAbsolute?.y ?? node.position.y) + h / 2;
+    rf.setCenter(cx, cy, { zoom: rf.getZoom(), duration: 250 });
+  };
+
   // цвета по статусу
   const stylesByStatus = (() => {
     switch (data.status) {
       case 'DONE':
-        return { bg: '#e8fff1', border: '#22c55e' }; // зелёный
+        return { bg: '#e8fff1', border: '#22c55e' };
       case 'IN_PROGRESS':
-        return { bg: '#eef6ff', border: '#3b82f6' }; // синий
+        return { bg: '#eef6ff', border: '#3b82f6' };
       case 'CANCELLED':
-        return { bg: '#fff0f0', border: '#ef4444' }; // красный
+        return { bg: '#fff0f0', border: '#ef4444' };
       case 'APPROVAL':
-        return { bg: '#fff7ed', border: '#f59e0b' }; // оранжевый
+        return { bg: '#fff7ed', border: '#f59e0b' };
       case 'WAITING':
-        return { bg: '#effaff', border: '#06b6d4' }; // голубой
+        return { bg: '#effaff', border: '#06b6d4' };
       default:
-        return { bg: '#ffffff', border: '#e5e7eb' }; // новое
+        return { bg: '#ffffff', border: '#e5e7eb' };
     }
   })();
 
@@ -235,114 +249,109 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
     >
       {/* ⚙️ + 🏷 сверху — единый тулбар */}
       <NodeTopToolbar
-
-       visible={!!selected}          
+        visible={!!selected}
         currentStatus={data.status || 'NEW'}
         onOpenConditions={() => data.onOpenConditions?.(id)}
         onOpenStatus={() => data.onOpenStatus?.(id)}
       />
 
       {/* Заголовок */}
+      {editing ? (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: 8,
+              border: '1px solid #d1d5db',
+              borderRadius: 12,
+              background: '#fff',
+              padding: 8,
+              marginRight: 8,
+              maxWidth: '100%',
+            }}
+          >
+            <textarea
+              ref={inputRef}
+              value={value}
+              placeholder="Название задачи"
+              onChange={(e) => {
+                const next = clampGraphemes(e.target.value, 100);
+                setValue(next);
+                const el = e.currentTarget;
+                el.style.height = 'auto';
+                el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+              }}
+              onFocus={(e) => {
+                const el = e.currentTarget;
+                el.style.height = 'auto';
+                el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+                centerThisNode();
+                setTimeout(centerThisNode, 300); // второй раз — после подъёма клавиатуры
+              }}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                  e.preventDefault();
+                  finishEdit();
+                }
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              onBlur={finishEdit}
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                resize: 'none',
+                background: 'transparent',
+                fontSize: 14,
+                lineHeight: 1.35,
+                padding: '2px 0',
+                minHeight: 34,
+                maxHeight: 160,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            />
 
+            <button
+              onClick={finishEdit}
+              disabled={!value.trim()}
+              title="Сохранить (Ctrl/⌘+Enter)"
+              style={{
+                height: 36,
+                minWidth: 36,
+                padding: '0 10px',
+                borderRadius: 10,
+                border: '1px solid transparent',
+                background: value.trim() ? '#2563eb' : '#94a3b8',
+                color: '#fff',
+                cursor: value.trim() ? 'pointer' : 'not-allowed',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 16,
+                fontWeight: 700,
+              }}
+            >
+              ➤
+            </button>
+          </div>
 
-{editing ? (
-  <>
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: 8,
-        border: '1px solid #d1d5db',
-        borderRadius: 12,
-        background: '#fff',
-        padding: 8,
-        marginRight: 8,          // чтобы не задевать правый порт
-        maxWidth: '100%',
-      }}
-    >
-      <textarea
-        ref={inputRef as any}
-        value={value}
-        maxLength={100}
-        placeholder="Название задачи"
-        onChange={(e) => {
-          setValue(e.target.value);
-          const el = e.currentTarget;
-          el.style.height = 'auto';
-          el.style.height = Math.min(el.scrollHeight, 160) + 'px'; // авто-рост до 160px
-        }}
-        onFocus={(e) => {
-          const el = e.currentTarget;
-          el.style.height = 'auto';
-          el.style.height = Math.min(el.scrollHeight, 160) + 'px';
-        }}
-        onKeyDown={(e) => {
-          // Ctrl/Cmd+Enter — сохранить. Enter — перенос строки
-          if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
-            finishEdit();
-          }
-          if (e.key === 'Escape') setEditing(false);
-        }}
-        onBlur={finishEdit}
-        style={{
-          flex: 1,
-          border: 'none',
-          outline: 'none',
-          resize: 'none',
-          background: 'transparent',
-          fontSize: 14,
-          lineHeight: 1.35,
-          padding: '2px 0',
-          minHeight: 34,
-          maxHeight: 160,
-          overflow: 'auto',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word',
-        }}
-      />
-
-      <button
-        onClick={finishEdit}
-        disabled={!value.trim()}
-        title="Сохранить (Ctrl/⌘+Enter)"
-        style={{
-          height: 36,
-          minWidth: 36,
-          padding: '0 10px',
-          borderRadius: 10,
-          border: '1px solid transparent',
-          background: value.trim() ? '#2563eb' : '#94a3b8',
-          color: '#fff',
-          cursor: value.trim() ? 'pointer' : 'not-allowed',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 16,
-          fontWeight: 700,
-        }}
-      >
-        ➤
-      </button>
-    </div>
-
-    <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.6, marginTop: 4 }}>
-      {value.length}/100
-    </div>
-  </>
-) : (
-  <div
-    className="editable-label"
-    style={{ fontSize: 14, fontWeight: 700, color: '#111827', wordBreak: 'break-word' }}
-    onDoubleClick={startEdit}
-    title="Двойной клик — редактировать"
-  >
-    {data.label || 'Новая задача'}
-  </div>
-)}
-
-
-
+          <div style={{ textAlign: 'right', fontSize: 11, opacity: 0.6, marginTop: 4 }}>
+            {Array.from(value).length}/100
+          </div>
+        </>
+      ) : (
+        <div
+          className="editable-label"
+          style={{ fontSize: 14, fontWeight: 700, color: '#111827', wordBreak: 'break-word' }}
+          onDoubleClick={startEdit}
+          title="Двойной клик — редактировать"
+        >
+          {data.label || 'Новая задача'}
+        </div>
+      )}
 
       {/* Handles */}
       <Handle type="target" position={Position.Left} />
@@ -444,18 +453,7 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   const [members, setMembers] = useState<GroupMember[]>([]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<EditableData>([]);
-// у рёбер есть простые data: { icon?: string }
-
-
-
-
-
-const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
-
-
-
-
-
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
 
   const rfApi = useReactFlow();
   const { screenToFlowPosition } = rfApi;
@@ -467,25 +465,6 @@ const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
     open: false,
     nodeId: null,
   });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   // подтянуть участников при смене groupId
   useEffect(() => {
@@ -626,330 +605,293 @@ const [edges, setEdges, onEdgesChange] = useEdgesState<CondEdgeData>([]);
     [nodes, neighborsById, onLabelChange, onNodeAction, getAssigneeDisplay]
   );
 
+  // === Стилизация рёбер по условиям целевого узла ===
+  useEffect(() => {
+    setEdges((prev) => {
+      if (!prev.length) return prev;
 
+      const nodeById = new Map(nodes.map((n) => [String(n.id), n]));
+      let changed = false;
 
+      const next = prev.map((e) => {
+        const target = nodeById.get(String(e.target));
+        if (!target) return e;
 
+        const cond = (target.data as any)?.conditions || {};
+        const startRaw = cond.start;
+        const cancelRaw = cond.cancel;
 
+        type StartCond =
+          | 'AFTER_ANY'
+          | { mode: 'AFTER_SELECTED'; selectedEdges: string[] }
+          | { mode: 'ON_DATE'; date: string }
+          | { mode: 'ON_DATE_AND_AFTER_SELECTED'; date: string; selectedEdges: string[] }
+          | { mode: 'AFTER_MINUTES_AND_AFTER_SELECTED'; minutes: number; selectedEdges: string[] }
+          | { mode: 'AFTER_SELECTED_CANCELLED'; selectedEdges: string[] };
 
+        type CancelCond = 'NONE' | { mode: 'CANCEL_IF_ANY_SELECTED_CANCELLED'; selectedEdges: string[] };
 
+        const startMode: StartCond = startRaw || 'AFTER_ANY';
+        const cancelMode: CancelCond = cancelRaw || 'NONE';
 
+        const getSelected = (s: any) => (Array.isArray(s?.selectedEdges) ? s.selectedEdges : []);
+        const startSelected = typeof startMode === 'object' ? getSelected(startMode) : [];
+        const cancelSelected = typeof cancelMode === 'object' ? getSelected(cancelMode) : [];
 
+        const hasExplicit = startSelected.length > 0;
+        const isSelectedEdge = hasExplicit ? startSelected.includes(String(e.id)) : true;
 
-// === Стилизация рёбер по условиям целевого узла ===
-useEffect(() => {
-  setEdges((prev) => {
-    if (!prev.length) return prev;
+        // статус исходной ноды
+        const srcNode = nodeById.get(String(e.source));
+        const srcStatus = ((srcNode?.data as any)?.status || 'NEW') as import('../../components/NodeTopToolbar').NodeStatus;
 
-    const nodeById = new Map(nodes.map((n) => [String(n.id), n]));
-    let changed = false;
+        let stroke = '#007BFF';
+        let dash: string | undefined;
+        let animated = false;
 
-    const next = prev.map((e) => {
-      const target = nodeById.get(String(e.target));
-      if (!target) return e;
+        const iconParts: string[] = [];
 
-      const cond = (target.data as any)?.conditions || {};
-      const startRaw = cond.start;
-      const cancelRaw = cond.cancel;
+        // START rules → зелёные
+        if (startMode === 'AFTER_ANY') {
+          stroke = '#4CAF50';
+          dash = '6 4';
+          animated = true;
+          iconParts.push('➡️');
 
-      type StartCond =
-        | 'AFTER_ANY'
-        | { mode: 'AFTER_SELECTED'; selectedEdges: string[] }
-        | { mode: 'ON_DATE'; date: string }
-        | { mode: 'ON_DATE_AND_AFTER_SELECTED'; date: string; selectedEdges: string[] }
-        | { mode: 'AFTER_MINUTES_AND_AFTER_SELECTED'; minutes: number; selectedEdges: string[] }
-        | { mode: 'AFTER_SELECTED_CANCELLED'; selectedEdges: string[] }; // ⟵ НОВОЕ
-
-      type CancelCond = 'NONE' | { mode: 'CANCEL_IF_ANY_SELECTED_CANCELLED'; selectedEdges: string[] };
-
-      const startMode: StartCond = startRaw || 'AFTER_ANY';
-      const cancelMode: CancelCond = cancelRaw || 'NONE';
-
-      const getSelected = (s: any) => (Array.isArray(s?.selectedEdges) ? s.selectedEdges : []);
-      const startSelected = typeof startMode === 'object' ? getSelected(startMode) : [];
-      const cancelSelected = typeof cancelMode === 'object' ? getSelected(cancelMode) : [];
-
-      const hasExplicit = startSelected.length > 0;
-      const isSelectedEdge = hasExplicit ? startSelected.includes(String(e.id)) : true;
-
-      // статус исходной ноды
-      const srcNode = nodeById.get(String(e.source));
-      const srcStatus = ((srcNode?.data as any)?.status || 'NEW') as import('../../components/NodeTopToolbar').NodeStatus;
-
-      let stroke = '#007BFF';
-      let dash: string | undefined;
-      let animated = false;
-
-      const iconParts: string[] = [];
-
-      // START rules → зелёные
-      if (startMode === 'AFTER_ANY') {
-        // пока не выполнено — пунктирая зелёная
-        stroke = '#4CAF50';
-        dash = '6 4';
-        animated = true;
-        iconParts.push('➡️');
-
-        // если источник уже DONE → сделать сплошной зелёной
-        if (srcStatus === 'DONE') {
-          dash = undefined;
-          animated = false;
-          stroke = '#22c55e';
-        }
-      } else if (typeof startMode === 'object') {
-        switch (startMode.mode) {
-          case 'AFTER_SELECTED': {
-            if (isSelectedEdge) {
-              iconParts.push('➡️');
-              stroke = '#4CAF50';
-              dash = '6 4';
-              animated = true;
-              if (srcStatus === 'DONE') {
-                dash = undefined;
-                animated = false;
-                stroke = '#22c55e';
+          if (srcStatus === 'DONE') {
+            dash = undefined;
+            animated = false;
+            stroke = '#22c55e';
+          }
+        } else if (typeof startMode === 'object') {
+          switch (startMode.mode) {
+            case 'AFTER_SELECTED': {
+              if (isSelectedEdge) {
+                iconParts.push('➡️');
+                stroke = '#4CAF50';
+                dash = '6 4';
+                animated = true;
+                if (srcStatus === 'DONE') {
+                  dash = undefined;
+                  animated = false;
+                  stroke = '#22c55e';
+                }
               }
+              break;
             }
-            break;
-          }
-          case 'ON_DATE': {
-            iconParts.push('📅');
-            // визуально однотипно с ожиданием: тонкий зелёный пунктир
-            stroke = '#4CAF50';
-            dash = '6 4';
-            animated = true;
-            break;
-          }
-          case 'ON_DATE_AND_AFTER_SELECTED': {
-            if (isSelectedEdge) {
+            case 'ON_DATE': {
               iconParts.push('📅');
               stroke = '#4CAF50';
               dash = '6 4';
               animated = true;
-              if (srcStatus === 'DONE') {
-                dash = undefined;
-                animated = false;
-                stroke = '#22c55e';
+              break;
+            }
+            case 'ON_DATE_AND_AFTER_SELECTED': {
+              if (isSelectedEdge) {
+                iconParts.push('📅');
+                stroke = '#4CAF50';
+                dash = '6 4';
+                animated = true;
+                if (srcStatus === 'DONE') {
+                  dash = undefined;
+                  animated = false;
+                  stroke = '#22c55e';
+                }
               }
+              break;
+            }
+            case 'AFTER_MINUTES_AND_AFTER_SELECTED': {
+              if (isSelectedEdge) {
+                iconParts.push('⏰');
+                stroke = '#4CAF50';
+                dash = '6 4';
+                animated = true;
+              }
+              break;
+            }
+            case 'AFTER_SELECTED_CANCELLED': {
+              if (isSelectedEdge) {
+                iconParts.push('🚫');
+                stroke = '#4CAF50';
+                dash = '6 4';
+                animated = true;
+                if (srcStatus === 'CANCELLED') {
+                  dash = undefined;
+                  animated = false;
+                  stroke = '#22c55e';
+                }
+              }
+              break;
+            }
+          }
+        }
+
+        // CANCEL overlay
+        if (typeof cancelMode === 'object' && cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
+          if (cancelSelected.includes(String(e.id))) {
+            iconParts.push('🚫');
+            if (srcStatus === 'CANCELLED') {
+              stroke = '#ef4444';
+              dash = undefined;
+              animated = false;
+            }
+          }
+        }
+
+        const style: any = { ...(e.style as any), stroke, strokeWidth: 2, strokeDasharray: dash };
+        const label = iconParts.join(' ');
+        const data = { ...(e.data as any), icon: label };
+
+        const needUpdate =
+          e.animated !== animated ||
+          (e.style as any)?.stroke !== style.stroke ||
+          (e.style as any)?.strokeDasharray !== style.strokeDasharray ||
+          ((e.data as any)?.icon ?? '') !== (label ?? '') ||
+          (typeof e.label === 'string' ? e.label : '') !== label;
+
+        if (needUpdate) {
+          changed = true;
+          return { ...e, animated, style, markerEnd: { type: MarkerType.ArrowClosed }, data, label } as typeof e;
+        }
+        return e;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [nodes, edges, setEdges]);
+
+  // Автоматический переход статуса узлов по условиям + таймер для "через X минут"
+  const startTimersRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const byId = new Map(nodes.map((n) => [String(n.id), n]));
+    const incomingByTarget = new Map<string, string[]>(); // target -> edgeIds[]
+    edges.forEach((e) => {
+      const arr = incomingByTarget.get(String(e.target)) || [];
+      arr.push(String(e.id));
+      incomingByTarget.set(String(e.target), arr);
+    });
+
+    const sourceDone = (edgeIds: string[]) =>
+      edgeIds.some((eid) => {
+        const e = edges.find((x) => String(x.id) === eid);
+        const src = e ? byId.get(String(e.source)) : undefined;
+        return ((src?.data as any)?.status || 'NEW') === 'DONE';
+      });
+
+    const sourceCanceled = (edgeIds: string[]) =>
+      edgeIds.some((eid) => {
+        const e = edges.find((x) => String(x.id) === eid);
+        const src = e ? byId.get(String(e.source)) : undefined;
+        return ((src?.data as any)?.status || 'NEW') === 'CANCELLED';
+      });
+
+    const updates: Array<{ id: string; status: import('../../components/NodeTopToolbar').NodeStatus }> = [];
+
+    nodes.forEach((n) => {
+      const d: any = n.data || {};
+      const cur: string = d.status || 'NEW';
+      const cond = d.conditions || {};
+      const start = (cond.start ?? 'AFTER_ANY') as StartCondition;
+      const cancel = (cond.cancel ?? 'NONE') as CancelCondition;
+      const incoming = incomingByTarget.get(String(n.id)) || [];
+
+      // отмена
+      if (typeof cancel === 'object' && cancel.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
+        const sel = Array.isArray(cancel.selectedEdges) ? cancel.selectedEdges : [];
+        if (sel.length > 0 && sourceCanceled(sel) && cur !== 'DONE' && cur !== 'CANCELLED') {
+          updates.push({ id: n.id, status: 'CANCELLED' });
+          return;
+        }
+      }
+
+      // старт уже работающих/завершённых не трогаем
+      if (cur !== 'NEW' && cur !== 'WAITING') return;
+
+      if (start === 'AFTER_ANY') {
+        if (sourceDone(incoming)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
+      } else if (typeof start === 'object') {
+        const sel =
+          typeof start === 'object' && Array.isArray((start as any).selectedEdges)
+            ? ((start as any).selectedEdges as string[])
+            : incoming;
+        switch (start.mode) {
+          case 'AFTER_SELECTED':
+            if (sourceDone(sel)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
+            break;
+          case 'AFTER_SELECTED_CANCELLED': {
+            if (sourceCanceled(sel)) {
+              updates.push({ id: n.id, status: 'IN_PROGRESS' });
             }
             break;
           }
+          case 'ON_DATE':
+            if (start.date && Date.now() >= Date.parse(start.date)) {
+              updates.push({ id: n.id, status: 'IN_PROGRESS' });
+            }
+            break;
+          case 'ON_DATE_AND_AFTER_SELECTED':
+            if (start.date && Date.now() >= Date.parse(start.date) && sourceDone(sel)) {
+              updates.push({ id: n.id, status: 'IN_PROGRESS' });
+            }
+            break;
           case 'AFTER_MINUTES_AND_AFTER_SELECTED': {
-            if (isSelectedEdge) {
-              iconParts.push('⏰');
-              stroke = '#4CAF50';
-              dash = '6 4';
-              animated = true;
-              // переход в сплошную зелёную произойдёт таймером — тут оставляем пунктир
-            }
-            break;
-          }
-          case 'AFTER_SELECTED_CANCELLED': { // ⟵ НОВОЕ
-            if (isSelectedEdge) {
-              iconParts.push('🚫');
-              stroke = '#4CAF50';
-              dash = '6 4';
-              animated = true;
-              // как только источник ОТМЕНЁН — считаем триггер выполнен → сплошная зелёная
-              if (srcStatus === 'CANCELLED') {
-                dash = undefined;
-                animated = false;
-                stroke = '#22c55e';
+            if (sourceDone(sel)) {
+              const key = String(n.id);
+              if (!startTimersRef.current[key]) {
+                const ms = Math.max(1, Number(start.minutes || 1)) * 60_000;
+                startTimersRef.current[key] = window.setTimeout(() => {
+                  setNodes((nds) =>
+                    nds.map((x) =>
+                      x.id === n.id ? { ...x, data: { ...(x.data as any), status: 'IN_PROGRESS' } } : x
+                    )
+                  );
+                  delete startTimersRef.current[key];
+                }, ms);
               }
             }
             break;
           }
         }
       }
-
-      // CANCEL rules overlay → добавляем 🚫 к подписи + сплошная красная, если триггер сработал
-      if (typeof cancelMode === 'object' && cancelMode.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
-        if (cancelSelected.includes(String(e.id))) {
-          // рядом с текущей иконкой
-          iconParts.push('🚫');
-          // если источник отменён → сплошная красная
-          if (srcStatus === 'CANCELLED') {
-            stroke = '#ef4444';
-            dash = undefined;
-            animated = false;
-          }
-        }
-      }
-
-      const style: any = { ...(e.style as any), stroke, strokeWidth: 2, strokeDasharray: dash };
-      const label = iconParts.join(' ');
-      const data = { ...(e.data as any), icon: label };
-
-      const needUpdate =
-        e.animated !== animated ||
-        (e.style as any)?.stroke !== style.stroke ||
-        (e.style as any)?.strokeDasharray !== style.strokeDasharray ||
-        ((e.data as any)?.icon ?? '') !== (label ?? '') ||
-        (typeof e.label === 'string' ? e.label : '') !== label;
-
-      if (needUpdate) {
-        changed = true;
-        return { ...e, animated, style, markerEnd: { type: MarkerType.ArrowClosed }, data, label } as typeof e;
-      }
-      return e;
     });
 
-    return changed ? next : prev;
-  });
-}, [nodes, edges, setEdges]);
+    if (updates.length) {
+      setNodes((nds) =>
+        nds.map((n) => {
+          const u = updates.find((x) => x.id === n.id);
+          return u ? { ...n, data: { ...(n.data as any), status: u.status } } : n;
+        })
+      );
+    }
 
-
-
-
-// Автоматический переход статуса узлов по условиям + таймер для "через X минут"
-const startTimersRef = useRef<Record<string, number>>({});
-
-useEffect(() => {
-  const byId = new Map(nodes.map((n) => [String(n.id), n]));
-  const incomingByTarget = new Map<string, string[]>(); // target -> edgeIds[]
-  edges.forEach((e) => {
-    const arr = incomingByTarget.get(String(e.target)) || [];
-    arr.push(String(e.id));
-    incomingByTarget.set(String(e.target), arr);
-  });
-
-  const sourceDone = (edgeIds: string[]) =>
-    edgeIds.some((eid) => {
-      const e = edges.find((x) => String(x.id) === eid);
-      const src = e ? byId.get(String(e.source)) : undefined;
-      return ((src?.data as any)?.status || 'NEW') === 'DONE';
+    // чистим таймеры у удалённых узлов
+    Object.keys(startTimersRef.current).forEach((id) => {
+      if (!nodes.some((n) => String(n.id) === id)) {
+        window.clearTimeout(startTimersRef.current[id]);
+        delete startTimersRef.current[id];
+      }
     });
 
-  const sourceCanceled = (edgeIds: string[]) =>
-    edgeIds.some((eid) => {
-      const e = edges.find((x) => String(x.id) === eid);
-      const src = e ? byId.get(String(e.source)) : undefined;
-      return ((src?.data as any)?.status || 'NEW') === 'CANCELLED';
-    });
+    return () => {};
+  }, [nodes, edges, setNodes]);
 
-  const updates: Array<{ id: string; status: import('../../components/NodeTopToolbar').NodeStatus }> = [];
-
-  nodes.forEach((n) => {
-    const d: any = n.data || {};
-    const cur: string = d.status || 'NEW';
-    const cond = d.conditions || {};
-  const start = (cond.start ?? 'AFTER_ANY') as StartCondition;
-const cancel = (cond.cancel ?? 'NONE') as CancelCondition;
-    const incoming = incomingByTarget.get(String(n.id)) || [];
-
-    // отмена
-    if (typeof cancel === 'object' && cancel.mode === 'CANCEL_IF_ANY_SELECTED_CANCELLED') {
-      const sel = Array.isArray(cancel.selectedEdges) ? cancel.selectedEdges : [];
-      if (sel.length > 0 && sourceCanceled(sel) && cur !== 'DONE' && cur !== 'CANCELLED') {
-        updates.push({ id: n.id, status: 'CANCELLED' });
-        return;
-      }
-    }
-
-    // старт уже работающих/завершённых не трогаем
-    if (cur !== 'NEW' && cur !== 'WAITING') return;
-
-    if (start === 'AFTER_ANY') {
-      if (sourceDone(incoming)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
-    } else if (typeof start === 'object') {
-      const sel =
-  typeof start === 'object' && Array.isArray((start as any).selectedEdges)
-    ? (start as any).selectedEdges as string[]
-    : incoming;
-      switch (start.mode) {
-        case 'AFTER_SELECTED':
-          if (sourceDone(sel)) updates.push({ id: n.id, status: 'IN_PROGRESS' });
-          break;
-
-
-
-
-case 'AFTER_SELECTED_CANCELLED': {
-  if (sourceCanceled(sel)) {
-    updates.push({ id: n.id, status: 'IN_PROGRESS' });
-  }
-  break;
-}
-
-
-
-
-
-
-        case 'ON_DATE':
-          if (start.date && Date.now() >= Date.parse(start.date)) {
-            updates.push({ id: n.id, status: 'IN_PROGRESS' });
-          }
-          break;
-        case 'ON_DATE_AND_AFTER_SELECTED':
-          if (start.date && Date.now() >= Date.parse(start.date) && sourceDone(sel)) {
-            updates.push({ id: n.id, status: 'IN_PROGRESS' });
-          }
-          break;
-        case 'AFTER_MINUTES_AND_AFTER_SELECTED': {
-          // если кто-то из выбранных завершился — ставим таймер
-          if (sourceDone(sel)) {
-            const key = String(n.id);
-            if (!startTimersRef.current[key]) {
-              const ms = Math.max(1, Number(start.minutes || 1)) * 60_000;
-              startTimersRef.current[key] = window.setTimeout(() => {
-                setNodes((nds) =>
-                  nds.map((x) =>
-                    x.id === n.id ? { ...x, data: { ...(x.data as any), status: 'IN_PROGRESS' } } : x
-                  )
-                );
-                delete startTimersRef.current[key];
-              }, ms);
-            }
-          }
-          break;
-        }
-      }
-    }
-  });
-
-  if (updates.length) {
-    setNodes((nds) =>
-      nds.map((n) => {
-        const u = updates.find((x) => x.id === n.id);
-        return u ? { ...n, data: { ...(n.data as any), status: u.status } } : n;
-      })
-    );
-  }
-
-  // чистим таймеры у удалённых узлов
-  Object.keys(startTimersRef.current).forEach((id) => {
-    if (!nodes.some((n) => String(n.id) === id)) {
-      window.clearTimeout(startTimersRef.current[id]);
-      delete startTimersRef.current[id];
-    }
-  });
-
-  return () => {
-    // на размонтировании очищать не нужно, но оставлю для безопасности
-  };
-}, [nodes, edges, setNodes]);
-
-
-
-const onConnect = useCallback(
-  (connection: Connection) =>
-    setEdges((eds) =>
-      addEdge(
-        {
-          id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          ...connection,
-          type: 'cond',
-          data: { icon: '➡️' },
-          markerEnd: { type: MarkerType.ArrowClosed },
-        },
-        eds
-      )
-    ),
-  [setEdges]
-);
-
-
-
+  const onConnect = useCallback(
+    (connection: Connection) =>
+      setEdges((eds) =>
+        addEdge(
+          {
+            id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            ...connection,
+            type: 'cond',
+            data: { icon: '➡️' },
+            markerEnd: { type: MarkerType.ArrowClosed },
+          },
+          eds
+        )
+      ),
+    [setEdges]
+  );
 
   /* ---------- добавление ноды ---------- */
   const nextIdRef = useRef<number>(1);
@@ -1006,61 +948,49 @@ const onConnect = useCallback(
     }
   };
 
+  const onConnectStart: OnConnectStart = useCallback(
+    (_, params) => {
+      connectingNodeId.current = params?.nodeId ?? null;
+      connectingHandleType.current = (params?.handleType as 'source' | 'target' | undefined) ?? null;
 
-
-
-const onConnectStart: OnConnectStart = useCallback(
-  (_, params) => {
-    connectingNodeId.current = params?.nodeId ?? null;
-    connectingHandleType.current = (params?.handleType as 'source' | 'target' | undefined) ?? null;
-
-    detachPointerUp();
-    pointerUpHandler.current = (e: PointerEvent) => {
-      const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
-      const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
-
-      // Если отпустили в ПУСТОМ месте — создаём новую ноду и соединяем
-      if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
-        const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-        const newId = addNodeAt(pos, '', true);
-
-        const source =
-          connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
-        const target =
-          connectingHandleType.current === 'source' ? newId : connectingNodeId.current;
-
-        setEdges((eds) =>
-          addEdge(
-            {
-              id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-              source,
-              target,
-              type: 'cond',
-              data: { icon: '➡️' },
-              markerEnd: { type: MarkerType.ArrowClosed },
-            },
-            eds
-          )
-        );
-      }
-      // Если отпустили на узле/хэндле — ничего не делаем здесь:
-      // штатный onConnect сам создаст связь
-
-      connectingNodeId.current = null;
-      connectingHandleType.current = null;
       detachPointerUp();
-    };
+      pointerUpHandler.current = (e: PointerEvent) => {
+        const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
+        const overHandleOrNode = !!el?.closest?.('.react-flow__handle, .react-flow__node');
 
-    window.addEventListener('pointerup', pointerUpHandler.current, { passive: true, once: true });
-  },
-  [addNodeAt, screenToFlowPosition, setEdges]
-);
+        if (!overHandleOrNode && connectingNodeId.current && connectingHandleType.current) {
+          const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+          const newId = addNodeAt(pos, '', true);
 
+          const source =
+            connectingHandleType.current === 'source' ? connectingNodeId.current : newId;
+          const target =
+            connectingHandleType.current === 'source' ? newId : connectingNodeId.current;
 
+          setEdges((eds) =>
+            addEdge(
+              {
+                id: `e_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                source,
+                target,
+                type: 'cond',
+                data: { icon: '➡️' },
+                markerEnd: { type: MarkerType.ArrowClosed },
+              },
+              eds
+            )
+          );
+        }
 
+        connectingNodeId.current = null;
+        connectingHandleType.current = null;
+        detachPointerUp();
+      };
 
-
-
+      window.addEventListener('pointerup', pointerUpHandler.current, { passive: true, once: true });
+    },
+    [addNodeAt, screenToFlowPosition, setEdges]
+  );
 
   useEffect(() => () => detachPointerUp(), []);
 
@@ -1087,7 +1017,7 @@ const onConnectStart: OnConnectStart = useCallback(
         },
       ];
       setNodes(demo);
-setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond', data: {} }]);
+      setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond', data: {} }]);
       setLoadInfo(`Демо: узлов ${demo.length}, связей 1`);
       setTimeout(() => fitSafe(), 120);
       return;
@@ -1105,9 +1035,8 @@ setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond', data
       const { process, nodes: n = [], edges: e = [] } = data;
       setRunMode(process?.runMode === 'SCHEDULE' ? 'SCHEDULE' : 'MANUAL');
 
-let rfNodes: Node<EditableData>[];
-let rfEdges: Edge<CondEdgeData>[];  // ← так
-
+      let rfNodes: Node<EditableData>[];
+      let rfEdges: Edge<CondEdgeData>[];
 
       if (n.length === 0) {
         rfNodes = [
@@ -1128,14 +1057,14 @@ let rfEdges: Edge<CondEdgeData>[];  // ← так
             targetPosition: Position.Left,
           },
         ];
-rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} }];
+        rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} }];
       } else {
         rfNodes = n.map((it: any) => {
           const meta = safeParseJson(it.metaJson);
           const conditions = meta?.conditions || undefined;
           const assigneeName = meta?.assigneeName || undefined;
           const assigneeChatId = it.assigneeChatId ? String(it.assigneeChatId) : null;
-          const statusFromDb = (String(it.status || 'NEW').toUpperCase() as NodeStatus);
+          const statusFromDb = String(it.status || 'NEW').toUpperCase() as NodeStatus;
 
           return {
             id: String(it.id),
@@ -1155,15 +1084,13 @@ rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', da
           };
         });
 
-rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
-  id: String(it.id),
-  source: String(it.sourceNodeId),
-  target: String(it.targetNodeId),
-  type: 'cond',
-  // data опциональна, но можно сразу положить пустой объект
-  data: {},
-}));
-
+        rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
+          id: String(it.id),
+          source: String(it.sourceNodeId),
+          target: String(it.targetNodeId),
+          type: 'cond',
+          data: {},
+        }));
       }
 
       setNodes(rfNodes);
@@ -1181,8 +1108,7 @@ rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
 
   useEffect(() => {
     loadProcess();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId]);
+  }, [groupId]); // eslint-disable-line
 
   const handleSave = useCallback(async () => {
     if (!groupId) {
@@ -1194,37 +1120,25 @@ rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
       setLoadInfo('Сохранение…');
 
       // узлы
+      const payloadNodes = nodes.map((n, i) => {
+        const d = (n.data || {}) as any;
 
+        const metaJson: any = {};
+        if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
+        if (d.conditions) metaJson.conditions = d.conditions;
 
-
-const payloadNodes = nodes.map((n, i) => {
-  const d = (n.data || {}) as any;
-
-  const metaJson: any = {};
-  if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
-  if (d.conditions)   metaJson.conditions   = d.conditions; // <-- все условия тут
-
-  return {
-    id: String(n.id),
-    title: String(d.label || `Новая задача ${i + 1}`),
-    posX: Number(n.position.x) || 0,
-    posY: Number(n.position.y) || 0,
-    assigneeChatId: d.assigneeChatId != null ? String(d.assigneeChatId) : null,
-    createdByChatId: d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
-    type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
-    status: (d.status as string) ?? 'NEW',
-    metaJson,
-  };
-});
-
-
-
-
-
-
-
-
-
+        return {
+          id: String(n.id),
+          title: String(d.label || `Новая задача ${i + 1}`),
+          posX: Number(n.position.x) || 0,
+          posY: Number(n.position.y) || 0,
+          assigneeChatId: d.assigneeChatId != null ? String(d.assigneeChatId) : null,
+          createdByChatId: d.createdByChatId != null ? String(d.createdByChatId) : String(chatId),
+          type: (d.type === 'EVENT' ? 'EVENT' : 'TASK') as 'EVENT' | 'TASK',
+          status: (d.status as string) ?? 'NEW',
+          metaJson,
+        };
+      });
 
       // рёбра
       const payloadEdges = edges.map((e) => ({
@@ -1396,43 +1310,40 @@ const payloadNodes = nodes.map((n, i) => {
 
       {/* Модалка условий */}
       {condEditor.open && (
-<NodeConditionsModal
-  open={condEditor.open}
-  onClose={() => setCondEditor({ open: false, nodeId: null })}
-  onDelete={() => {
-    setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
-    setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
-    setCondEditor({ open: false, nodeId: null });
-  }}
-  onSave={({ start, cancel }) => {
-    if (!condEditor.nodeId) return;
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === condEditor.nodeId ? { ...n, data: { ...(n.data as any), conditions: { start, cancel } } } : n
-      )
-    );
-    setCondEditor({ open: false, nodeId: null });
-  }}
-  initialStart={(nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start}
-  initialCancel={(nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.cancel}
-  prevEdges={
-    (() => {
-      const nid = condEditor.nodeId;
-      if (!nid) return [];
-      return edges
-        .filter((e) => String(e.target) === String(nid))
-        .map((e) => ({
-          id: String(e.id),
-          label: (() => {
-            const srcId = String(e.source);
-            const title = (nodes.find((n) => String(n.id) === srcId)?.data as any)?.label;
-            return title || srcId;
-          })(),
-        }));
-    })()
-  }
-/>
-
+        <NodeConditionsModal
+          open={condEditor.open}
+          onClose={() => setCondEditor({ open: false, nodeId: null })}
+          onDelete={() => {
+            setNodes((nds) => nds.filter((n) => n.id !== condEditor.nodeId));
+            setEdges((eds) => eds.filter((e) => e.source !== condEditor.nodeId && e.target !== condEditor.nodeId));
+            setCondEditor({ open: false, nodeId: null });
+          }}
+          onSave={({ start, cancel }) => {
+            if (!condEditor.nodeId) return;
+            setNodes((nds) =>
+              nds.map((n) =>
+                n.id === condEditor.nodeId ? { ...n, data: { ...(n.data as any), conditions: { start, cancel } } } : n
+              )
+            );
+            setCondEditor({ open: false, nodeId: null });
+          }}
+          initialStart={(nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.start}
+          initialCancel={(nodes.find((n) => n.id === condEditor.nodeId)?.data as any)?.conditions?.cancel}
+          prevEdges={(() => {
+            const nid = condEditor.nodeId;
+            if (!nid) return [];
+            return edges
+              .filter((e) => String(e.target) === String(nid))
+              .map((e) => ({
+                id: String(e.id),
+                label: (() => {
+                  const srcId = String(e.source);
+                  const title = (nodes.find((n) => String(n.id) === srcId)?.data as any)?.label;
+                  return title || srcId;
+                })(),
+              }));
+          })()}
+        />
       )}
     </div>
   );
