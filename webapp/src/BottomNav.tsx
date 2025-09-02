@@ -12,11 +12,11 @@ export default function BottomNav({
 }) {
   const items = useMemo(
     () => [
-      { key: 'home',          icon: '🏠︎', label: 'Главная' },
-      { key: 'groups',        icon: '🗂️', label: 'Группы' },
-      { key: 'calendar',      icon: '📅', label: 'Календарь' },
-      { key: 'notifications', icon: '🔔', label: 'Уведомления' },
-      { key: 'settings',      icon: '⚙️', label: 'Настройки' },
+      { key: 'home',     icon: '   🏠︎    ', label: 'главная' },
+      { key: 'groups',   icon: '   🗂️   ', label: 'группа' },
+      { key: 'calendar', icon: '   📅   ', label: 'календарь' },
+      // notifications убрали из нижнего меню
+      { key: 'settings', icon: '  ⚙️    ', label: '' },
     ] as const,
     []
   );
@@ -34,7 +34,15 @@ export default function BottomNav({
         zIndex: 40,
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 4, padding: 8 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-around',
+          gap: 6,
+          padding: 8,
+        }}
+      >
         {items.map((it) => {
           const active = current === (it.key as TabKey);
           return (
@@ -42,20 +50,20 @@ export default function BottomNav({
               key={it.key}
               onClick={() => onChange(it.key as TabKey)}
               style={{
-                display: 'flex',
-                flexDirection: 'column',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: 4,
-                padding: '8px 4px',
-                borderRadius: 10,
+                gap: 6,
+                padding: '8px 10px',
+                borderRadius: 12,
                 border: '1px solid #1f2937',
                 background: active ? '#18223b' : 'transparent',
                 color: active ? '#e5e7eb' : '#9ca3af',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
             >
-              <span style={{ fontSize: 18, lineHeight: 1 }}>{it.icon}</span>
-              <span style={{ fontSize: 11 }}>{it.label}</span>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{it.icon}</span>
+              <span style={{ fontSize: 13 }}>{it.label}</span>
             </button>
           );
         })}

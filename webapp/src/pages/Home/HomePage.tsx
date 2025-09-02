@@ -6,6 +6,15 @@ import { listMyFeed, type TaskFeedItem } from '../../api';
 type Role = 'all' | 'creator' | 'assignee' | 'watcher';
 const STATUS_LABELS = ['Новые','В работе','Готово','Согласование','Ждёт'];
 
+/** Короткий формат даты для событий */
+function fmtShort(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function HomePage({
   chatId,
   onOpenTask,
@@ -211,87 +220,121 @@ export default function HomePage({
         )}
       </div>
 
-{/* Список */}
-<div style={{ display:'flex', flexDirection:'column', gap: 10 }}>
-  {items.map((t) => {
-    // статус из /tasks/feed (если у тебя тип TaskFeedItem без status — оставь (t as any).status)
-    const status = (t as any).status ?? '';
-    const s = String(status).trim().toLowerCase();
-    const done = s.startsWith('готов') || s.startsWith('done');
+      {/* Список */}
+      <div style={{ display:'flex', flexDirection:'column', gap: 10 }}>
+        {items.map((t) => {
+// 1) статус → «готово»
+const status = (t as any).status ?? '';
+const s = String(status).trim().toLowerCase();
+const done = s.startsWith('готов') || s.startsWith('done');
 
-    const cardBg   = done ? '#E8F5E9' : '#FFFFFF';  // светло-зелёный для «Готово»
-    const cardBrd  = done ? '#C8E6C9' : '#e5e7eb';
-    const textCol  = '#0f1216';
-    const groupChipBg = done ? '#2e7d32' : '#3b4b7a';  // тёмно-зелёный чип у «Готово»
+// 2) событие? — смотрим сразу несколько вариантов полей
+const eventTypeRaw = String(
+  (t as any).type ??
+  (t as any).taskType ??
+  (t as any).kind ??
+  (t as any).task_kind ??
+  ''
+).toUpperCase();
 
-    return (
-      <button
-        key={t.id}
-        onClick={() => {
-          onOpenTask(t.id);
-          try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
-        }}
-        style={{
-          textAlign:'left',
-          background: cardBg,
-          color: textCol,
-          border:`1px solid ${cardBrd}`,
-          borderRadius: 16,
-          padding: 12,
-          cursor: 'pointer',
-          boxShadow: '0 2px 8px rgba(0,0,0,.06)',
-        }}
-      >
-        <div style={{ fontSize:12, opacity:.6, marginBottom:4 }}>#{t.id.slice(0,6)}</div>
+const isEvent =
+  eventTypeRaw === 'EVENT' ||
+  (t as any).isEvent === true ||
+  Boolean((t as any).startAt || (t as any).eventStart || (t as any).start_at);
 
-        {/* Заголовок + бейдж статуса справа (показываем только для «Готово») */}
-        <div style={{ display:'flex', alignItems:'start', gap:8, marginBottom:8 }}>
-          <div style={{ fontSize:16, whiteSpace:'pre-wrap', wordBreak:'break-word', flex:1 }}>
-            {t.text}
-          </div>
-          {done && (
-            <span
-              title={status || 'Готово'}
+// 3) даты события — берём из любого доступного поля
+const startAt =
+  ((t as any).startAt ??
+   (t as any).eventStart ??
+   (t as any).start_at) as string | undefined;
+
+const endAt =
+  ((t as any).endAt ??
+   (t as any).eventEnd ??
+   (t as any).end_at) as string | undefined;
+
+const dateLine = isEvent && startAt
+  ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}`
+  : null;
+
+          // 4) стили карточки
+          const cardBg   = done ? '#E8F5E9' : '#FFFFFF';
+          const cardBrd  = done ? '#C8E6C9' : '#e5e7eb';
+          const textCol  = '#0f1216';
+          const groupChipBg = done ? '#2e7d32' : '#3b4b7a';
+
+          return (
+            <button
+              key={t.id}
+              onClick={() => {
+                onOpenTask(t.id);
+                try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+              }}
               style={{
-                background:'#D1F2DC',
-                color:'#0f5132',
-                border:'1px solid #A3DFB9',
-                padding:'2px 8px',
-                borderRadius: 999,
-                fontSize:12,
-                whiteSpace:'nowrap'
+                textAlign:'left',
+                background: cardBg,
+                color: textCol,
+                border:`1px solid ${cardBrd}`,
+                borderRadius: 16,
+                padding: 12,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,.06)',
               }}
             >
-              ✓ Готово
-            </span>
-          )}
-        </div>
+              <div style={{ fontSize:12, opacity:.6, marginBottom:4 }}>#{t.id.slice(0,6)}</div>
 
-        {/* плашка с названием группы */}
-        <div
-          style={{
-            display:'inline-block',
-            background: groupChipBg,
-            color:'#fff',
-            padding:'3px 8px',
-            borderRadius:8,
-            fontSize:12,
-            marginBottom:6
-          }}
-        >
-          {t.groupTitle}
-        </div>
+              {/* Заголовок + бейдж статуса справа */}
+              <div style={{ display:'flex', alignItems:'start', gap:8, marginBottom:6 }}>
+                <div style={{ fontSize:16, whiteSpace:'pre-wrap', wordBreak:'break-word', flex:1 }}>
+                  {isEvent ? '📅 ' : ''}{t.text}
+                </div>
+                {done && (
+                  <span
+                    title={status || 'Готово'}
+                    style={{
+                      background:'#D1F2DC',
+                      color:'#0f5132',
+                      border:'1px solid #A3DFB9',
+                      padding:'2px 8px',
+                      borderRadius: 999,
+                      fontSize:12,
+                      whiteSpace:'nowrap'
+                    }}
+                  >
+                    ✓ Готово
+                  </span>
+                )}
+              </div>
 
-        <div style={{ fontSize:12, opacity:.8, display:'flex', gap:10 }}>
-          <span>👤 {t.creatorName}</span>
-          {t.assigneeName ? <span>→ {t.assigneeName}</span> : null}
-          <span style={{ marginLeft:'auto' }}>{new Date(t.updatedAt).toLocaleString()}</span>
-        </div>
-      </button>
-    );
-  })}
-</div>
+              {/* дата-строка под заголовком — только для событий */}
+              {dateLine && (
+                <div style={{ fontSize:12, opacity:.75, marginBottom: 6 }}>{dateLine}</div>
+              )}
 
+              {/* плашка с названием группы */}
+              <div
+                style={{
+                  display:'inline-block',
+                  background: groupChipBg,
+                  color:'#fff',
+                  padding:'3px 8px',
+                  borderRadius:8,
+                  fontSize:12,
+                  marginBottom:6
+                }}
+              >
+                {t.groupTitle}
+              </div>
+
+              <div style={{ fontSize:12, opacity:.8, display:'flex', gap:10 }}>
+                <span>👤 {t.creatorName}</span>
+                {t.assigneeName ? <span>→ {t.assigneeName}</span> : null}
+                <span style={{ marginLeft:'auto' }}>{new Date(t.updatedAt).toLocaleString()}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Показать ещё */}
       <div style={{ display:'flex', justifyContent:'center', marginTop: 12 }}>

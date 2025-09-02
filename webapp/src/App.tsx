@@ -276,7 +276,12 @@ export default function App() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<TabKey>('groups');
+
+
+const [tab, setTab] = useState<TabKey>('home');
+
+
+
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
   const [showGroupEdit, setShowGroupEdit] = useState(false);
   const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
@@ -362,14 +367,14 @@ useEffect(() => {
   }, [chatId]);
 
   // системная кнопка назад
-  useEffect(() => {
-    if (taskId) return; // <-- когда TaskView, кнопку контролирует TaskView
-    if (tab === 'groups' && groupsPage === 'detail') {
-      WebApp?.BackButton?.show?.();
-    } else {
-      WebApp?.BackButton?.hide?.();
-    }
-  }, [tab, groupsPage, taskId]);
+ useEffect(() => {
+  if (taskId) return; // TaskView сам рулит back
+  if ((tab === 'groups' && groupsPage === 'detail') || tab === 'notifications') {
+    WebApp?.BackButton?.show?.();
+  } else {
+    WebApp?.BackButton?.hide?.();
+  }
+}, [tab, groupsPage, taskId]);
 
   const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
@@ -549,9 +554,10 @@ if (parsed.type === 'newtask') {
 
   }, [chatId, reloadGroups, loadBoard]);
 
+
+
 useEffect(() => {
   const onBack = () => {
-    // ⬇️ сначала проверяем процесс
     if (showProcess) {
       setShowProcess(false);
       const url = new URL(window.location.href);
@@ -563,6 +569,13 @@ useEffect(() => {
 
     if (taskId) return;
 
+    // ⬇️ Новое: если мы на экране уведомлений — возвращаемся в Настройки
+    if (tab === 'notifications') {
+      setTab('settings');
+      WebApp?.BackButton?.hide?.();
+      return;
+    }
+
     if (tab === 'groups' && groupsPage === 'detail') {
       backToGroupsList();
       return;
@@ -571,9 +584,11 @@ useEffect(() => {
     try { WebApp?.close(); } catch {}
   };
 
-    WebApp?.onEvent?.('backButtonClicked', onBack);
-    return () => WebApp?.offEvent?.('backButtonClicked', onBack);
- }, [taskId, tab, groupsPage, showProcess]);
+  WebApp?.onEvent?.('backButtonClicked', onBack);
+  return () => WebApp?.offEvent?.('backButtonClicked', onBack);
+}, [taskId, tab, groupsPage, showProcess]);
+
+
 
   // навигация к задаче
   const openTask = (id: string) => {
@@ -863,6 +878,26 @@ const title =
       </button>
     ) : null}
 
+
+{tab === 'notifications' ? (
+  <button
+    onClick={() => setTab('settings')}
+    title="К настройкам"
+    style={{
+      background: 'transparent',
+      border: '1px solid #2a3346',
+      color: '#e8eaed',
+      borderRadius: 10,
+      padding: '6px 8px',
+      cursor: 'pointer',
+    }}
+  >
+    ⟵ Назад
+  </button>
+) : null}
+
+
+
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
       {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
@@ -891,6 +926,9 @@ const title =
 
 
 </div>
+
+
+
 
 {tab === 'home' ? (
 
@@ -1011,6 +1049,46 @@ const title =
     onOpenTask={openTask}
   />
 
+) : tab === 'settings' ? (
+
+  <div
+    style={{
+      background: '#1b2030',
+      border: '1px solid #2a3346',
+      borderRadius: 16,
+      padding: 12,
+      display: 'grid',
+      gap: 8,
+    }}
+  >
+    {/* пункт "Уведомления" */}
+    <button
+      onClick={() => setTab('notifications')}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        textAlign: 'left',
+        background: '#202840',
+        color: '#e8eaed',
+        border: '1px solid #2a3346',
+        borderRadius: 12,
+        padding: '10px 12px',
+        cursor: 'pointer',
+      }}
+    >
+      <span style={{ fontSize: 18 }}>🔔</span>
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 2 }}>Уведомления</div>
+        <div style={{ fontSize: 12, opacity: 0.75 }}>
+          Настроить подписки и посмотреть историю
+        </div>
+      </div>
+    </button>
+
+    {/* тут можно добавить другие пункты настроек позже */}
+  </div>
+
 ) : tab === 'notifications' ? (
 
   <NotificationsView />
@@ -1020,6 +1098,7 @@ const title =
   <TabPlaceholder tab={tab} />
 
 )}
+
 
 
 

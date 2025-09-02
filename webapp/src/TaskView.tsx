@@ -460,18 +460,29 @@ return; // не сбрасываем saving до завершения анима
 
 
 <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 8 }}>
-  <label style={{ display: 'block', fontSize: 14, opacity: 0.85 }}>
-    {task?.type === 'EVENT' ? 'Событие' : 'Текст задачи'}
-  </label>
+  <div style={{ fontSize: 14, opacity: 0.85 }}>
+    {(() => {
+      const creator = (task as any)?.creatorName;
+      if (task?.type === 'EVENT') {
+        return creator
+          ? <>Событие от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
+          : 'Событие';
+      }
+      return creator
+        ? <>Задача от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
+        : 'Задача';
+    })()}
+  </div>
 
   {task?.id ? (
     <ShareNewTaskMenu
       taskId={task.id}
       isEvent={task?.type === 'EVENT'}
-      onDelete={handleDelete}      // 👈 сюда передаём текущий обработчик удаления
+      onDelete={handleDelete}
     />
   ) : null}
 </div>
+
 
 
 
@@ -529,24 +540,6 @@ return; // не сбрасываем saving до завершения анима
 
           {/* Постановщик */}
      {/* Организатор / Постановщик */}
-{(task as any).creatorName ? (
-  <div
-    style={{
-      padding: '10px 14px',
-      borderRadius: 12,
-      border: '1px solid #2a3346',
-      background: '#1a2030',
-      color: '#e8eaed',
-      display: 'inline-flex',
-      gap: 8,
-      alignItems: 'center',
-    }}
-    title={task?.type === 'EVENT' ? 'Организатор события' : 'Постановщик задачи'}
-  >
-    <span style={{ opacity: 0.8 }}>{task?.type === 'EVENT' ? 'Организатор:' : 'Постановщик:'}</span>
-    <strong>{(task as any).creatorName}</strong>
-  </div>
-) : null}
 
 
 
