@@ -783,17 +783,38 @@ const submit = async () => {
           </label>
         )}
 
-        {(groupTab === 'own' ? ownGroups : memberGroups).map((g) => (
-          <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="radio"
-              name="group"
-              checked={groupId === g.id}
-              onChange={() => setGroupId(g.id)}
-            />
-            <span>{g.title}</span>
-          </label>
-        ))}
+{groupTab === 'own'
+  ? ownGroups.map((g) => (
+      <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="radio"
+          name="group"
+          checked={groupId === g.id}
+          onChange={() => setGroupId(g.id)}
+        />
+        <span>{g.title}</span>
+      </label>
+    ))
+  : memberGroups.map((g) => (
+      <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          type="radio"
+          name="group"
+          checked={groupId === g.id}
+          onChange={() => setGroupId(g.id)}
+        />
+        <span>
+          {g.title}
+          {g.ownerName && (
+            <span style={{ opacity: 0.7, marginLeft: 6 }}>
+              (👑 {g.ownerName})
+            </span>
+          )}
+        </span>
+      </label>
+    ))}
+
+
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
