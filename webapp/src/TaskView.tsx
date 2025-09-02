@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import type { Task, TaskMedia } from './api';
-import { listGroups, API_BASE } from './api';
+import { listGroups, API_BASE, fetchBoard, moveTask, type Group } from './api';
+
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
 import EventPanel from './components/EventPanel';
@@ -46,6 +47,15 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
 
 
+// список всех групп для селектора
+const [allGroups, setAllGroups] = useState<Group[]>([]);
+
+// табы селектора
+const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
+
+const ownGroups = useMemo(() => allGroups.filter(g => g.kind === 'own'), [allGroups]);
+const memberGroups = useMemo(() => allGroups.filter(g => g.kind === 'member'), [allGroups]);
 
 
 
@@ -129,7 +139,7 @@ useEffect(() => {
 
 
 
-
+const groupLabel = () => groupTitle || 'Моя группа';
 
 
 
@@ -208,13 +218,14 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
       new URLSearchParams(location.search).get('from');
     if (!me) return;
 
-    listGroups(String(me))
-      .then((r) => {
-        if (r.ok) {
-          const g = r.groups.find((x: any) => x.id === groupId);
-          setGroupTitle(g ? g.title : null);
-        }
-      })
+listGroups(String(me))
+  .then((r) => {
+    if (r.ok) {
+      setAllGroups(r.groups || []);
+      const g = r.groups.find((x: any) => x.id === groupId);
+      setGroupTitle(g ? g.title : null);
+    }
+  })
       .catch(() => {});
   }, [groupId]);
 
@@ -286,6 +297,54 @@ const animateCloseWithThumb = (finalGroupId?: string | null) => {
     onClose(finalGroupId ?? groupIdRef.current);
   }, 920);
 };
+
+
+
+
+
+
+
+
+// перенос в другую группу: находим Inbox целевой группы, двигаем через /tasks/:id/move
+const moveToGroup = async (targetGroupId: string | null) => {
+  const by = meChatId;
+  try {
+    // 1) получаем борду целевой группы, чтобы взять колонку Inbox
+    const board = await fetchBoard(by, targetGroupId ?? undefined);
+    const columns = board?.columns || [];
+    // ищем Inbox (на бэке дефолтные колонки формируются; имя 'Inbox')
+    const inbox = columns.find(c => String(c.name).toLowerCase() === 'inbox') || columns[0];
+    if (!inbox) throw new Error('no_inbox');
+
+    // 2) двигаем задачу в начало Inbox целевой группы
+    await moveTask(taskId, inbox.id, 0);
+
+    // 3) локально обновим состояние и перерисуем
+    groupIdRef.current = targetGroupId ?? null;
+    setGroupId(groupIdRef.current);
+
+// подтянем название
+if (targetGroupId) {
+  const g = allGroups.find(x => x.id === targetGroupId);
+  setGroupTitle(g ? g.title : null);
+} else {
+  setGroupTitle(null);
+}
+
+    // чтобы UI гарантированно обновился
+    setRefreshTick(t => t + 1);
+    WebApp?.HapticFeedback?.impactOccurred?.('light');
+  } catch (e) {
+    console.error('[TaskView] moveToGroup error', e);
+    alert('Не удалось перенести в выбранную группу');
+  } finally {
+    setGroupPickerOpen(false);
+  }
+};
+
+
+
+
 
 
 
@@ -481,6 +540,28 @@ return; // не сбрасываем saving до завершения анима
       onDelete={handleDelete}
     />
   ) : null}
+</div>
+
+
+
+
+{/* Группа */}
+<div style={{ margin: '6px 0 10px', fontSize: 13, opacity: .85 }}>
+  Группа:{' '}
+  <button
+    onClick={() => setGroupPickerOpen(true)}
+    title="Выбрать другую группу"
+    style={{
+      background: 'transparent',
+      border: '1px solid #2a3346',
+      borderRadius: 8,
+      padding: '2px 8px',
+      color: '#8aa0ff',
+      cursor: 'pointer'
+    }}
+  >
+    {groupLabel()}
+  </button>
 </div>
 
 
@@ -828,6 +909,118 @@ return; // не сбрасываем saving до завершения анима
 
 
 
+{groupPickerOpen && (
+  <div
+    onClick={() => setGroupPickerOpen(false)}
+    style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,.45)',
+      zIndex: 2000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}
+  >
+    <div
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        background: '#1b2030',
+        color: '#e8eaed',
+        border: '1px solid #2a3346',
+        borderRadius: 12,
+        padding: 12,
+        width: 'min(460px, 92vw)'
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontWeight: 700 }}>Перенести в группу</div>
+        <button
+          onClick={() => setGroupPickerOpen(false)}
+          style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* табы */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <button
+          onClick={() => setGroupTab('own')}
+          style={{
+            padding: '6px 10px',
+            borderRadius: 999,
+            border: '1px solid #2a3346',
+            background: groupTab === 'own' ? '#1b2030' : '#121722',
+            color: groupTab === 'own' ? '#8aa0ff' : '#e8eaed',
+            cursor: 'pointer',
+          }}
+        >
+          Мои проекты ({ownGroups.length})
+        </button>
+        <button
+          onClick={() => setGroupTab('member')}
+          style={{
+            padding: '6px 10px',
+            borderRadius: 999,
+            border: '1px solid #2a3346',
+            background: groupTab === 'member' ? '#1b2030' : '#121722',
+            color: groupTab === 'member' ? '#8aa0ff' : '#e8eaed',
+            cursor: 'pointer',
+          }}
+        >
+          Проекты со мной ({memberGroups.length})
+        </button>
+      </div>
+
+      {/* список */}
+      <div style={{ display: 'grid', gap: 8, maxHeight: '50vh', overflow: 'auto' }}>
+        {groupTab === 'own' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="mv_group"
+              checked={!groupId}
+              onChange={() => moveToGroup(null)}
+            />
+            <span>Моя группа (личная доска)</span>
+          </label>
+        )}
+
+        {groupTab === 'own'
+          ? ownGroups.map((g) => (
+              <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="mv_group"
+                  checked={groupId === g.id}
+                  onChange={() => moveToGroup(g.id)}
+                />
+                <span>{g.title}</span>
+              </label>
+            ))
+          : memberGroups.map((g) => (
+              <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="mv_group"
+                  checked={groupId === g.id}
+                  onChange={() => moveToGroup(g.id)}
+                />
+                <span>
+                  {g.title}
+                  {g.ownerName && (
+                    <span style={{ opacity: 0.7, marginLeft: 6 }}>
+                      👑 {g.ownerName}
+                    </span>
+                  )}
+                </span>
+              </label>
+            ))}
+      </div>
+    </div>
+  </div>
+)}
 
 
 
