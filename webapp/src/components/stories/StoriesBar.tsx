@@ -44,7 +44,13 @@ export default function StoriesBar({ items, onOpen, showOwner = false }: Props) 
               }}
               title={it.title}
             >
-              <StoriesRing segments={it.segments || []} centerLabel={label} />
+            <StoriesRing
+  segments={it.segments || []}
+  centerLabel={label}
+  size={65}       // диаметр круга
+  stroke={2}      // толщина кольца
+  gapDeg={6}      // зазор между сегментами в градусах
+/>
             </button>
 
             <div

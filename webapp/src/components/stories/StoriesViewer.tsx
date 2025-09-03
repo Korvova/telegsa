@@ -58,25 +58,27 @@ export default function StoriesViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, project.projectId, autoAdvanceMs]);
 
-  const prev = () => {
-    setIndex((i) => Math.max(0, i - 1));
-  };
-  const next = () => {
-    setIndex((i) => {
-      if (i + 1 < slides.length) return i + 1;
-      // конец — закрываем
-      onClose();
-      return i;
-    });
-  };
 
-  // Обработчики кликов по левой/правой области
-  const onTap = (e: React.MouseEvent) => {
-    const x = e.clientX;
-    const mid = window.innerWidth / 2;
-    if (x < mid) prev();
-    else next();
-  };
+
+const next = () => {
+  setIndex((i) => {
+    onSeen(i);                    // помечаем текущий как прочитанный
+    if (i + 1 < slides.length) return i + 1;
+    onClose();
+    return i;
+  });
+};
+
+const onTap = (e: React.MouseEvent) => {
+  const x = e.clientX;
+  const mid = window.innerWidth / 2;
+  if (x < mid) {
+    setIndex(i => Math.max(0, i - 1));   // ← сразу влево
+  } else {
+    next();                               // → вправо
+  }
+};
+
 
   // пауза при удержании
   const onPointerDown = () => { pausedRef.current = true; };

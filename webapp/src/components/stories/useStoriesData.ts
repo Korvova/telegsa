@@ -2,7 +2,42 @@ import { useEffect, useMemo, useState } from 'react';
 import type { StoriesBarItem, StorySlide, StorySegment } from './StoriesTypes';
 import { listMyFeed, listGroups, type TaskFeedItem } from '../../api';
 
-// ключ локального хранилища: на пользователя и день (YYYY-MM-DD)
+/* ---------------- CloudStorage helpers (Telegram WebApp) ---------------- */
+
+function getCS(): any | null {
+  try {
+    return (window as any)?.Telegram?.WebApp?.CloudStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function csGetItem(key: string): Promise<string> {
+  const cs = getCS();
+  if (!cs) return Promise.resolve('');
+  return new Promise((resolve) => {
+    try {
+      cs.getItem(key, (_err: any, value: string) => resolve(value ?? ''));
+    } catch {
+      resolve('');
+    }
+  });
+}
+
+function csSetItem(key: string, value: string): Promise<void> {
+  const cs = getCS();
+  if (!cs) return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      cs.setItem(key, value, () => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+/* ---------------- Keys & persistence ---------------- */
+
 function todayKey(meChatId: string) {
   const d = new Date();
   const y = d.getFullYear();
@@ -11,12 +46,35 @@ function todayKey(meChatId: string) {
   return `stories:${meChatId}:${y}-${m}-${day}`;
 }
 
-type SeenMap = Record<string, number[]>; // projectId -> индексы просмотренных слайдов
+type SeenMap = Record<string, number[]>; // projectId -> просмотренные индексы
+
+async function loadSeenMap(key: string): Promise<SeenMap> {
+  try {
+    const data = await csGetItem(key);
+    if (data) return JSON.parse(data) as SeenMap;
+  } catch {}
+  try {
+    return JSON.parse(localStorage.getItem(key) || '{}') as SeenMap;
+  } catch {
+    return {};
+  }
+}
+
+async function saveSeenMap(key: string, map: SeenMap): Promise<void> {
+  const payload = JSON.stringify(map);
+  try {
+    await csSetItem(key, payload);
+  } catch {}
+  try {
+    localStorage.setItem(key, payload);
+  } catch {}
+}
+
+/* ---------------- Hook ---------------- */
 
 export function useStoriesData(meChatId: string) {
   const [items, setItems] = useState<StoriesBarItem[]>([]);
 
-  // загрузка реальных проектов и событий за сегодня
   useEffect(() => {
     let alive = true;
 
@@ -24,19 +82,19 @@ export function useStoriesData(meChatId: string) {
       try {
         const [groupsResp, feedResp] = await Promise.all([
           listGroups(meChatId),
-          // возьмём обновления (фид)
+          // Фид за сегодня нам подходит; берём до 200 последних изменений
           listMyFeed({ chatId: meChatId, role: 'all', limit: 200 }),
         ]);
-
         if (!alive) return;
 
         const groups = groupsResp.ok ? groupsResp.groups : [];
         const feed = (feedResp.ok ? feedResp.items : []) as TaskFeedItem[];
 
-        // фильтруем по «сегодня»
-        const start = new Date(); start.setHours(0,0,0,0);
-        const end = new Date();   end.setHours(23,59,59,999);
-
+        // только «сегодня»
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
         const isToday = (iso: string) => {
           const d = new Date(iso);
           return d >= start && d <= end;
@@ -49,7 +107,7 @@ export function useStoriesData(meChatId: string) {
 
           const slide: StorySlide = {
             id: String(it.id),
-            kind: 'text', // минимально: «текстовая история»; можно улучшить на основании статусов
+            kind: 'text',
             actorName: it.creatorName || undefined,
             text: humanizeChange(it),
             taskTitle: it.text || undefined,
@@ -62,16 +120,16 @@ export function useStoriesData(meChatId: string) {
           groupSlides.set(key, arr);
         }
 
-        // собираем элементы для бара
         const out: StoriesBarItem[] = [];
+
+        // обычные группы
         for (const g of groups) {
           const slides = (groupSlides.get(g.id) || []).slice(0, 40);
-          if (slides.length === 0) continue;
+          if (!slides.length) continue;
 
-          // сегменты (макс 20); каждый сегмент отвечает одному слайду
-          const segments: StorySegment[] = slides.slice(0, 20).map(() => ({
-            seen: false,
-          }));
+          const segments: StorySegment[] = slides
+            .slice(0, 20)
+            .map(() => ({ seen: false }));
 
           out.push({
             id: g.id,
@@ -97,9 +155,8 @@ export function useStoriesData(meChatId: string) {
 
         // применяем сохранённые «просмотры»
         const key = todayKey(meChatId);
-        let persisted: SeenMap = {};
-        try { persisted = JSON.parse(localStorage.getItem(key) || '{}'); } catch {}
-        const applied = out.map(p => {
+        const persisted = await loadSeenMap(key);
+        const applied = out.map((p) => {
           const seenIdx = new Set(persisted[p.projectId] || []);
           return {
             ...p,
@@ -110,18 +167,20 @@ export function useStoriesData(meChatId: string) {
         setItems(applied);
       } catch (e) {
         console.warn('[useStoriesData] load error', e);
-        setItems([]); // без сториз — просто пусто
+        setItems([]);
       }
     }
 
     load();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [meChatId]);
 
-  // пометка «прочитал i-й слайд» + сохранение в localStorage
+  // помечаем «прочитано» и сохраняем
   const markSeen = (projectId: string, slideIndex: number) => {
-    setItems(prev => {
-      const next = prev.map(p => {
+    setItems((prev) => {
+      const next = prev.map((p) => {
         if (p.projectId !== projectId) return p;
         return {
           ...p,
@@ -131,24 +190,24 @@ export function useStoriesData(meChatId: string) {
         };
       });
 
-      // persist
-      const key = todayKey(meChatId);
-      let persisted: SeenMap = {};
-      try { persisted = JSON.parse(localStorage.getItem(key) || '{}'); } catch {}
-      const set = new Set(persisted[projectId] || []);
-      set.add(slideIndex);
-      persisted[projectId] = Array.from(set);
-      localStorage.setItem(key, JSON.stringify(persisted));
+      (async () => {
+        const key = todayKey(meChatId);
+        const persisted = await loadSeenMap(key);
+        const set = new Set(persisted[projectId] || []);
+        set.add(slideIndex);
+        persisted[projectId] = Array.from(set);
+        await saveSeenMap(key, persisted);
+      })();
 
       return next;
     });
   };
 
-  // проекты с непросмотренными сегментами идут раньше
+  // непросмотренные — вперёд
   const sorted = useMemo(() => {
     return [...items].sort((a, b) => {
-      const aAllSeen = a.segments.length > 0 && a.segments.every(s => !!s.seen);
-      const bAllSeen = b.segments.length > 0 && b.segments.every(s => !!s.seen);
+      const aAllSeen = a.segments.length > 0 && a.segments.every((s) => !!s.seen);
+      const bAllSeen = b.segments.length > 0 && b.segments.every((s) => !!s.seen);
       if (aAllSeen === bAllSeen) return 0;
       return aAllSeen ? 1 : -1;
     });
@@ -157,7 +216,8 @@ export function useStoriesData(meChatId: string) {
   return { items: sorted, markSeen };
 }
 
-// компактное описание события
+/* ---------------- Utils ---------------- */
+
 function humanizeChange(t: TaskFeedItem): string {
   const s = (t.status || '').toLowerCase();
   if (s.includes('создан')) return 'Создал новую задачу';

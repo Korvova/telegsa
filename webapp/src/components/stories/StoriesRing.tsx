@@ -2,11 +2,11 @@ import { useEffect, useRef } from 'react';
 import type { StorySegment } from './StoriesTypes'; // общий тип, локальный НЕ объявляем
 
 type Props = {
-  size?: number;          // внешний диаметр
-  stroke?: number;        // толщина
-  segments: StorySegment[]; // массив сегментов (1..20)
-  /** подпись в центре (мы передаём первые 4 символа названия проекта) */
-  centerLabel?: string;
+  size?: number;            // внешний диаметр
+  stroke?: number;          // толщина кольца
+  segments: StorySegment[]; // 1..20 сегментов
+  centerLabel?: string;     // подпись в центре (первые 4 символа названия проекта)
+  gapDeg?: number;          // зазор между сегментами в градусах (по умолчанию ~3°)
 };
 
 export default function StoriesRing({
@@ -14,6 +14,7 @@ export default function StoriesRing({
   stroke = 6,
   segments,
   centerLabel = '',
+  gapDeg = 3,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -41,9 +42,9 @@ export default function StoriesRing({
     const r = (Math.min(W, H) - stroke) / 2;
 
     // цвета
-    const colBg = '#2a3346';    // фоновая «тонкая» окружность под сегменты
-    const colSeen = '#9aa3b2';  // просмотренный сегмент (серый)
-    const colUnseen = '#22c55e';// не просмотренный (зелёный)
+    const colBg = '#2a3346';     // фоновая окружность
+    const colSeen = '#9aa3b2';   // просмотренный сегмент (серый)
+    const colUnseen = '#22c55e'; // не просмотренный (зелёный)
     const colProgress = '#22c55e';
 
     // тонкая подложка
@@ -56,19 +57,19 @@ export default function StoriesRing({
 
     const n = Math.max(1, Math.min(20, segments.length || 1));
 
-    // разрезаем круг на n частей и делаем «зазор» между дугами
+    // делим круг и задаём зазор
     const full = Math.PI * 2;
-    const gapAngle = Math.PI / 60; // ~3°
-    const slice = full / n;
-    const arc = Math.max(0, slice - gapAngle); // собственно рисуемая часть
+    const slice = full / n;                            // ← ЭТОГО НЕ ХВАТАЛО
+    const gapAngle = (Math.PI / 180) * gapDeg;
+    const arc = Math.max(0, slice - gapAngle);         // реальная дуга сегмента
 
-    // рисуем каждый сегмент:
+    // рисуем сегменты
     for (let i = 0; i < n; i++) {
       const seg = segments[i] || {};
       const start = -Math.PI / 2 + i * slice + gapAngle / 2;
       const end = start + arc;
 
-      // цвет сегмента — серый если seen, иначе зелёный
+      // сам сегмент
       ctx.beginPath();
       ctx.arc(cx, cy, r, start, end);
       ctx.strokeStyle = seg.seen ? colSeen : colUnseen;
@@ -76,7 +77,7 @@ export default function StoriesRing({
       ctx.lineCap = 'round';
       ctx.stroke();
 
-      // если есть прогресс — поверх «закрасим» долю прогресса (только для активного)
+      // прогресс активного сегмента
       if (!seg.seen && typeof seg.progress === 'number' && seg.progress > 0) {
         const pEnd = start + arc * Math.min(1, Math.max(0, seg.progress));
         ctx.beginPath();
@@ -87,13 +88,10 @@ export default function StoriesRing({
         ctx.stroke();
       }
     }
-  }, [size, stroke, JSON.stringify(segments)]);
+  }, [size, stroke, gapDeg, JSON.stringify(segments)]); // ← добавили gapDeg
 
   // Текст в центре — первые 4 символа
-  const label = (centerLabel || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 4);
+  const label = (centerLabel || '').replace(/\s+/g, ' ').trim().slice(0, 4);
 
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
