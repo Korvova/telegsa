@@ -1,71 +1,76 @@
+//StoriesBar.tsx
 
-import StoriesRing, { type StorySegment } from './StoriesRing';
-
-
-export type StoriesBarItem = {
-  id: string;                 // уникальный id кружка (проект или страница проекта)
-  title: string;              // название проекта
-  segments: StorySegment[];   // 1..20
-  onClick?: () => void;       // открыть сториз
-};
+import StoriesRing from './StoriesRing';
+import type { StoriesBarItem } from './StoriesTypes';
 
 type Props = {
   items: StoriesBarItem[];
+  onOpen?: (item: StoriesBarItem) => void;
+  showOwner?: boolean; // для вкладки «Проекты со мной»
 };
 
-export default function StoriesBar({ items }: Props) {
+export default function StoriesBar({ items, onOpen, showOwner = false }: Props) {
+  const sorted = [...items].sort((a, b) => {
+    const aUnread = a.segments?.some(s => !s.seen) ? 1 : 0;
+    const bUnread = b.segments?.some(s => !s.seen) ? 1 : 0;
+    return bUnread - aUnread;
+  });
+
   return (
-    <div style={{ padding: '8px 0' }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          overflowX: 'auto',
-          padding: '4px 2px 8px',
-          WebkitOverflowScrolling: 'touch',
-        }}
-      >
-        {items.map((it) => (
-          <div key={it.id} style={{ width: 72, flex: '0 0 auto', textAlign: 'center' }}>
-            <StoriesRing
-              size={64}
-              thickness={5}
-              gapDeg={4}
-              segments={it.segments}
-              onClick={it.onClick}
+    <div
+      style={{
+        display: 'flex',
+        gap: 12,
+        overflowX: 'auto',
+        padding: '8px 4px 4px',
+        borderBottom: '1px solid #2a3346',
+        marginBottom: 8,
+      }}
+    >
+      {sorted.map((it) => {
+        const label = (it.title || '').slice(0, 4);
+        return (
+          <div key={it.id} style={{ width: 76, flex: '0 0 auto', textAlign: 'center' }}>
+            <button
+              onClick={() => onOpen?.(it)}
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: '50%',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+              }}
+              title={it.title}
             >
-              {/* Центр кружка — первая буква проекта */}
-              <div
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: '#e8eaed',
-                  fontWeight: 700,
-                  fontSize: 18,
-                }}
-              >
-                {it.title?.trim()?.[0]?.toUpperCase() || '•'}
-              </div>
-            </StoriesRing>
+              <StoriesRing segments={it.segments || []} centerLabel={label} />
+            </button>
 
             <div
               style={{
+                fontSize: 12,
+                color: '#e5e7eb',
                 marginTop: 6,
-                fontSize: 11,
-                color: '#cbd5e1',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                maxWidth: 72,
+                marginInline: 'auto',
               }}
               title={it.title}
             >
               {it.title}
             </div>
+
+            {showOwner && it.ownerName ? (
+              <div style={{ fontSize: 11, color: '#aab3c2', marginTop: 2, maxWidth: 72, marginInline: 'auto' }}>
+                👑 {it.ownerName}
+              </div>
+            ) : null}
           </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }

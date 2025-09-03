@@ -1,112 +1,124 @@
-import React from 'react';
-
-export type StorySegment = {
-  id: string;       // id события
-  unread: boolean;  // true — зелёная дуга, false — серая
-};
+import { useEffect, useRef } from 'react';
+import type { StorySegment } from './StoriesTypes'; // общий тип, локальный НЕ объявляем
 
 type Props = {
-  size?: number;          // диаметр пикселей (внешний)
-  thickness?: number;     // толщина обводки
-  gapDeg?: number;        // угол зазора между дугами (в градусах)
-  segments: StorySegment[]; // 1..20 сегментов
-  onClick?: () => void;
-  children?: React.ReactNode; // содержимое в центре (аватар/инициалы)
+  size?: number;          // внешний диаметр
+  stroke?: number;        // толщина
+  segments: StorySegment[]; // массив сегментов (1..20)
+  /** подпись в центре (мы передаём первые 4 символа названия проекта) */
+  centerLabel?: string;
 };
 
-/**
- * Круг с N дугами. Каждая дуга — отдельное событие:
- * unread=true — зелёная, прочитано — серая.
- */
 export default function StoriesRing({
   size = 64,
-  thickness = 5,
-  gapDeg = 4,
+  stroke = 6,
   segments,
-  onClick,
-  children,
+  centerLabel = '',
 }: Props) {
-  const N = Math.max(0, Math.min(20, segments.length));
-  const center = size / 2;
-  const radius = center - thickness / 2;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const polarToXY = (cx: number, cy: number, r: number, angleDeg: number) => {
-    const a = (angleDeg - 90) * (Math.PI / 180); // -90 чтобы 0° был сверху
-    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-  };
+  useEffect(() => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
 
-  // рисуем дугу от startDeg до endDeg (по часовой)
-  const arcPath = (startDeg: number, endDeg: number) => {
-    const start = polarToXY(center, center, radius, startDeg);
-    const end = polarToXY(center, center, radius, endDeg);
-    const largeArc = endDeg - startDeg > 180 ? 1 : 0;
-    return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
-  };
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const W = size;
+    const H = size;
 
-  // базовый круг подложки (тонкая серая линия)
-  const baseCircle = (
-    <circle
-      cx={center}
-      cy={center}
-      r={radius}
-      fill="none"
-      stroke="#2a3346"
-      strokeWidth={thickness}
-      opacity={0.5}
-    />
-  );
+    // канвас с учётом DPR — чтобы было чётко
+    cvs.width = W * dpr;
+    cvs.height = H * dpr;
+    cvs.style.width = `${W}px`;
+    cvs.style.height = `${H}px`;
 
-  const segAngle = N ? 360 / N : 0;
-  const gap = Math.min(gapDeg, Math.max(0, segAngle * 0.35)); // не даём зазору «съесть» весь сегмент
+    const ctx = cvs.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // масштаб под DPR
+
+    // геометрия кольца
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = (Math.min(W, H) - stroke) / 2;
+
+    // цвета
+    const colBg = '#2a3346';    // фоновая «тонкая» окружность под сегменты
+    const colSeen = '#9aa3b2';  // просмотренный сегмент (серый)
+    const colUnseen = '#22c55e';// не просмотренный (зелёный)
+    const colProgress = '#22c55e';
+
+    // тонкая подложка
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = colBg;
+    ctx.lineWidth = stroke;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    const n = Math.max(1, Math.min(20, segments.length || 1));
+
+    // разрезаем круг на n частей и делаем «зазор» между дугами
+    const full = Math.PI * 2;
+    const gapAngle = Math.PI / 60; // ~3°
+    const slice = full / n;
+    const arc = Math.max(0, slice - gapAngle); // собственно рисуемая часть
+
+    // рисуем каждый сегмент:
+    for (let i = 0; i < n; i++) {
+      const seg = segments[i] || {};
+      const start = -Math.PI / 2 + i * slice + gapAngle / 2;
+      const end = start + arc;
+
+      // цвет сегмента — серый если seen, иначе зелёный
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, start, end);
+      ctx.strokeStyle = seg.seen ? colSeen : colUnseen;
+      ctx.lineWidth = stroke;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // если есть прогресс — поверх «закрасим» долю прогресса (только для активного)
+      if (!seg.seen && typeof seg.progress === 'number' && seg.progress > 0) {
+        const pEnd = start + arc * Math.min(1, Math.max(0, seg.progress));
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, start, pEnd);
+        ctx.strokeStyle = colProgress;
+        ctx.lineWidth = stroke;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+    }
+  }, [size, stroke, JSON.stringify(segments)]);
+
+  // Текст в центре — первые 4 символа
+  const label = (centerLabel || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 4);
 
   return (
-    <div
-      onClick={onClick}
-      style={{
-        width: size,
-        height: size,
-        position: 'relative',
-        display: 'inline-block',
-        cursor: onClick ? 'pointer' : 'default',
-      }}
-      title="Истории проекта"
-    >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {baseCircle}
-        {segments.map((s, i) => {
-          const a0 = i * segAngle + gap / 2;
-          const a1 = (i + 1) * segAngle - gap / 2;
-          const d = arcPath(a0, a1);
-          const stroke = s.unread ? '#22c55e' /* зелёный */ : '#64748b' /* серый */;
-          return (
-            <path
-              key={s.id || i}
-              d={d}
-              fill="none"
-              stroke={stroke}
-              strokeWidth={thickness}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </svg>
-
-      {/* центр под аватар/инициалы/иконку */}
-      {children && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: thickness,
-            borderRadius: '50%',
-            display: 'grid',
-            placeItems: 'center',
-            overflow: 'hidden',
-            background: '#121722',
-          }}
-        >
-          {children}
-        </div>
-      )}
+    <div style={{ position: 'relative', width: size, height: size }}>
+      <canvas ref={canvasRef} />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: Math.max(10, Math.floor(size * 0.22)),
+          color: '#e5e7eb',
+          textAlign: 'center',
+          lineHeight: 1.1,
+          letterSpacing: 0.2,
+          fontWeight: 600,
+          width: size - 8,
+          margin: '0 auto',
+          pointerEvents: 'none',
+        }}
+        title={centerLabel}
+      >
+        {label || '•'}
+      </div>
     </div>
   );
 }

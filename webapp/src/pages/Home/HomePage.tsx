@@ -3,8 +3,13 @@ import { useEffect, useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { listMyFeed, type TaskFeedItem } from '../../api';
 
-import StoriesBar, { type StoriesBarItem } from '../../components/stories/StoriesBar';
+import StoriesBar from '../../components/stories/StoriesBar';
+import StoriesViewer from '../../components/stories/StoriesViewer';
 
+
+
+import { useStoriesData } from '../../components/stories/useStoriesData';
+import type { StoriesBarItem } from '../../components/stories/StoriesTypes';
 
 
 
@@ -42,31 +47,30 @@ export default function HomePage({
 
 
 
-const mockStories: StoriesBarItem[] = [
-  {
-    id: 'g1_p0',
-    title: 'Телеграса',
-    segments: Array.from({ length: 7 }, (_, i) => ({ id: 'g1e' + i, unread: i < 4 })), // 4 зелёных, 3 серых
-    onClick: () => console.log('open stories g1_p0'),
-  },
-  {
-    id: 'g2_p0',
-    title: 'Маркетинг',
-    segments: Array.from({ length: 2 }, (_, i) => ({ id: 'g2e' + i, unread: true })),
-    onClick: () => console.log('open stories g2_p0'),
-  },
-  {
-    id: 'g1_p1',
-    title: 'Телеграса', // вторая страница того же проекта (21..40 событий)
-    segments: Array.from({ length: 5 }, (_, i) => ({ id: 'g1e2_' + i, unread: true })),
-    onClick: () => console.log('open stories g1_p1'),
-  },
-];
+
+
+
+const meChatId = String(WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || '');
+
+
+
+const [currentProject, setCurrentProject] = useState<StoriesBarItem | null>(null);
+
+// обработчик клика по кружку
+const onOpenProjectStories = (item: StoriesBarItem) => {
+  setCurrentProject(item);
+  setViewerOpen(true);
+};
 
 
 
 
 
+// локально рядом с мок-данными StoriesBar:
+const [viewerOpen, setViewerOpen] = useState(false);
+
+
+const { items: storyItems, markSeen } = useStoriesData(meChatId);
 
 
 
@@ -125,8 +129,21 @@ const mockStories: StoriesBarItem[] = [
 
     <div style={{ padding: 12, paddingBottom: 96 }}>
 
+<StoriesBar
+  items={storyItems}
+  onOpen={onOpenProjectStories}
+/>
 
-<StoriesBar items={mockStories} />
+{viewerOpen && currentProject && (
+  <StoriesViewer
+    project={currentProject}
+    onClose={() => setViewerOpen(false)}
+    onSeen={(slideIndex) => {
+      // помечаем конкретный слайд просмотренным
+      markSeen(currentProject.projectId, slideIndex);
+    }}
+  />
+)}
 
       {/* ── Фиксированная шапка: поиск + кнопка фильтров ── */}
       <div
