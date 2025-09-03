@@ -3,6 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { listMyFeed, type TaskFeedItem } from '../../api';
 
+import StoriesBar, { type StoriesBarItem } from '../../components/stories/StoriesBar';
+
+
+
+
+
 type Role = 'all' | 'creator' | 'assignee' | 'watcher';
 const STATUS_LABELS = ['Новые','В работе','Готово','Согласование','Ждёт'];
 
@@ -32,6 +38,38 @@ export default function HomePage({
   const [loading, setLoading] = useState(false);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+
+
+
+
+const mockStories: StoriesBarItem[] = [
+  {
+    id: 'g1_p0',
+    title: 'Телеграса',
+    segments: Array.from({ length: 7 }, (_, i) => ({ id: 'g1e' + i, unread: i < 4 })), // 4 зелёных, 3 серых
+    onClick: () => console.log('open stories g1_p0'),
+  },
+  {
+    id: 'g2_p0',
+    title: 'Маркетинг',
+    segments: Array.from({ length: 2 }, (_, i) => ({ id: 'g2e' + i, unread: true })),
+    onClick: () => console.log('open stories g2_p0'),
+  },
+  {
+    id: 'g1_p1',
+    title: 'Телеграса', // вторая страница того же проекта (21..40 событий)
+    segments: Array.from({ length: 5 }, (_, i) => ({ id: 'g1e2_' + i, unread: true })),
+    onClick: () => console.log('open stories g1_p1'),
+  },
+];
+
+
+
+
+
+
+
+
 
   const selectedStatuses = useMemo(
     () => Object.entries(statuses).filter(([,v]) => v).map(([k]) => k),
@@ -81,7 +119,15 @@ export default function HomePage({
   };
 
   return (
+
+
+
+
     <div style={{ padding: 12, paddingBottom: 96 }}>
+
+
+<StoriesBar items={mockStories} />
+
       {/* ── Фиксированная шапка: поиск + кнопка фильтров ── */}
       <div
         style={{
@@ -93,6 +139,15 @@ export default function HomePage({
         }}
       >
         <div style={{ display: 'flex', gap: 8 }}>
+
+
+
+
+
+
+
+
+
           <button
             onClick={() => setFiltersOpen(v => !v)}
             title="Фильтры"
