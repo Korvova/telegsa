@@ -12,6 +12,8 @@ import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 
 import { createPortal } from 'react-dom';
 
+// сверху рядом с другими импортами
+import StageScroller, { type StageKey } from './components/StageScroller';
 
 
 
@@ -585,6 +587,41 @@ return; // не сбрасываем saving до завершения анима
         />
 
          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div> 
+
+
+
+
+
+  <StageScroller
+          taskId={task.id}
+          type={task.type ?? 'TASK'}
+          currentPhase={(phase as StageKey) || 'Inbox'}
+          groupId={groupId}
+          meChatId={meChatId}
+          onPhaseChanged={(next) => {
+            setPhase(next);
+            onChanged?.();
+          }}
+          onRequestComplete={() => {
+            // ваша текущая логика завершения + анимация (как в toggleDone)
+            (async () => {
+              try {
+                await completeTask(taskId);
+                setPhase('Done');
+                onChanged?.();
+                WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                setTimeout(() => {
+                  animateCloseWithThumb(groupIdRef.current);
+                }, 160);
+              } catch (e) {
+                setError((e as any)?.message || 'Ошибка операции');
+              }
+            })();
+          }}
+        />
+
+
+
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <button
