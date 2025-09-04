@@ -9,7 +9,7 @@ const GROUP_SEP = '::';
 const nameWithGroup = (groupId, plainName) =>
   groupId ? `${groupId}${GROUP_SEP}${plainName}` : plainName;
 
-// Гарантируем колонки Inbox/Doing/Done в нужной доске (личной или групповой)
+// Гарантируем колонки Inbox/Doing/Done/Cancel/Approval/Wait в нужной доске (личной или групповой)
 async function ensureDefaultColumns(chatId, groupId = null) {
   const whereDefault = groupId
     ? { chatId, name: { startsWith: `${groupId}${GROUP_SEP}` } }
@@ -25,6 +25,9 @@ async function ensureDefaultColumns(chatId, groupId = null) {
     nameWithGroup(groupId, 'Inbox'),
     nameWithGroup(groupId, 'Doing'),
     nameWithGroup(groupId, 'Done'),
+    nameWithGroup(groupId, 'Cancel'),
+    nameWithGroup(groupId, 'Approval'),
+    nameWithGroup(groupId, 'Wait'),
   ];
 
   const created = await prisma.$transaction(

@@ -261,6 +261,7 @@ app.get('/files/:mediaId', async (req, res) => {
 
 
 // по chatId + optional groupId создаёт Inbox/Doing/Done если их нет
+// по chatId + optional groupId создаёт Inbox/Doing/Done если их нет
 async function ensureDefaultColumns(chatId, groupId = null) {
   const whereDefault = groupId
     ? { chatId, name: { startsWith: `${groupId}${GROUP_SEP}` } }
@@ -272,10 +273,14 @@ async function ensureDefaultColumns(chatId, groupId = null) {
   });
   if (existing.length) return existing;
 
+  // ⬇️ БЫЛО 3 → ДЕЛАЕМ 6
   const base = [
     nameWithGroup(groupId, 'Inbox'),
     nameWithGroup(groupId, 'Doing'),
     nameWithGroup(groupId, 'Done'),
+    nameWithGroup(groupId, 'Cancel'),
+    nameWithGroup(groupId, 'Approval'),
+    nameWithGroup(groupId, 'Wait'),
   ];
 
   const created = await prisma.$transaction(
@@ -287,6 +292,7 @@ async function ensureDefaultColumns(chatId, groupId = null) {
   );
   return created;
 }
+
 
 async function createTaskInGroup({ chatId, groupId, text }) {
   await ensureDefaultColumns(chatId, groupId);
