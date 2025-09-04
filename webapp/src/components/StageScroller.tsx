@@ -19,7 +19,7 @@ type Props = {
 export default function StageScroller(props: Props) {
   const {
     taskId,
-    type = 'TASK',
+    type: _type = 'TASK',
     currentPhase,
     groupId,
     meChatId,
@@ -28,7 +28,7 @@ export default function StageScroller(props: Props) {
   } = props;
 
   // не показываем для событий
-  if (type === 'EVENT') return null;
+
 
   const [colMap, setColMap] = useState<Record<string, string>>({}); // name -> columnId
   const [busy, setBusy] = useState(false);

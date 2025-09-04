@@ -466,10 +466,10 @@ const submit = async () => {
                     title="Выбрать фото"
                     style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                   >
-                    📸
+                  🖼️
                   </button>
 
-                  {/* 🎥 — НАША камера (getUserMedia) */}
+                  {/* 📸 — НАША камера (getUserMedia) */}
                   <button
                     type="button"
                     onClick={openCamera}
