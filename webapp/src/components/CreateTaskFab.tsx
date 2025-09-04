@@ -2,6 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import CameraCaptureModal from './CameraCaptureModal'; // ⬅️ NEW
 
+
+import PostCreateActionsLauncher from './PostCreateActionsLauncher';
+
+
+
 import WebApp from '@twa-dev/sdk';
 import {
   createTask,
@@ -52,6 +57,7 @@ export default function CreateTaskFab({
 
 
 
+const membersAsOptions: MemberOption[] = members.map(m => ({ chatId: m.chatId, name: m.name }));
 
 
 
@@ -504,37 +510,79 @@ const submit = async () => {
                   </div>
                 ) : null}
 
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 10 }}>
-                  <button
-                    onClick={back}
-                    disabled={busy}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 12,
-                      background: '#1f2937',
-                      color: '#e5e7eb',
-                      border: '1px solid #374151',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    onClick={submit}
-                    disabled={busy || !text.trim()}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 12,
-                      background: '#2563eb',
-                      color: '#fff',
-                      border: '1px solid transparent', // ✅ фикс кавычек
-                      cursor: 'pointer',
-                      minWidth: 120,
-                    }}
-                  >
-                    {busy ? 'Создаю…' : 'Создать'}
-                  </button>
-                </div>
+                
+                
+                
+                
+                
+                
+                
+                
+               <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 10 }}>
+  <button
+    onClick={back}
+    disabled={busy}
+    style={{
+      padding: '10px 14px',
+      borderRadius: 12,
+      background: '#1f2937',
+      color: '#e5e7eb',
+      border: '1px solid #374151',
+      cursor: 'pointer',
+    }}
+  >
+    Отмена
+  </button>
+
+  {/* ⬇️ ОСТАВЛЯЕМ ТОЛЬКО ЛОНЧЕР */}
+  <PostCreateActionsLauncher
+    label="Создать"
+    disabled={!text.trim()}
+    style={{
+      padding: '10px 14px',
+      borderRadius: 12,
+      background: '#2563eb',
+      color: '#fff',
+      border: '1px solid transparent',
+      cursor: 'pointer',
+      minWidth: 120,
+    }}
+    meChatId={chatId}
+    members={membersAsOptions}
+    onMake={async () => {
+      const val = text.trim();
+      if (!val) throw new Error('empty');
+
+      const r = await createTask(chatId, val, groupId ?? undefined);
+      if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
+      const newTaskId = r.task.id;
+
+      if (assignee) {
+        await patchAssignee(newTaskId, assignee);
+      }
+
+      if (pendingFiles.length) {
+        for (const f of pendingFiles) {
+          try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
+        }
+      }
+
+      WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      onCreated?.();
+      closeModal();
+
+      return { taskId: newTaskId, taskTitle: val };
+    }}
+  />
+</div>
+
+
+
+
+
+
+
+
               </>
             ) : (
               // МАСТЕР (вне канбана)
