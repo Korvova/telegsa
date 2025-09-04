@@ -476,7 +476,7 @@ const submit = async () => {
                     title="Открыть камеру"
                     style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                   >
-                    🎥
+                    📸
                   </button>
 
                   {/* скрытые инпуты */}
