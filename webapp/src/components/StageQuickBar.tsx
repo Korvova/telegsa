@@ -1,9 +1,6 @@
-
-
-
-//StageQuickBar.tsx
-
-import { useEffect, useMemo, useRef, useState } from 'react';
+// src/components/StageQuickBar.tsx
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import WebApp from '@twa-dev/sdk';
 import { fetchBoard, moveTask, reopenTask, completeTask } from '../api';
 import type { StageKey } from './StageScroller';
@@ -11,6 +8,7 @@ import type { StageKey } from './StageScroller';
 const ORDER: StageKey[] = ['Inbox', 'Doing', 'Done', 'Cancel', 'Approval', 'Wait'];
 
 type Props = {
+  anchorId: string;             // ← id DOM-элемента карточки (button), над которым показываем бар
   taskId: string;
   groupId: string | null;
   meChatId: string;
@@ -42,11 +40,13 @@ function labelOf(s: StageKey): string {
 }
 
 export default function StageQuickBar({
-  taskId, groupId, meChatId, currentPhase, onPicked, onRequestClose, edgeInset = 12,
+  anchorId, taskId, groupId, meChatId, currentPhase,
+  onPicked, onRequestClose, edgeInset = 12,
 }: Props) {
   const [colMap, setColMap] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
+  // загрузка колонок
   useEffect(() => {
     if (!meChatId) return;
     let alive = true;
@@ -69,21 +69,44 @@ export default function StageQuickBar({
   const active: StageKey | undefined =
     (ORDER as string[]).includes(String(currentPhase)) ? (currentPhase as StageKey) : undefined;
 
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  // ---- позиционирование модалки над карточкой
+  const [pos, setPos] = useState<{ top: number; left: number; right: number }>({ top: 0, left: 12, right: 12 });
 
-  // клик/тап вне — закрыть
+  const recompute = () => {
+    const el = document.getElementById(anchorId);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const GAP = 6;
+    const BAR_H = 44;
+    let top = r.top - GAP - BAR_H;             // сначала пытаемся над карточкой
+    if (top < 8) top = r.bottom + GAP;         // если не влезает — под карточкой
+
+    const left = Math.max(8, r.left + edgeInset);
+    const right = Math.max(8, window.innerWidth - (r.right - edgeInset));
+    setPos({ top, left, right });
+  };
+
   useEffect(() => {
-    const onDocDown = (e: Event) => {
-      if (!wrapRef.current) return;
-      if (!wrapRef.current.contains(e.target as Node)) onRequestClose?.();
-    };
-    document.addEventListener('mousedown', onDocDown, true);
-    document.addEventListener('touchstart', onDocDown, true as any);
+    // при открытии: позиция + запрет скролла фона
+    recompute();
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onResize = () => recompute();
+    const onScroll = () => recompute();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, true);
+
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onRequestClose?.(); };
+    window.addEventListener('keydown', onKey);
+
     return () => {
-      document.removeEventListener('mousedown', onDocDown, true);
-      document.removeEventListener('touchstart', onDocDown, true as any);
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('keydown', onKey);
     };
-  }, [onRequestClose]);
+  }, [anchorId]);
 
   const handlePick = async (next: StageKey) => {
     if (busy) return;
@@ -115,81 +138,84 @@ export default function StageQuickBar({
 
   if (!stages.length) return null;
 
-  return (
+  // ---- модальная подложка: блокирует клики и скролл фона
+  return createPortal(
     <div
-      ref={wrapRef}
-
-
-
-
-
-// StageQuickBar.tsx — внутри <div ref={wrapRef} style={{ ... }}>
-style={{
-  position: 'absolute',
-  left: edgeInset,
-  right: edgeInset,
-  top: 6,                          // было 0 + translateY — теперь внутри контейнера
-  height: 44,
-  borderRadius: 12,
-  background: '#0b1220',
-  border: '1px solid #2a3346',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  padding: '6px 8px',
-  overflowX: 'auto',
-  overflowY: 'hidden',
-  overscrollBehavior: 'contain',
-  touchAction: 'pan-x',
-  WebkitOverflowScrolling: 'touch',
-  boxShadow: '0 8px 24px rgba(0,0,0,.35)',
-  zIndex: 1200,                    // ← оставь только ОДНО значение zIndex
-  userSelect: 'none',
-  pointerEvents: 'auto',
-}}
-
-
-
-
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 3000,
+        background: 'rgba(9,11,18,0.35)',
+        overscrollBehavior: 'contain',
+        touchAction: 'none',
+      }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRequestClose?.(); }}
       onContextMenu={(e) => e.preventDefault()}
-      // не даём событиям уйти в карточку/ленту
-      onMouseDown={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-      onWheel={(e) => e.stopPropagation()}
+      onWheel={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onTouchMove={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
-      {stages.map((s) => {
-        const c = COLORS[s];
-        const isActive = s === active;
-        return (
-          <button
-            key={s}
-            type="button"
-            disabled={busy}
-            onClick={() => handlePick(s)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '8px 12px',
-              height: 32,
-              borderRadius: 999,
-              border: `1px solid ${c.brd}`,
-              background: isActive ? c.brd : c.bg,
-              color: c.fg,
-              fontSize: 13,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {labelOf(s)}
-          </button>
-        );
-      })}
-    </div>
+      <div
+        onClick={(e) => { e.stopPropagation(); }}
+        onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+        onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
+        onTouchMove={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        style={{
+          position: 'fixed',
+          top: pos.top,
+          left: pos.left,
+          right: pos.right,
+          height: 44,
+          borderRadius: 12,
+          background: '#0b1220',
+       border: '1px solid #2a3346',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '6px 8px',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          touchAction: 'pan-x',
+          WebkitOverflowScrolling: 'touch',
+          boxShadow: '0 8px 24px rgba(0,0,0,.35)',
+          zIndex: 3001,
+          userSelect: 'none',
+          pointerEvents: 'auto',
+        }}
+      >
+        {stages.map((s) => {
+          const c = COLORS[s];
+          const isActive = s === active;
+          return (
+            <button
+              key={s}
+              type="button"
+              disabled={busy}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePick(s); }}
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px 12px',
+                height: 32,
+                borderRadius: 999,
+                border: `1px solid ${c.brd}`,
+                background: isActive ? c.brd : c.bg,
+                color: c.fg,
+                fontSize: 13,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {labelOf(s)}
+            </button>
+          );
+        })}
+      </div>
+    </div>,
+    document.body
   );
 }
-
-
-
-

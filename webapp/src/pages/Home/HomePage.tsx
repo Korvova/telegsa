@@ -16,7 +16,7 @@ import FeedScopeTabs, { type FeedScope } from '../../components/FeedScopeTabs';
 
 
 const LONG_PRESS_MS = 500;
-const BAR_SPACE = 60;
+
 
 /** Короткий формат даты для событий */
 function fmtShort(iso?: string | null): string {
@@ -449,22 +449,24 @@ useEffect(() => {
   style={{
     position: 'relative',
     zIndex: opened ? 1200 : 'auto',
-    paddingTop: opened ? BAR_SPACE : 0, // ← место для панели сверху
   }}
 >
 
 
- {opened && (
-    <StageQuickBar
-      taskId={t.id}
-      groupId={groupId}
-      meChatId={meChatId}
-      currentPhase={currentPhase}
-      edgeInset={12}
-      onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
-      onRequestClose={closeQBar}
-    />
-  )}
+
+{opened && (
+  <StageQuickBar
+    anchorId={`task-card-${t.id}`}   // ← НОВОЕ
+    taskId={t.id}
+    groupId={groupId}
+    meChatId={meChatId}
+    currentPhase={currentPhase}
+    edgeInset={12}
+    onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
+    onRequestClose={closeQBar}
+  />
+)}
+
 
 
 
