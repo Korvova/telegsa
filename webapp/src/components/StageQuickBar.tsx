@@ -1,3 +1,8 @@
+
+
+
+//StageQuickBar.tsx
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { fetchBoard, moveTask, reopenTask, completeTask } from '../api';
@@ -9,23 +14,19 @@ type Props = {
   taskId: string;
   groupId: string | null;
   meChatId: string;
-  /** Текущая фаза задачи (если знаем). Можно строку — подсветим только базовые */
   currentPhase?: StageKey | string;
-  /** вызываем после успешного изменения стадии */
   onPicked?: (next: StageKey) => void;
-  /** закрыть панель */
   onRequestClose?: () => void;
-
   edgeInset?: number;
 };
 
 const COLORS: Record<StageKey, { bg: string; brd: string; fg: string }> = {
   Inbox:    { bg: '#121722', brd: '#2a3346', fg: '#e8eaed' },
-  Doing:    { bg: '#10223a', brd: '#274864', fg: '#d7eaff' },     // синий
-  Done:     { bg: '#15251a', brd: '#2c4a34', fg: '#d7ffd7' },     // зелёный
-  Cancel:   { bg: '#3a1f1f', brd: '#5a2b2b', fg: '#ffd7d7' },     // красный
-  Approval: { bg: '#3a2a10', brd: '#6a4a20', fg: '#ffe5bf' },     // оранжевый
-  Wait:     { bg: '#102a3a', brd: '#274864', fg: '#d7f0ff' },     // голубой
+  Doing:    { bg: '#10223a', brd: '#274864', fg: '#d7eaff' },
+  Done:     { bg: '#15251a', brd: '#2c4a34', fg: '#d7ffd7' },
+  Cancel:   { bg: '#3a1f1f', brd: '#5a2b2b', fg: '#ffd7d7' },
+  Approval: { bg: '#3a2a10', brd: '#6a4a20', fg: '#ffe5bf' },
+  Wait:     { bg: '#102a3a', brd: '#274864', fg: '#d7f0ff' },
 };
 
 function labelOf(s: StageKey): string {
@@ -46,7 +47,6 @@ export default function StageQuickBar({
   const [colMap, setColMap] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
-  // загрузка колонок текущей доски
   useEffect(() => {
     if (!meChatId) return;
     let alive = true;
@@ -71,7 +71,7 @@ export default function StageQuickBar({
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // клик вне — закрыть
+  // клик/тап вне — закрыть
   useEffect(() => {
     const onDocDown = (e: Event) => {
       if (!wrapRef.current) return;
@@ -92,7 +92,6 @@ export default function StageQuickBar({
 
     try {
       setBusy(true);
-
       if (next === 'Done') {
         await completeTask(taskId);
         try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
@@ -100,12 +99,9 @@ export default function StageQuickBar({
         onRequestClose?.();
         return;
       }
-
-      // если были в Done — сначала reopen
       if (active === 'Done') {
         await reopenTask(taskId);
       }
-
       await moveTask(taskId, colMap[next], 0);
       try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
       onPicked?.(next);
@@ -122,28 +118,45 @@ export default function StageQuickBar({
   return (
     <div
       ref={wrapRef}
-      style={{
-        position: 'absolute',
-      left: edgeInset,
-      right: edgeInset,
-        top: 0,
-       
-        height: 44,
-        borderRadius: 12,
-        background: '#0b1220',
-        border: '1px solid #2a3346',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '6px 8px',
-        overflowX: 'auto',
-        boxShadow: '0 8px 24px rgba(0,0,0,.35)',
-        zIndex: 5,
-        userSelect: 'none',
-      }}
+
+
+
+
+
+// StageQuickBar.tsx — внутри <div ref={wrapRef} style={{ ... }}>
+style={{
+  position: 'absolute',
+  left: edgeInset,
+  right: edgeInset,
+  top: 6,                          // было 0 + translateY — теперь внутри контейнера
+  height: 44,
+  borderRadius: 12,
+  background: '#0b1220',
+  border: '1px solid #2a3346',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '6px 8px',
+  overflowX: 'auto',
+  overflowY: 'hidden',
+  overscrollBehavior: 'contain',
+  touchAction: 'pan-x',
+  WebkitOverflowScrolling: 'touch',
+  boxShadow: '0 8px 24px rgba(0,0,0,.35)',
+  zIndex: 1200,                    // ← оставь только ОДНО значение zIndex
+  userSelect: 'none',
+  pointerEvents: 'auto',
+}}
+
+
 
 
       onContextMenu={(e) => e.preventDefault()}
+      // не даём событиям уйти в карточку/ленту
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
     >
       {stages.map((s) => {
         const c = COLORS[s];
@@ -151,6 +164,7 @@ export default function StageQuickBar({
         return (
           <button
             key={s}
+            type="button"
             disabled={busy}
             onClick={() => handlePick(s)}
             style={{
@@ -175,3 +189,7 @@ export default function StageQuickBar({
     </div>
   );
 }
+
+
+
+
