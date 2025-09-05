@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@prisma/client": "^6.14.0",
+    "busboy": "^1.6.0",
     "dotenv": "^16.4.5",
+    "execa": "^9.6.0",
     "express": "^5.1.0",
-    "node-schedule": "^2.1.1",
-    "busboy": "^1.6.0"
+    "multer": "^2.0.2",
+    "node-schedule": "^2.1.1"
   },
   "devDependencies": {
     "prisma": "^6.14.0"

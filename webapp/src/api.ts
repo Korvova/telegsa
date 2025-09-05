@@ -656,3 +656,20 @@ export async function listMyFeed(params: {
   return r.json();
 }
 
+
+
+// ==== STT (Whisper.cpp via backend) ====
+export async function transcribeVoice(file: File, lang = 'ru'): Promise<{ ok: boolean; text?: string; error?: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_BASE}/stt/whisper?lang=${encodeURIComponent(lang)}`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '');
+    throw new Error(`STT failed: ${res.status} ${msg}`);
+  }
+  return res.json();
+}
+

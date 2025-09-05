@@ -19,6 +19,14 @@ import processRouter from './routes/process.js';
 import { shareNewTaskRouter } from './routes/sharenewtask.js';
 
 
+import { execa } from 'execa';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+
+
+
 
 const prisma = new PrismaClient();
 const app = express();
@@ -1196,6 +1204,100 @@ const created = await prisma.inviteTicket.create({
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// === Speech-to-Text (whisper.cpp) ===
+// POST /stt/whisper?lang=ru
+// multipart/form-data, поле name="file"
+app.post('/stt/whisper', async (req, res) => {
+  try {
+    const lang = String(req.query.lang || 'ru'); // можно ru/en/...; auto детект, если не указывать
+    const bb = Busboy({ headers: req.headers });
+
+    const chunks = [];
+    let fileName = 'audio.bin';
+    let mimeType = 'application/octet-stream';
+
+    bb.on('file', (_name, file, info) => {
+      fileName = info?.filename || fileName;
+      mimeType = info?.mimeType || mimeType;
+      file.on('data', d => chunks.push(d));
+    });
+
+    bb.on('error', (e) => {
+      console.error('[stt] busboy error', e);
+      res.status(400).json({ ok: false, error: 'bad_upload' });
+    });
+
+    bb.on('finish', async () => {
+      const buf = Buffer.concat(chunks);
+      if (!buf.length) return res.status(400).json({ ok: false, error: 'empty_file' });
+
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stt-'));
+      const inPath  = path.join(tmpDir, fileName);
+      const wavPath = path.join(tmpDir, 'audio16k.wav');
+      const outBase = path.join(tmpDir, 'out'); // whisper сделает out.txt
+
+      try {
+        await fs.writeFile(inPath, buf);
+
+        // 1) конвертируем в 16k mono WAV (ffmpeg)
+        // (Telegram/webm/ogg opus → в WAV; если уже WAV — ffmpeg просто перекодирует)
+        await execa('ffmpeg', [
+          '-y', '-i', inPath,
+          '-ar', '16000', '-ac', '1',
+          wavPath
+        ], { stdio: 'ignore' });
+
+        // 2) запускаем whisper-cli
+        const bin   = process.env.WHISPER_BIN;
+        const model = process.env.WHISPER_MODEL;
+        if (!bin || !model) {
+          return res.status(500).json({ ok: false, error: 'whisper_env_missing' });
+        }
+
+        // Пример ключей: -otxt → out.txt, -of outBase → имя без расширения
+        // Можно указать язык: -l ru (или не указывать для autodetect)
+        const args = ['-m', model, '-f', wavPath, '-otxt', '-of', outBase];
+        if (lang && lang !== 'auto') args.push('-l', lang);
+
+        await execa(bin, args, { stdio: 'ignore' });
+
+        // 3) читаем результат
+        const text = await fs.readFile(`${outBase}.txt`, 'utf8').catch(() => '');
+        return res.json({ ok: true, text: (text || '').trim() });
+      } catch (e) {
+        console.error('[stt] error', e);
+        return res.status(500).json({ ok: false, error: 'stt_failed' });
+      } finally {
+        // прибираем временные файлы
+        try { await fs.rm(tmpDir, { recursive: true, force: true }); } catch {}
+      }
+    });
+
+    req.pipe(bb);
+  } catch (e) {
+    console.error('[stt] top-level error', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+
+
+
+
 
 
 
