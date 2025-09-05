@@ -90,6 +90,35 @@ const [media, setMedia] = useState<TaskMedia[]>([]);
 
 
 
+
+// Считаем вложение аудио, если kind = voice|audio,
+// либо MIME начинается с audio/, либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
+const isAudioLike = (m: TaskMedia) => {
+  const k = String((m as any)?.kind || '').toLowerCase();
+  if (k === 'voice' || k === 'audio') return true;
+
+  const mime = String((m as any)?.mime || (m as any)?.contentType || '').toLowerCase();
+  if (mime.startsWith('audio/')) return true;
+
+  const name = String(m.fileName || '').toLowerCase();
+  return /\.(ogg|opus|oga|mp3|m4a|wav|webm)$/.test(name);
+};
+
+
+
+// Новое: аудио и «прочие документы»
+const audioMedias = useMemo(() => media.filter(isAudioLike), [media]);
+const docMedias = useMemo(
+  () => media.filter(m => m.kind !== 'photo' && !isAudioLike(m)),
+  [media]
+);
+
+
+
+
+
+
+
 // NEW: для модалки с фото
 const photos = useMemo(() => media.filter(m => m.kind === 'photo'), [media]);
 const [isLightboxOpen, setLightboxOpen] = useState(false);
@@ -706,61 +735,83 @@ return; // не сбрасываем saving до завершения анима
 
 
 
-
 {media.length > 0 && (
   <div style={{ marginTop: 12 }}>
     <div style={{ fontSize: 14, opacity: .85, marginBottom: 6 }}>Вложения</div>
 
     {/* Фото */}
-<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-  {photos.map((m, idx) => (
-    <button
-      key={m.id}
-      onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
-      title="Открыть фото"
-      style={{
-        display: 'inline-block',
-        border: '1px solid #2a3346',
-        borderRadius: 8,
-        overflow: 'hidden',
-        padding: 0,
-        background: 'transparent',
-        cursor: 'zoom-in'
-      }}
-    >
-      <img
-        src={`${API_BASE}${m.url}`}
-        alt={m.fileName || 'Фото'}
-        style={{ maxWidth: 160, maxHeight: 160, display: 'block' }}
-      />
-    </button>
-  ))}
-</div>
+    {photos.length > 0 && (
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        {photos.map((m, idx) => (
+          <button
+            key={m.id}
+            onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+            title="Открыть фото"
+            style={{
+              display: 'inline-block',
+              border: '1px solid #2a3346',
+              borderRadius: 8,
+              overflow: 'hidden',
+              padding: 0,
+              background: 'transparent',
+              cursor: 'zoom-in'
+            }}
+          >
+            <img
+              src={`${API_BASE}${m.url}`}
+              alt={m.fileName || 'Фото'}
+              style={{ maxWidth: 160, maxHeight: 160, display: 'block' }}
+            />
+          </button>
+        ))}
+      </div>
+    )}
 
-    {/* Голосовые */}
-    {media.some(m => m.kind === 'voice') && (
-      <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-        {media.filter(m => m.kind === 'voice').map(m => (
+    {/* Аудио/голосовые */}
+    {audioMedias.length > 0 && (
+      <div style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+        {audioMedias.map((m) => (
           <div key={m.id} style={{ padding: 8, border: '1px solid #2a3346', borderRadius: 8 }}>
-            <audio controls src={`${API_BASE}${m.url}`} style={{ width: '100%' }} />
-            <div style={{ fontSize: 12, opacity: .7 }}>
-              {m.duration ? `Длительность ~${m.duration}s` : 'Голосовое'}
+            <audio
+              controls
+              preload="metadata"
+              src={`${API_BASE}${m.url}`}
+              style={{ width: '100%' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <div style={{ fontSize: 12, opacity: .75 }}>
+                {m.fileName || 'Голосовое сообщение'}
+              </div>
+              {!!(m as any).duration && (
+                <div style={{ fontSize: 12, opacity: .65 }}>
+                  ~{(m as any).duration}s
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
     )}
 
-    {/* Документы */}
-    {media.some(m => m.kind === 'document') && (
-      <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-        {media.filter(m => m.kind === 'document').map(m => (
-          <a key={m.id}
-             href={`${API_BASE}${m.url}`}
-             target="_blank"
-             rel="noreferrer"
-             style={{ padding: 8, border: '1px solid #2a3346', borderRadius: 8, color: '#8aa0ff' }}>
-            📎 {m.fileName || 'Документ'}{m.fileSize ? ` · ${(m.fileSize/1024/1024).toFixed(2)} MB` : ''}
+    {/* Прочие документы */}
+    {docMedias.length > 0 && (
+      <div style={{ display: 'grid', gap: 6 }}>
+        {docMedias.map((m) => (
+          <a
+            key={m.id}
+            href={`${API_BASE}${m.url}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              padding: 8,
+              border: '1px solid #2a3346',
+              borderRadius: 8,
+              color: '#8aa0ff',
+              textDecoration: 'none'
+            }}
+          >
+            📎 {m.fileName || 'Документ'}
+            {m.fileSize ? ` · ${(m.fileSize/1024/1024).toFixed(2)} MB` : ''}
           </a>
         ))}
       </div>
