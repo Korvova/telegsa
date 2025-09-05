@@ -88,6 +88,39 @@ function badgeForPhase(p?: StageKey | string): Badge | null {
 
 
 
+
+
+// Цвета бейджей в заголовке колонок
+function headerColorsForPage(key: PageKey): { bg: string; fg: string; brd: string } {
+  // 'all' — нейтральный
+  if (key === 'all') return { bg: '#1b2234', fg: '#c7d2fe', brd: '#2a3346' };
+
+  // Для остальных стадий используем цвета из badgeForPhase
+  const b =
+    key === 'Inbox'   ? badgeForPhase('Inbox') :
+    key === 'Doing'   ? badgeForPhase('Doing') :
+    key === 'Approval'? badgeForPhase('Approval') :
+    key === 'Wait'    ? badgeForPhase('Wait') :
+    key === 'Done'    ? badgeForPhase('Done') :
+    key === 'Cancel'  ? badgeForPhase('Cancel') :
+    null;
+
+  if (b) return { bg: b.bg, fg: b.fg, brd: b.brd };
+
+  // дефолт
+  return { bg: '#111827', fg: '#e5e7eb', brd: '#374151' };
+}
+
+
+
+
+
+
+
+
+
+
+
 // после colorsForPhase / badgeForPhase
 type PageKey = 'all' | StageKey;
 
@@ -389,15 +422,38 @@ useEffect(() => {
 
 
       {/* Заголовок страницы – “прикреплён” к самой странице */}
-      <div style={{
-        fontSize: 12,
-        opacity: .6,
-        padding: '0 12px 6px'
-        // если захочешь, можно сделать локально липким:
-        // position: 'sticky', top: 0, background: '#0f1216', zIndex: 1
-      }}>
-        ({pg.label.toLowerCase()})
-      </div>
+   {(() => {
+  const { bg, fg, brd } = headerColorsForPage(pg.key);
+  return (
+    <div
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 2,
+        padding: '6px 12px 8px',
+        background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
+        backdropFilter: 'blur(2px)',
+      }}
+    >
+      <span
+        style={{
+          display: 'inline-block',
+          background: bg,
+          color: fg,
+          border: `1px solid ${brd}`,
+          padding: '4px 10px',
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 600,
+          letterSpacing: 0.2,
+          textTransform: 'none',
+        }}
+      >
+        {pg.label}
+      </span>
+    </div>
+  );
+})()}
 
 
 
