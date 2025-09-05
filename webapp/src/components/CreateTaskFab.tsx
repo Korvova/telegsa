@@ -1,11 +1,7 @@
 // webapp/src/components/CreateTaskFab.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
-import CameraCaptureModal from './CameraCaptureModal'; // ⬅️ NEW
-
-
+import CameraCaptureModal from './CameraCaptureModal';
 import PostCreateActionsLauncher from './PostCreateActionsLauncher';
-
-
 
 import WebApp from '@twa-dev/sdk';
 import {
@@ -14,7 +10,7 @@ import {
   type Group,
   getGroupMembers,
   type GroupMember,
-    uploadTaskMedia, 
+  uploadTaskMedia,
 } from '../api';
 
 type Props = {
@@ -44,8 +40,8 @@ export default function CreateTaskFab({
     [defaultGroupId],
   );
 
-  // мастер-режим: 0 — текст, 1 — группа, 2 — ответственный
-  const [step, setStep] = useState<0 | 1 | 2>(0);
+  // мастер-режим: 0 — текст, 1 — группа (шаг 2 убран)
+  const [step, setStep] = useState<0 | 1>(0);
 
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -54,87 +50,54 @@ export default function CreateTaskFab({
   const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
 
   const [members, setMembers] = useState<MemberOption[]>([]);
+  const membersAsOptions: MemberOption[] = members.map(m => ({ chatId: m.chatId, name: m.name }));
 
+  // всплывашка выбора группы (в простом режиме)
+  const [pickerOpen, setPickerOpen] = useState(false);
 
+  // ref для клика по стрелке (Ctrl/Cmd+Enter)
+  const sendRef = useRef<HTMLDivElement | null>(null);
 
-const membersAsOptions: MemberOption[] = members.map(m => ({ chatId: m.chatId, name: m.name }));
+  // читаемое имя текущей группы
+  const groupLabel = () => {
+    if (!groupId) return 'Моя группа';
+    const g = groups.find(g => g.id === groupId);
+    return g ? g.title : 'Группа';
+  };
 
+  // локальные вложения до отправки
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileAnyRef = useRef<HTMLInputElement | null>(null);
+  const filePhotoRef = useRef<HTMLInputElement | null>(null);
 
+  const [cameraOpen, setCameraOpen] = useState(false);
 
+  // табы в пикере групп
+  const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
 
+  const ownGroups = useMemo(
+    () => groups.filter((g) => g.kind === 'own'),
+    [groups]
+  );
+  const memberGroups = useMemo(
+    () => groups.filter((g) => g.kind === 'member'),
+    [groups]
+  );
 
+  const onPickFiles = (files: FileList | null) => {
+    if (!files || !files.length) return;
+    const arr = Array.from(files).slice(0, 10);
+    setPendingFiles((prev) => [...prev, ...arr]);
+  };
 
-
-
-
-
-// ПОСЛЕ:
-const [assignee, setAssignee] = useState<string | null>(null);
-
-// NEW: открытие/закрытие оверлея выбора группы
-const [pickerOpen, setPickerOpen] = useState(false);
-
-// NEW: читаемое имя текущей группы
-const groupLabel = () => {
-  if (!groupId) return 'Моя группа';
-  const g = groups.find(g => g.id === groupId);
-  return g ? g.title : 'Группа';
-};
-
-
-
-
-
-
-
-
-
-// ⬇️ NEW: локальный список выбранных файлов до отправки
-const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-const fileAnyRef = useRef<HTMLInputElement | null>(null);
-const filePhotoRef = useRef<HTMLInputElement | null>(null);
-
-const [cameraOpen, setCameraOpen] = useState(false); // ⬅️ NEW
-
-
-
-
-// NEW: табы "мои / со мной" и разбиение
-const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
-
-const ownGroups = useMemo(
-  () => groups.filter((g) => g.kind === 'own'),
-  [groups]
-);
-const memberGroups = useMemo(
-  () => groups.filter((g) => g.kind === 'member'),
-  [groups]
-);
-
-
-
-
-
-
-const onPickFiles = (files: FileList | null) => {
-  if (!files || !files.length) return;
-  const arr = Array.from(files).slice(0, 10);
-  setPendingFiles((prev) => [...prev, ...arr]);
-};
-
-const openCamera = () => {
-  // если есть getUserMedia — используем нашу камеру; иначе — фоллбэк на input
-  const hasGUM = typeof (navigator as any)?.mediaDevices?.getUserMedia === 'function';
-  if (hasGUM) {
-    setCameraOpen(true);
-  } else {
-    filePhotoRef.current?.click();
-  }
-};
-
-
-
-
+  const openCamera = () => {
+    const hasGUM = typeof (navigator as any)?.mediaDevices?.getUserMedia === 'function';
+    if (hasGUM) {
+      setCameraOpen(true);
+    } else {
+      filePhotoRef.current?.click();
+    }
+  };
 
   // подгружаем группы при необходимости
   useEffect(() => {
@@ -155,8 +118,6 @@ const openCamera = () => {
     let cancelled = false;
 
     async function loadMembers() {
-      setAssignee(null);
-
       // Моя группа — единственный допустимый “участник” это сам пользователь
       if (!groupId) {
         const meName =
@@ -195,11 +156,8 @@ const openCamera = () => {
       }
     }
 
-    // загружаем участников сразу и при смене groupId
     loadMembers();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [groupId, chatId]);
 
   const openModal = () => {
@@ -207,87 +165,12 @@ const openCamera = () => {
     setStep(0);
   };
 
- const closeModal = () => {
-  setOpen(false);
-  setBusy(false);
-  setText('');
-  setAssignee(null);
-  setGroupId(defaultGroupId ?? null);
-  setPendingFiles([]); // ⬅️ NEW
-};
-
-
-  // PATCH ассignee сразу после создания
-
-async function patchAssignee(taskId: string, assigneeChatId: string | null) {
-  const API = (import.meta as any).env.VITE_API_BASE || '';
-  const me = String(WebApp?.initDataUnsafe?.user?.id || chatId);
-
-  try {
-    await fetch(`${API}/tasks/${encodeURIComponent(taskId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assigneeChatId,
-        actorChatId: me, // 👈 кто назначает
-      }),
-    });
-  } catch (e) {
-    console.warn('[CreateTaskFab] patchAssignee failed', e);
-  }
-}
-
-
-const submit = async () => {
-  const val = text.trim();
-  if (!val || busy) return;
-  setBusy(true);
-  try {
-    const r = await createTask(chatId, val, groupId ?? undefined);
-    if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
-    const taskId = r.task.id;
-
-    if (assignee) {
-      await patchAssignee(taskId, assignee);
-    }
-
-    // ⬇️ NEW: если пользователь прикрепил файлы — отправим их в Telegram через бэкенд
-    if (pendingFiles.length) {
-      for (const f of pendingFiles) {
-        try {
-          await uploadTaskMedia(taskId, chatId, f);
-        } catch (e) {
-          console.warn('[CreateTaskFab] uploadTaskMedia error', e);
-        }
-      }
-    }
-
-    WebApp?.HapticFeedback?.notificationOccurred?.('success');
-    onCreated?.();       // перезагрузка доски
-    closeModal();        // очистит состояние
-  } catch (e) {
-    console.error('[CreateTaskFab] createTask error', e);
-    WebApp?.HapticFeedback?.notificationOccurred?.('error');
+  const closeModal = () => {
+    setOpen(false);
     setBusy(false);
-  }
-};
-
-
-  // мастер-режим: навигация по шагам
-  const next = () => {
-    if (step === 0) {
-      if (!text.trim()) return;
-      setStep(isSimpleMode ? 0 : 1); // в простом режиме нет шагов — сразу создаём
-      if (isSimpleMode) submit();
-      return;
-    }
-    if (step === 1) {
-      setStep(2);
-      return;
-    }
-    if (step === 2) {
-      submit();
-    }
+    setText('');
+    setGroupId(defaultGroupId ?? null);
+    setPendingFiles([]);
   };
 
   const back = () => {
@@ -299,10 +182,9 @@ const submit = async () => {
       closeModal();
       return;
     }
-    setStep((s) => (s === 2 ? 1 : 0));
+    setStep(0);
   };
 
-  // ---------- UI ----------
   return (
     <>
       {/* FAB [+] */}
@@ -331,7 +213,6 @@ const submit = async () => {
       </button>
 
       {/* Модалка */}
-            {/* Модалка */}
       {open && (
         <div
           onClick={closeModal}
@@ -355,41 +236,37 @@ const submit = async () => {
               borderTopLeftRadius: 16,
               borderTopRightRadius: 16,
               padding: 16,
-              borderTop: '1px solid #1f2937', // ✅ фикс кавычек
+              borderTop: '1px solid #1f2937',
             }}
           >
             {/* Заголовок */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontWeight: 700 }}>
+                  {isSimpleMode ? 'Новая задача' : step === 0 ? 'Текст задачи' : 'Выбор группы'}
+                </div>
 
-
-            
-     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    <div style={{ fontWeight: 700 }}>
-      {isSimpleMode ? 'Новая задача' : step === 0 ? 'Текст задачи' : step === 1 ? 'Выбор группы' : 'Ответственный'}
-    </div>
-
-    {/* NEW: чип выбора группы в простом режиме */}
-    {isSimpleMode && (
-      <button
-        onClick={() => setPickerOpen(true)}
-        title="Выбрать группу"
-        style={{
-          padding: '4px 8px',
-          borderRadius: 999,
-          border: '1px solid #2a3346',
-          background: '#202840',
-          color: '#e8eaed',
-          fontSize: 12,
-          cursor: 'pointer'
-        }}
-      >
-      <div style={{ fontSize: 12, opacity: 0.85 }}>
-  Группа: <b>{groupLabel()}</b>
-  <span style={{ opacity: 0.8 }}> </span>
-</div>
-      </button>
-    )}
-  </div>
+                {/* Чип выбора группы в простом режиме */}
+                {isSimpleMode && (
+                  <button
+                    onClick={() => setPickerOpen(true)}
+                    title="Выбрать группу"
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 999,
+                      border: '1px solid #2a3346',
+                      background: '#202840',
+                      color: '#e8eaed',
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      Группа: <b>{groupLabel()}</b>
+                    </div>
+                  </button>
+                )}
+              </div>
               <button
                 onClick={closeModal}
                 style={{ background: 'transparent', border: 'none', color: '#9ca3af', fontSize: 18, cursor: 'pointer' }}
@@ -399,194 +276,186 @@ const submit = async () => {
               </button>
             </div>
 
-
-
-
-
             {/* Контент */}
-            {isSimpleMode ? (
-              // ПРОСТОЙ РЕЖИМ (в канбане): один экран — текст + ответственный
-              <>
-                <div style={{ display: 'grid', gap: 10, marginBottom: 10 }}>
-  {/* NEW: текущая группа над полем ввода */}
+{isSimpleMode ? (
+  <>
+    <div style={{ display: 'grid', gap: 10, marginBottom: 10 }}>
+      {/* Весь бар: textarea сверху, вложения снизу */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+        {/* Текст + стрелка */}
+        <div
+          style={{
+            position: 'relative',
+            flex: 1,
+            minWidth: 0,
+            paddingRight: 52, // место под кнопку
+          }}
+        >
+          <textarea
+            autoFocus
+            rows={1}
+            placeholder="Опиши задачу…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && text.trim()) {
+                e.preventDefault();
+                sendRef.current
+                  ?.querySelector('button')
+                  ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+              }
+            }}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              background: '#0b1220',
+              color: '#e5e7eb',
+              border: '1px solid #1f2937',
+              borderRadius: 14,
+              padding: '8px 12px',
+              resize: 'none',
+              minHeight: 38,
+              maxHeight: 80,
+              lineHeight: '20px',
+              overflowY: 'auto',
+            }}
+          />
 
-                  <textarea
-                    autoFocus
-                    rows={4}
-                    placeholder="Опиши задачу…"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    style={{
-                      width: '95%',
-                      background: '#0b1220',
-                      color: '#e5e7eb',
-                      border: '1px solid #1f2937',
-                      borderRadius: 12,
-                      padding: 10,
-                      resize: 'vertical',
-                    }}
-                  />
+          {/* Стрелка отправки — кнопка в круге, меню якорится на внутреннюю обёртку */}
+          <div
+            style={{
+              position: 'absolute',
+              right: 8,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 36,
+              height: 36,
+              pointerEvents: 'none',
+            }}
+          >
+            <div ref={sendRef} style={{ width: '100%', height: '100%', pointerEvents: 'auto' }}>
+              <PostCreateActionsLauncher
+                label="➤"
+                disabled={!text.trim()}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: 999,
+                  background: text.trim() ? '#2563eb' : '#1f2a44',
+                  color: '#fff',
+                  border: '1px solid transparent',
+                  cursor: text.trim() ? 'pointer' : 'default',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 16,
+                }}
+                meChatId={chatId}
+                members={membersAsOptions}
+                onMake={async () => {
+                  const val = text.trim();
+                  if (!val) throw new Error('empty');
 
+                  const r = await createTask(chatId, val, groupId ?? undefined);
+                  if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
+                  const newTaskId = r.task.id;
 
+                  if (pendingFiles.length) {
+                    for (const f of pendingFiles) {
+                      try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
+                    }
+                  }
 
+                  WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                  onCreated?.();
+                  closeModal();
 
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Ответственный (необязательно)</div>
-                    <select
-                      value={assignee ?? ''}
-                      onChange={(e) => setAssignee(e.target.value || null)}
-                      style={{
-                        width: '100%',
-                        background: '#0b1220',
-                        color: '#e5e7eb',
-                        border: '1px solid #1f2937',
-                        borderRadius: 10,
-                        padding: '8px 10px',
-                      }}
-                    >
-                      <option value="">Не назначать</option>
-                      {members.map((m) => (
-                        <option key={m.chatId} value={m.chatId}>
-                          {m.name || m.chatId}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                  return { taskId: newTaskId, taskTitle: val };
+                }}
+              />
+            </div>
+          </div>
+        </div>
 
-                {/* NEW: панель вложений (простой режим) */}
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => fileAnyRef.current?.click()}
-                    title="Прикрепить файл"
-                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-                  >
-                    @
-                  </button>
+        {/* Панель вложений под полем */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => fileAnyRef.current?.click()}
+            title="Прикрепить файл"
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              border: '1px solid #2a3346', background: '#202840',
+              color: '#e8eaed', cursor: 'pointer',
+            }}
+          >
+            @
+          </button>
 
-                  {/* 📸 — системная галерея / выбор фото */}
-                  <button
-                    type="button"
-                    onClick={() => filePhotoRef.current?.click()}
-                    title="Выбрать фото"
-                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-                  >
-                  🖼️
-                  </button>
+          <button
+            type="button"
+            onClick={() => filePhotoRef.current?.click()}
+            title="Выбрать фото"
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              border: '1px solid #2a3346', background: '#202840',
+              color: '#e8eaed', cursor: 'pointer',
+            }}
+          >
+            🖼️
+          </button>
 
-                  {/* 📸 — НАША камера (getUserMedia) */}
-                  <button
-                    type="button"
-                    onClick={openCamera}
-                    title="Открыть камеру"
-                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-                  >
-                    📸
-                  </button>
+          <button
+            type="button"
+            onClick={openCamera}
+            title="Открыть камеру"
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              border: '1px solid #2a3346', background: '#202840',
+              color: '#e8eaed', cursor: 'pointer',
+            }}
+          >
+            📸
+          </button>
 
-                  {/* скрытые инпуты */}
-                  <input
-                    ref={fileAnyRef}
-                    type="file"
-                    multiple
-                    style={{ display: 'none' }}
-                    onChange={(e) => onPickFiles(e.target.files)}
-                  />
-                  <input
-                    ref={filePhotoRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    style={{ display: 'none' }}
-                    onChange={(e) => onPickFiles(e.target.files)}
-                  />
-                </div>
+          {pendingFiles.length ? (
+            <div
+              style={{
+                marginLeft: 4,
+                fontSize: 12,
+                opacity: 0.85,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
+            </div>
+          ) : null}
+        </div>
+      </div>
 
-                {/* NEW: мини-список выбранных файлов */}
-                {pendingFiles.length ? (
-                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-                    Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
-                  </div>
-                ) : null}
+      {/* скрытые инпуты для вложений */}
+      <input
+        ref={fileAnyRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => onPickFiles(e.target.files)}
+      />
+      <input
+        ref={filePhotoRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={(e) => onPickFiles(e.target.files)}
+      />
+    </div>
+  </>
+) : (
+  <>
 
-                
-                
-                
-                
-                
-                
-                
-                
-               <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 10 }}>
-  <button
-    onClick={back}
-    disabled={busy}
-    style={{
-      padding: '10px 14px',
-      borderRadius: 12,
-      background: '#1f2937',
-      color: '#e5e7eb',
-      border: '1px solid #374151',
-      cursor: 'pointer',
-    }}
-  >
-    Отмена
-  </button>
-
-  {/* ⬇️ ОСТАВЛЯЕМ ТОЛЬКО ЛОНЧЕР */}
-  <PostCreateActionsLauncher
-    label="Создать"
-    disabled={!text.trim()}
-    style={{
-      padding: '10px 14px',
-      borderRadius: 12,
-      background: '#2563eb',
-      color: '#fff',
-      border: '1px solid transparent',
-      cursor: 'pointer',
-      minWidth: 120,
-    }}
-    meChatId={chatId}
-    members={membersAsOptions}
-    onMake={async () => {
-      const val = text.trim();
-      if (!val) throw new Error('empty');
-
-      const r = await createTask(chatId, val, groupId ?? undefined);
-      if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
-      const newTaskId = r.task.id;
-
-      if (assignee) {
-        await patchAssignee(newTaskId, assignee);
-      }
-
-      if (pendingFiles.length) {
-        for (const f of pendingFiles) {
-          try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
-        }
-      }
-
-      WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      onCreated?.();
-      closeModal();
-
-      return { taskId: newTaskId, taskTitle: val };
-    }}
-  />
-</div>
-
-
-
-
-
-
-
-
-              </>
-            ) : (
-              // МАСТЕР (вне канбана)
-              <>
                 {step === 0 && (
                   <div style={{ display: 'grid', gap: 10 }}>
                     <textarea
@@ -606,7 +475,11 @@ const submit = async () => {
                       }}
                     />
 
-                    {/* NEW: панель вложений (мастер, шаг 0) */}
+
+
+
+
+                    {/* Панель вложений (мастер, шаг 0) */}
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
                         type="button"
@@ -622,7 +495,7 @@ const submit = async () => {
                         title="Выбрать фото"
                         style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                       >
-                        📸
+                        🖼️
                       </button>
                       <button
                         type="button"
@@ -630,7 +503,7 @@ const submit = async () => {
                         title="Открыть камеру"
                         style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                       >
-                        🎥
+                        📸
                       </button>
 
                       {/* скрытые инпуты */}
@@ -651,7 +524,6 @@ const submit = async () => {
                       />
                     </div>
 
-                    {/* NEW: мини-список выбранных файлов */}
                     {pendingFiles.length ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>
                         Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
@@ -684,30 +556,6 @@ const submit = async () => {
                   </div>
                 )}
 
-                {step === 2 && (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>Ответственный (необязательно)</div>
-                    <select
-                      value={assignee ?? ''}
-                      onChange={(e) => setAssignee(e.target.value || null)}
-                      style={{
-                        background: '#0b1220',
-                        color: '#e5e7eb',
-                        border: '1px solid #1f2937',
-                        borderRadius: 10,
-                        padding: '8px 10px',
-                      }}
-                    >
-                      <option value="">Не назначать</option>
-                      {members.map((m) => (
-                        <option key={m.chatId} value={m.chatId}>
-                          {m.name || m.chatId}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
                 <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'space-between' }}>
                   <button
                     onClick={back}
@@ -723,21 +571,50 @@ const submit = async () => {
                   >
                     {step === 0 ? 'Отмена' : '← Назад'}
                   </button>
-                  <button
-                    onClick={next}
-                    disabled={busy || (step === 0 && !text.trim())}
+
+                  {/* В мастере тоже создаём через лончер */}
+                  <PostCreateActionsLauncher
+                    label={step === 0 ? '→ Далее' : 'Создать'}
+                    disabled={step === 0 ? !text.trim() : !text.trim()}
                     style={{
                       padding: '10px 14px',
                       borderRadius: 12,
                       background: '#2563eb',
                       color: '#fff',
-                      border: '1px solid transparent', // ✅ фикс кавычек
+                      border: '1px solid transparent',
                       cursor: 'pointer',
                       minWidth: 120,
                     }}
-                  >
-                    {step < 2 ? '→ Далее' : busy ? 'Создаю…' : 'Создать'}
-                  </button>
+                    meChatId={chatId}
+                    members={membersAsOptions}
+                    onMake={async () => {
+                      // если на шаге 0 нажали — просто перейти на шаг 1
+                      if (step === 0) {
+                        setStep(1);
+                        // специальный маркер, чтобы лончер не открывал шит
+                        throw new Error('__DEFER__');
+                      }
+
+                      const val = text.trim();
+                      if (!val) throw new Error('empty');
+
+                      const r = await createTask(chatId, val, groupId ?? undefined);
+                      if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
+                      const newTaskId = r.task.id;
+
+                      if (pendingFiles.length) {
+                        for (const f of pendingFiles) {
+                          try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
+                        }
+                      }
+
+                      WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                      onCreated?.();
+                      closeModal();
+
+                      return { taskId: newTaskId, taskTitle: val };
+                    }}
+                  />
                 </div>
               </>
             )}
@@ -745,151 +622,136 @@ const submit = async () => {
         </div>
       )}
 
-
-
-
-
-
-
-
-{pickerOpen && isSimpleMode && (
-  <div
-    onClick={() => setPickerOpen(false)}
-    style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,.35)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1100,
-    }}
-  >
-    <div
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        background: '#1b2030',
-        color: '#e8eaed',
-        border: '1px solid #2a3346',
-        borderRadius: 12,
-        padding: 12,
-        width: 'min(460px, 92vw)',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ fontWeight: 700 }}>Выберите группу</div>
-        <button
-          onClick={() => setPickerOpen(false)}
-          style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* NEW: табы */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-        <button
-          onClick={() => setGroupTab('own')}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 999,
-            border: '1px solid #2a3346',
-            background: groupTab === 'own' ? '#1b2030' : '#121722',
-            color: groupTab === 'own' ? '#8aa0ff' : '#e8eaed',
-            cursor: 'pointer',
-          }}
-        >
-          Мои проекты ({ownGroups.length})
-        </button>
-        <button
-          onClick={() => setGroupTab('member')}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 999,
-            border: '1px solid #2a3346',
-            background: groupTab === 'member' ? '#1b2030' : '#121722',
-            color: groupTab === 'member' ? '#8aa0ff' : '#e8eaed',
-            cursor: 'pointer',
-          }}
-        >
-          Проекты со мной ({memberGroups.length})
-        </button>
-      </div>
-
-      {/* Список по активному табу */}
-      <div style={{ display: 'grid', gap: 8, maxHeight: '50vh', overflow: 'auto' }}>
-        {/* Личная доска — всегда сверху и относится к «Мои проекты» */}
-        {groupTab === 'own' && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="radio"
-              name="group"
-              checked={!groupId}
-              onChange={() => setGroupId(null)}
-            />
-            <span>Моя группа (личная доска)</span>
-          </label>
-        )}
-
-{groupTab === 'own'
-  ? ownGroups.map((g) => (
-      <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input
-          type="radio"
-          name="group"
-          checked={groupId === g.id}
-          onChange={() => setGroupId(g.id)}
-        />
-        <span>{g.title}</span>
-      </label>
-    ))
-  : memberGroups.map((g) => (
-      <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input
-          type="radio"
-          name="group"
-          checked={groupId === g.id}
-          onChange={() => setGroupId(g.id)}
-        />
-        <span>
-          {g.title}
-          {g.ownerName && (
-            <span style={{ opacity: 0.7, marginLeft: 6 }}>
-              (👑 {g.ownerName})
-            </span>
-          )}
-        </span>
-      </label>
-    ))}
-
-
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-        <button
+      {/* Пикер группы (простой режим) */}
+      {pickerOpen && isSimpleMode && (
+        <div
           onClick={() => setPickerOpen(false)}
           style={{
-            padding: '8px 12px',
-            borderRadius: 10,
-            border: '1px solid #2a3346',
-            background: '#202840',
-            color: '#e8eaed',
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
           }}
         >
-          Готово
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1b2030',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              borderRadius: 12,
+              padding: 12,
+              width: 'min(460px, 92vw)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontWeight: 700 }}>Выберите группу</div>
+              <button
+                onClick={() => setPickerOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
 
+            {/* табы */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button
+                onClick={() => setGroupTab('own')}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #2a3346',
+                  background: groupTab === 'own' ? '#1b2030' : '#121722',
+                  color: groupTab === 'own' ? '#8aa0ff' : '#e8eaed',
+                  cursor: 'pointer',
+                }}
+              >
+                Мои проекты ({ownGroups.length})
+              </button>
+              <button
+                onClick={() => setGroupTab('member')}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #2a3346',
+                  background: groupTab === 'member' ? '#1b2030' : '#121722',
+                  color: groupTab === 'member' ? '#8aa0ff' : '#e8eaed',
+                  cursor: 'pointer',
+                }}
+              >
+                Проекты со мной ({memberGroups.length})
+              </button>
+            </div>
 
+            {/* список */}
+            <div style={{ display: 'grid', gap: 8, maxHeight: '50vh', overflow: 'auto' }}>
+              {groupTab === 'own' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="radio"
+                    name="group"
+                    checked={!groupId}
+                    onChange={() => setGroupId(null)}
+                  />
+                  <span>Моя группа (личная доска)</span>
+                </label>
+              )}
 
+              {groupTab === 'own'
+                ? ownGroups.map((g) => (
+                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="radio"
+                        name="group"
+                        checked={groupId === g.id}
+                        onChange={() => setGroupId(g.id)}
+                      />
+                      <span>{g.title}</span>
+                    </label>
+                  ))
+                : memberGroups.map((g) => (
+                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="radio"
+                        name="group"
+                        checked={groupId === g.id}
+                        onChange={() => setGroupId(g.id)}
+                      />
+                      <span>
+                        {g.title}
+                        {g.ownerName && (
+                          <span style={{ opacity: 0.7, marginLeft: 6 }}>
+                            (👑 {g.ownerName})
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  ))}
+            </div>
 
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <button
+                onClick={() => setPickerOpen(false)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  border: '1px solid #2a3346',
+                  background: '#202840',
+                  color: '#e8eaed',
+                }}
+              >
+                Готово
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-
-
-      {/* NEW: модалка камеры (для любого режима) */}
+      {/* модалка камеры */}
       <CameraCaptureModal
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}

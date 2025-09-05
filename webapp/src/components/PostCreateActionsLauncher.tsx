@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { prepareShareMessage } from '../api';
 import { createAssignInvite, assignSelf, pingMemberDM } from '../api/assign';
+import { createPortal } from 'react-dom';
 
 export type MemberOption = { chatId: string; name: string };
 
@@ -157,6 +158,103 @@ export default function PostCreateActionsLauncher({
 
   // ==== UI ====
 
+  // 1) собираем JSX оверлея
+  const sheet = !open ? null : (
+    <div
+      onClick={closeSheet}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(0,0,0,.5)',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        padding: 12,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 520,
+          background: '#131a26',
+          border: '1px solid #2a3346',
+          borderRadius: 16,
+          padding: 12,
+          color: '#fff',
+          boxShadow: '0 16px 50px rgba(0,0,0,.45)',
+        }}
+      >
+        {subView === 'root' ? (
+          <>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
+              Кому отправить задачу?
+            </div>
+
+            {canAssignSelf && (
+              <button disabled={busy} style={btn} onClick={doAssignSelf}>
+                Сделать ответственным себя
+              </button>
+            )}
+
+            <button disabled={busy} style={btn} onClick={doShareOther}>
+              Отправить в <span style={{ color: '#25D366' }}>WhatsApp</span>
+            </button>
+
+            <button disabled={busy} style={btn} onClick={doShareTelegram}>
+              Отправить <span style={{ color: '#1e8ac9' }}>в Telegram</span>
+            </button>
+
+            <button
+              disabled={busy || members.length === 0}
+              style={btn}
+              onClick={() => setSubView('members')}
+              title={members.length ? '' : 'В группе пока нет участников'}
+            >
+              Выбрать из группы
+            </button>
+
+            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8, textAlign: 'center' }}>
+              Ответственный появится в карточке задачи после «Принять».
+            </div>
+
+            <button style={closeBtn} onClick={closeSheet}>Закрыть</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
+              Выберите участника группы
+            </div>
+            <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {members.map((m) => (
+                <div key={m.chatId} style={row}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ fontSize: 15 }}>{m.name || m.chatId}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>{m.chatId}</div>
+                  </div>
+                  <button disabled={busy} style={smallBtn} onClick={() => doPingMember(m)}>
+                    Отправить
+                  </button>
+                </div>
+              ))}
+              {members.length === 0 && (
+                <div style={{ opacity: 0.7, textAlign: 'center', padding: 8 }}>
+                  В группе пока нет участников.
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button style={btn} onClick={() => setSubView('root')}>Назад</button>
+              <button style={closeBtn} onClick={closeSheet}>Закрыть</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  // 2) возвращаем кнопочку + ПОРТАЛ оверлея
   return (
     <>
       <button
@@ -176,100 +274,7 @@ export default function PostCreateActionsLauncher({
         {label}
       </button>
 
-      {!open ? null : (
-        <div
-          onClick={closeSheet}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(0,0,0,.5)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            padding: 12,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: 520,
-              background: '#131a26',
-              border: '1px solid #2a3346',
-              borderRadius: 16,
-              padding: 12,
-              color: '#fff',
-              boxShadow: '0 16px 50px rgba(0,0,0,.45)',
-            }}
-          >
-            {subView === 'root' ? (
-              <>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
-                  Кому отправить задачу?
-                </div>
-
-                {canAssignSelf && (
-                  <button disabled={busy} style={btn} onClick={doAssignSelf}>
-                    Сделать ответственным себя
-                  </button>
-                )}
-
-                <button disabled={busy} style={btn} onClick={doShareOther}>
-                  Отправить в другой мессенджер
-                </button>
-
-                <button disabled={busy} style={btn} onClick={doShareTelegram}>
-                  Отправить в Telegram
-                </button>
-
-                <button
-                  disabled={busy || members.length === 0}
-                  style={btn}
-                  onClick={() => setSubView('members')}
-                  title={members.length ? '' : 'В группе пока нет участников'}
-                >
-                  Выбрать из группы
-                </button>
-
-                <div style={{ fontSize: 12, opacity: 0.7, marginTop: 8, textAlign: 'center' }}>
-                  Ответственный появится в карточке задачи после «Принять».
-                </div>
-
-                <button style={closeBtn} onClick={closeSheet}>Закрыть</button>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
-                  Выберите участника группы
-                </div>
-                <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {members.map((m) => (
-                    <div key={m.chatId} style={row}>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ fontSize: 15 }}>{m.name || m.chatId}</div>
-                        <div style={{ fontSize: 12, opacity: 0.7 }}>{m.chatId}</div>
-                      </div>
-                      <button disabled={busy} style={smallBtn} onClick={() => doPingMember(m)}>
-                        Отправить
-                      </button>
-                    </div>
-                  ))}
-                  {members.length === 0 && (
-                    <div style={{ opacity: 0.7, textAlign: 'center', padding: 8 }}>
-                      В группе пока нет участников.
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <button style={btn} onClick={() => setSubView('root')}>Назад</button>
-                  <button style={closeBtn} onClick={closeSheet}>Закрыть</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {sheet ? createPortal(sheet, document.body) : null}
     </>
   );
 }
