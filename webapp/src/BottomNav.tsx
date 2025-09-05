@@ -12,7 +12,7 @@ export default function BottomNav({
 }) {
   const items = useMemo(
     () => [
-      { key: 'home',     icon: '   🏠︎    ', label: 'главная' },
+      { key: 'home',     icon: '   📰    ', label: 'Лента' },
       { key: 'groups',   icon: '   🗂️   ', label: 'группа' },
       { key: 'calendar', icon: '   📅   ', label: 'календарь' },
       // notifications убрали из нижнего меню

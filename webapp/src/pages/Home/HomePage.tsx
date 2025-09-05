@@ -1,21 +1,20 @@
 // webapp/src/pages/Home/HomePage.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { listMyFeed, type TaskFeedItem } from '../../api';
 
 import StoriesBar from '../../components/stories/StoriesBar';
 import StoriesViewer from '../../components/stories/StoriesViewer';
-
-
-
 import { useStoriesData } from '../../components/stories/useStoriesData';
 import type { StoriesBarItem } from '../../components/stories/StoriesTypes';
-
-
-
+import StageQuickBar from '../../components/StageQuickBar';
+import type { StageKey } from '../../components/StageScroller';
 
 type Role = 'all' | 'creator' | 'assignee' | 'watcher';
 const STATUS_LABELS = ['Новые','В работе','Готово','Согласование','Ждёт'];
+
+const LONG_PRESS_MS = 500;
+const BAR_SPACE = 60;
 
 /** Короткий формат даты для событий */
 function fmtShort(iso?: string | null): string {
@@ -25,6 +24,64 @@ function fmtShort(iso?: string | null): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
+// эвристика: текущая фаза из item
+function phaseOf(t: any): StageKey | string | undefined {
+  const ph = String(t?.phase ?? t?.status ?? '').trim();
+  const low = ph.toLowerCase();
+  if (['inbox','новые','новое'].includes(low)) return 'Inbox';
+  if (['doing','в работе'].includes(low)) return 'Doing';
+  if (['done','готово','готов'].includes(low)) return 'Done';
+  if (['cancel','отмена','отменено','отменена'].includes(low)) return 'Cancel';
+  if (['approval','согласование','на согласовании'].includes(low)) return 'Approval';
+  if (['wait','ждет','ждёт','ожидание'].includes(low)) return 'Wait';
+  return ph || undefined;
+}
+
+function statusTextFromStage(s: StageKey): string {
+  return s === 'Inbox' ? 'Новые'
+    : s === 'Doing' ? 'В работе'
+    : s === 'Done' ? 'Готово'
+    : s === 'Cancel' ? 'Отмена'
+    : s === 'Approval' ? 'Согласование'
+    : s === 'Wait' ? 'Ждёт'
+    : String(s);
+}
+
+function colorsForPhase(p?: StageKey | string) {
+  switch (p) {
+    case 'Done':     return { bg: '#E8F5E9', brd: '#C8E6C9', chip: '#2e7d32' };
+    case 'Cancel':   return { bg: '#FDECEC', brd: '#F5C2C2', chip: '#8a2b2b' };
+    case 'Doing':    return { bg: '#E3F2FD', brd: '#BBDEFB', chip: '#1e3a8a' };
+    case 'Wait':     return { bg: '#E7F5FF', brd: '#B8E1FF', chip: '#1f4d6b' };
+    case 'Approval': return { bg: '#FFF3E0', brd: '#FFE0B2', chip: '#7a4a12' };
+    default:         return { bg: '#FFFFFF', brd: '#e5e7eb', chip: '#3b4b7a' };
+  }
+}
+
+
+
+
+
+
+type Badge = { text: string; bg: string; fg: string; brd: string };
+function badgeForPhase(p?: StageKey | string): Badge | null {
+  switch (p) {
+   case 'Done':     return { text: '✓ Готово',        bg: '#D1F2DC', fg: '#0f5132', brd: '#A3DFB9' };
+    case 'Cancel':   return { text: '❌ Отмена',        bg: '#FDDCDC', fg: '#7a1f1f', brd: '#F3B3B3' };
+    case 'Doing':    return { text: '🔨 В работе',      bg: '#D7E6FF', fg: '#123a7a', brd: '#BBD6FF' };
+    case 'Approval': return { text: '👉👈 Согласов',    bg: '#FFE9CC', fg: '#6b3d06', brd: '#FFD59A' };
+    case 'Wait':     return { text: '🥶 Ждёт',         bg: '#E0F2FF', fg: '#063f5c', brd: '#B9E4FF' };
+    case 'Inbox':    return { text: '🆕 В новое',      bg: '#ECEAFE', fg: '#2e1065', brd: '#DBD7FF' };
+    default:         return null;
+  }
+}
+
+
+
+
+
+
 
 export default function HomePage({
   chatId,
@@ -44,43 +101,23 @@ export default function HomePage({
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const meChatId = String(WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || '');
 
+  const [currentProject, setCurrentProject] = useState<StoriesBarItem | null>(null);
+  const onOpenProjectStories = (item: StoriesBarItem) => {
+    setCurrentProject(item);
+    setViewerOpen(true);
+  };
 
-
-
-
-
-const meChatId = String(WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || '');
-
-
-
-const [currentProject, setCurrentProject] = useState<StoriesBarItem | null>(null);
-
-// обработчик клика по кружку
-const onOpenProjectStories = (item: StoriesBarItem) => {
-  setCurrentProject(item);
-  setViewerOpen(true);
-};
-
-
-
-
-
-// локально рядом с мок-данными StoriesBar:
-const [viewerOpen, setViewerOpen] = useState(false);
-
-
-const { items: storyItems, markSeen } = useStoriesData(meChatId);
-
-
-
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const { items: storyItems, markSeen } = useStoriesData(meChatId);
 
   const selectedStatuses = useMemo(
     () => Object.entries(statuses).filter(([,v]) => v).map(([k]) => k),
     [statuses]
   );
 
-  // первая загрузка и перезагрузка по фильтрам
+  // загрузка фида
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -122,30 +159,40 @@ const { items: storyItems, markSeen } = useStoriesData(meChatId);
     } finally { setLoading(false); }
   };
 
+  // QUICK BAR (долгий тап)
+  const [openQBarId, setOpenQBarId] = useState<string | null>(null);
+  const lpTimer = useRef<any>(null);
+
+  const startLongPress = (taskId: string) => {
+    clearTimeout(lpTimer.current);
+    lpTimer.current = setTimeout(() => {
+      setOpenQBarId(taskId);
+      try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+    }, LONG_PRESS_MS);
+  };
+  const cancelLongPress = () => { clearTimeout(lpTimer.current); };
+  const closeQBar = () => setOpenQBarId(null);
+
+  // локальный патч только выбранного айтема
+  const patchItem = (id: string, patch: Partial<TaskFeedItem> & Record<string, any>) => {
+    setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } as any : it));
+  };
+
   return (
-
-
-
-
     <div style={{ padding: 12, paddingBottom: 96 }}>
+      <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
 
-<StoriesBar
-  items={storyItems}
-  onOpen={onOpenProjectStories}
-/>
+      {viewerOpen && currentProject && (
+        <StoriesViewer
+          project={currentProject}
+          onClose={() => setViewerOpen(false)}
+          onSeen={(slideIndex) => {
+            markSeen(currentProject.projectId, slideIndex);
+          }}
+        />
+      )}
 
-{viewerOpen && currentProject && (
-  <StoriesViewer
-    project={currentProject}
-    onClose={() => setViewerOpen(false)}
-    onSeen={(slideIndex) => {
-      // помечаем конкретный слайд просмотренным
-      markSeen(currentProject.projectId, slideIndex);
-    }}
-  />
-)}
-
-      {/* ── Фиксированная шапка: поиск + кнопка фильтров ── */}
+      {/* Шапка */}
       <div
         style={{
           position: 'sticky',
@@ -156,15 +203,6 @@ const { items: storyItems, markSeen } = useStoriesData(meChatId);
         }}
       >
         <div style={{ display: 'flex', gap: 8 }}>
-
-
-
-
-
-
-
-
-
           <button
             onClick={() => setFiltersOpen(v => !v)}
             title="Фильтры"
@@ -196,7 +234,6 @@ const { items: storyItems, markSeen } = useStoriesData(meChatId);
           />
         </div>
 
-        {/* Плашка фильтров */}
         {filtersOpen && (
           <div
             style={{
@@ -207,7 +244,6 @@ const { items: storyItems, markSeen } = useStoriesData(meChatId);
               padding: 10,
             }}
           >
-            {/* Роли */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
               {[
                 {key:'all', label:'Все'},
@@ -248,7 +284,6 @@ const { items: storyItems, markSeen } = useStoriesData(meChatId);
               </select>
             </div>
 
-            {/* Статусы */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {STATUS_LABELS.map(s => (
                 <label
@@ -295,115 +330,147 @@ const { items: storyItems, markSeen } = useStoriesData(meChatId);
       {/* Список */}
       <div style={{ display:'flex', flexDirection:'column', gap: 10 }}>
         {items.map((t) => {
-// 1) статус → «готово»
-const status = (t as any).status ?? '';
-const s = String(status).trim().toLowerCase();
-const done = s.startsWith('готов') || s.startsWith('done');
+          const ph = phaseOf(t);
+          const { bg: cardBg, brd: cardBrd, chip: groupChipBg } = colorsForPhase(ph);
 
-// 2) событие? — смотрим сразу несколько вариантов полей
-const eventTypeRaw = String(
-  (t as any).type ??
-  (t as any).taskType ??
-  (t as any).kind ??
-  (t as any).task_kind ??
-  ''
-).toUpperCase();
+          const eventTypeRaw = String(
+            (t as any).type ??
+            (t as any).taskType ??
+            (t as any).kind ??
+            (t as any).task_kind ??
+            ''
+          ).toUpperCase();
 
-const isEvent =
-  eventTypeRaw === 'EVENT' ||
-  (t as any).isEvent === true ||
-  Boolean((t as any).startAt || (t as any).eventStart || (t as any).start_at);
+          const isEvent =
+            eventTypeRaw === 'EVENT' ||
+            (t as any).isEvent === true ||
+            Boolean((t as any).startAt || (t as any).eventStart || (t as any).start_at);
 
-// 3) даты события — берём из любого доступного поля
-const startAt =
-  ((t as any).startAt ??
-   (t as any).eventStart ??
-   (t as any).start_at) as string | undefined;
+          const startAt =
+            ((t as any).startAt ??
+             (t as any).eventStart ??
+             (t as any).start_at) as string | undefined;
 
-const endAt =
-  ((t as any).endAt ??
-   (t as any).eventEnd ??
-   (t as any).end_at) as string | undefined;
+          const endAt =
+            ((t as any).endAt ??
+             (t as any).eventEnd ??
+             (t as any).end_at) as string | undefined;
 
-const dateLine = isEvent && startAt
-  ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}`
-  : null;
+          const dateLine = isEvent && startAt
+            ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}`
+            : null;
 
-          // 4) стили карточки
-          const cardBg   = done ? '#E8F5E9' : '#FFFFFF';
-          const cardBrd  = done ? '#C8E6C9' : '#e5e7eb';
-          const textCol  = '#0f1216';
-          const groupChipBg = done ? '#2e7d32' : '#3b4b7a';
+          const opened = openQBarId === t.id;
+          const currentPhase = ph;
+          const groupId = (t as any)?.groupId ?? null;
+
+ const badge = badgeForPhase(currentPhase);
+ const activeRing = opened ? '0 0 0 2px rgba(138,160,255,.45) inset, 0 8px 20px rgba(0,0,0,.20)' : '0 2px 8px rgba(0,0,0,.06)';
+
+
+
 
           return (
-            <button
-              key={t.id}
-              onClick={() => {
-                onOpenTask(t.id);
-                try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
-              }}
-              style={{
-                textAlign:'left',
-                background: cardBg,
-                color: textCol,
-                border:`1px solid ${cardBrd}`,
-                borderRadius: 16,
-                padding: 12,
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(0,0,0,.06)',
-              }}
-            >
-              <div style={{ fontSize:12, opacity:.6, marginBottom:4 }}>#{t.id.slice(0,6)}</div>
+     // вместо: <div key={t.id} style={{ position: 'relative', paddingTop: opened ? BAR_SPACE : 0 }}>
+<div key={t.id} style={{ position: 'relative' }}>
+  {opened && (
+    <StageQuickBar
+      taskId={t.id}
 
-              {/* Заголовок + бейдж статуса справа */}
-              <div style={{ display:'flex', alignItems:'start', gap:8, marginBottom:6 }}>
-                <div style={{ fontSize:16, whiteSpace:'pre-wrap', wordBreak:'break-word', flex:1 }}>
-                  {isEvent ? '📅 ' : ''}{t.text}
+      edgeInset={12} // ← поставь 0 чтобы растянуть по краям контейнера
+      groupId={groupId}
+      meChatId={meChatId}
+      currentPhase={currentPhase}
+      onPicked={(next) => {
+        // локально обновим только выбранную карточку
+        patchItem(t.id, { phase: next, status: statusTextFromStage(next) });
+      }}
+      onRequestClose={closeQBar}
+    />
+  )}
+
+  {/* карточка смещается ВНИЗ, освобождая место ПЕРЕД собой */}
+ <button
+    style={{
+      marginTop: opened ? BAR_SPACE : 0,
+      textAlign: 'left',
+      background: cardBg,
+      color: '#0f1216',
+     border: `1px solid ${opened ? '#30416d' : cardBrd}`,
+      borderRadius: 16,
+      padding: 12,
+      cursor: 'pointer',
+     boxShadow: activeRing,
+      width: '100%',
+      userSelect: 'none' as const,
+      WebkitUserSelect: 'none' as const,
+      msUserSelect: 'none' as const,
+      touchAction: 'manipulation',
+      transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease'
+    }}
+   onClick={() => { if (!opened) { onOpenTask(t.id); WebApp?.HapticFeedback?.impactOccurred?.('light'); }}}
+    onMouseDown={(e) => { e.preventDefault(); startLongPress(t.id); }}
+    onMouseUp={cancelLongPress}
+    onMouseLeave={cancelLongPress}
+    onTouchStart={() => startLongPress(t.id)}
+    onTouchEnd={cancelLongPress}
+    onTouchCancel={cancelLongPress}
+    onContextMenu={(e) => e.preventDefault()}
+    onDragStart={(e) => e.preventDefault()}
+  >
+
+
+
+
+                <div style={{ fontSize:12, opacity:.6, marginBottom:4 }}>#{t.id.slice(0,6)}</div>
+
+                <div style={{ display:'flex', alignItems:'start', gap:8, marginBottom:6 }}>
+                  <div style={{ fontSize:16, whiteSpace:'pre-wrap', wordBreak:'break-word', flex:1 }}>
+                    {isEvent ? '📅 ' : ''}{(t as any).text}
+                  </div>
+                     {badge && (
+     <span
+       title={badge.text}
+       style={{
+         background: badge.bg,
+         color: badge.fg,
+         border: `1px solid ${badge.brd}`,
+         padding:'2px 8px',
+         borderRadius: 999,
+         fontSize:12,
+         whiteSpace:'nowrap'
+       }}
+     >
+       {badge.text}
+     </span>
+   )}
                 </div>
-                {done && (
-                  <span
-                    title={status || 'Готово'}
-                    style={{
-                      background:'#D1F2DC',
-                      color:'#0f5132',
-                      border:'1px solid #A3DFB9',
-                      padding:'2px 8px',
-                      borderRadius: 999,
-                      fontSize:12,
-                      whiteSpace:'nowrap'
-                    }}
-                  >
-                    ✓ Готово
-                  </span>
+
+                {dateLine && (
+                  <div style={{ fontSize:12, opacity:.75, marginBottom: 6 }}>{dateLine}</div>
                 )}
-              </div>
 
-              {/* дата-строка под заголовком — только для событий */}
-              {dateLine && (
-                <div style={{ fontSize:12, opacity:.75, marginBottom: 6 }}>{dateLine}</div>
-              )}
+                <div
+                  style={{
+                    display:'inline-block',
+                    background: groupChipBg,
+                    color:'#fff',
+                    padding:'3px 8px',
+                    borderRadius:8,
+                    fontSize:12,
+                    marginBottom:6
+                  }}
+                >
+                  {(t as any).groupTitle}
+                </div>
 
-              {/* плашка с названием группы */}
-              <div
-                style={{
-                  display:'inline-block',
-                  background: groupChipBg,
-                  color:'#fff',
-                  padding:'3px 8px',
-                  borderRadius:8,
-                  fontSize:12,
-                  marginBottom:6
-                }}
-              >
-                {t.groupTitle}
-              </div>
-
-              <div style={{ fontSize:12, opacity:.8, display:'flex', gap:10 }}>
-                <span>👤 {t.creatorName}</span>
-                {t.assigneeName ? <span>→ {t.assigneeName}</span> : null}
-                <span style={{ marginLeft:'auto' }}>{new Date(t.updatedAt).toLocaleString()}</span>
-              </div>
-            </button>
+                <div style={{ fontSize:12, opacity:.8, display:'flex', gap:10 }}>
+                  <span>👤 {(t as any).creatorName}</span>
+                  {(t as any).assigneeName ? <span>→ {(t as any).assigneeName}</span> : null}
+                  <span style={{ marginLeft:'auto' }}>{new Date((t as any).updatedAt).toLocaleString()}</span>
+                </div>
+              </button>
+            </div>
           );
         })}
       </div>
