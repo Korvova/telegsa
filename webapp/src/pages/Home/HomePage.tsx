@@ -343,6 +343,42 @@ useEffect(() => {
 
 
 
+
+useEffect(() => {
+  const el = sliderRef.current;
+  if (!el) return;
+
+  // колёсико — шаг на 1 страницу
+  let wheelLock = false;
+  const onWheelStep = (e: WheelEvent) => {
+    // реагируем только на горизонтальное колесо
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    if (wheelLock) return;
+    wheelLock = true;
+
+    const dir = e.deltaX > 0 ? 1 : -1;
+    const page = Math.round(el.scrollLeft / el.clientWidth);
+    const next = Math.max(0, Math.min(page + dir, PAGES.length - 1));
+    el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
+
+    setTimeout(() => { wheelLock = false; }, 350);
+  };
+
+  el.addEventListener('wheel', onWheelStep, { passive: false });
+  return () => { el.removeEventListener('wheel', onWheelStep as any); };
+}, []);
+
+
+
+
+
+
+
+
+
+
+
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
       <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
@@ -410,14 +446,16 @@ useEffect(() => {
 
 
   return (
-    <section
-      key={pg.key}
-      style={{
-        minWidth: '100%',
-        scrollSnapAlign: 'start',
-        paddingTop: 8,
-      }}
-    >
+<section
+  key={pg.key}
+  style={{
+    minWidth: '100%',
+    scrollSnapAlign: 'start',
+    scrollSnapStop: 'always',   // ← чтобы не пролетать мимо следующей страницы
+    paddingTop: 8,
+  }}
+>
+
 
 
 
@@ -499,29 +537,25 @@ useEffect(() => {
                 ? '0 0 0 2px rgba(138,160,255,.45) inset, 0 8px 20px rgba(0,0,0,.20)'
                 : '0 2px 8px rgba(0,0,0,.06)';
 
-              return (
-<div
-  key={t.id}
-  style={{
-    position: 'relative',
-    zIndex: opened ? 1200 : 'auto',
-  }}
->
+const anchorId = `task-card-${pg.key}-${t.id}`; // ← уникально для каждой страницы
 
-
-
-{opened && (
-  <StageQuickBar
-    anchorId={`task-card-${t.id}`}   // ← НОВОЕ
-    taskId={t.id}
-    groupId={groupId}
-    meChatId={meChatId}
-    currentPhase={currentPhase}
-    edgeInset={12}
-    onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
-    onRequestClose={closeQBar}
-  />
-)}
+return (
+  <div
+    key={`${pg.key}-${t.id}`} // ← тоже делаем key уникальным
+    style={{ position: 'relative', zIndex: opened ? 1200 : 'auto' }}
+  >
+    {opened && (
+      <StageQuickBar
+        anchorId={anchorId}          // ← передаём сюда
+        taskId={t.id}
+        groupId={groupId}
+        meChatId={meChatId}
+        currentPhase={currentPhase}
+        edgeInset={12}
+        onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
+        onRequestClose={closeQBar}
+      />
+    )}
 
 
 
@@ -530,7 +564,8 @@ useEffect(() => {
 
 
                   <button
-                  id={`task-card-${t.id}`}
+                        id={anchorId}  
+               
                     style={{
                    
                       textAlign: 'left',

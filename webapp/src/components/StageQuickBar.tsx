@@ -70,21 +70,42 @@ export default function StageQuickBar({
     (ORDER as string[]).includes(String(currentPhase)) ? (currentPhase as StageKey) : undefined;
 
   // ---- позиционирование модалки над карточкой
-  const [pos, setPos] = useState<{ top: number; left: number; right: number }>({ top: 0, left: 12, right: 12 });
+const [pos, setPos] = useState<{ top: number; left: number; width: number; above: boolean }>({
+  top: 0, left: 12, width: 320, above: true
+});
 
-  const recompute = () => {
-    const el = document.getElementById(anchorId);
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const GAP = 6;
-    const BAR_H = 44;
-    let top = r.top - GAP - BAR_H;             // сначала пытаемся над карточкой
-    if (top < 8) top = r.bottom + GAP;         // если не влезает — под карточкой
 
-    const left = Math.max(8, r.left + edgeInset);
-    const right = Math.max(8, window.innerWidth - (r.right - edgeInset));
-    setPos({ top, left, right });
-  };
+const recompute = () => {
+  const el = document.getElementById(anchorId);
+  if (!el) return;
+
+  const r = el.getBoundingClientRect();
+  const GAP = 6;
+
+  // Пытаемся показать над карточкой (с translateY), если хватает места
+  const hasRoomAbove = r.top >= 52; // 44px панель + запас
+  const top = hasRoomAbove ? (r.top - GAP) : (r.bottom + GAP);
+  const above = hasRoomAbove;
+
+  const viewportW = document.documentElement.clientWidth;
+  const cardWidth = Math.max(0, r.width - 2 * edgeInset);
+
+  let left = r.left + edgeInset;
+  // клампы по краям
+  left = Math.max(8, Math.min(left, viewportW - 8));
+
+  // ширина — не шире карточки и вьюпорта
+  const maxWidth = Math.max(120, viewportW - left - 8);
+  const width = Math.max(120, Math.min(cardWidth, maxWidth));
+
+  setPos({
+    top: Math.round(top),
+    left: Math.round(left),
+    width: Math.round(width),
+    above,
+  });
+};
+
 
   useEffect(() => {
     // при открытии: позиция + запрет скролла фона
@@ -162,29 +183,40 @@ export default function StageQuickBar({
         onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
         onTouchMove={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
-        style={{
-          position: 'fixed',
-          top: pos.top,
-          left: pos.left,
-          right: pos.right,
-          height: 44,
-          borderRadius: 12,
-          background: '#0b1220',
-       border: '1px solid #2a3346',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '6px 8px',
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          touchAction: 'pan-x',
-          WebkitOverflowScrolling: 'touch',
-          boxShadow: '0 8px 24px rgba(0,0,0,.35)',
-          zIndex: 3001,
-          userSelect: 'none',
-          pointerEvents: 'auto',
-        }}
+
+
+
+        
+       style={{
+  position: 'fixed',
+  top: pos.top,
+  left: pos.left,
+  width: pos.width,
+  height: 44,
+  transform: pos.above ? 'translateY(-100%)' : 'none', // ← ключ
+  borderRadius: 12,
+  background: '#0b1220',
+  border: '1px solid #2a3346',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '6px 8px',
+  overflowX: 'auto',
+  overflowY: 'hidden',
+  touchAction: 'pan-x',
+  WebkitOverflowScrolling: 'touch',
+  boxShadow: '0 8px 24px rgba(0,0,0,.35)',
+  zIndex: 3001,
+  userSelect: 'none',
+  pointerEvents: 'auto',
+}}
+
+
       >
+
+
+
+
         {stages.map((s) => {
           const c = COLORS[s];
           const isActive = s === active;
