@@ -673,3 +673,128 @@ export async function transcribeVoice(file: File, lang = 'ru'): Promise<{ ok: bo
   return res.json();
 }
 
+
+
+
+
+
+
+
+
+
+
+// === Labels API ===
+export type GroupLabel = {
+  id: string;
+  title: string;
+  color?: string | null;
+  order: number;
+};
+
+const BASE = import.meta.env.VITE_API_BASE;
+
+/** Список ярлыков группы (создаст дефолтные при первом вызове) */
+export async function getGroupLabels(groupId: string): Promise<GroupLabel[]> {
+  const r = await fetch(`${BASE}/groups/${encodeURIComponent(groupId)}/labels`);
+  const j = await r.json();
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'getGroupLabels_failed');
+  return j.labels as GroupLabel[];
+}
+
+/** Создать ярлык в группе (только владелец) */
+export async function createGroupLabel(
+  groupId: string,
+  params: { chatId: string | number; title: string; color?: string | null; order?: number }
+): Promise<GroupLabel> {
+  const r = await fetch(`${BASE}/groups/${encodeURIComponent(groupId)}/labels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const j = await r.json();
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'createGroupLabel_failed');
+  return j.label as GroupLabel;
+}
+
+/** Обновить ярлык (только владелец): можно менять title/color/order */
+export async function updateGroupLabel(
+  groupId: string,
+  labelId: string,
+  params: { chatId: string | number; title?: string; color?: string | null; order?: number }
+): Promise<GroupLabel> {
+  const r = await fetch(
+    `${BASE}/groups/${encodeURIComponent(groupId)}/labels/${encodeURIComponent(labelId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    }
+  );
+  const j = await r.json();
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'updateGroupLabel_failed');
+  return j.label as GroupLabel;
+}
+
+/** Удалить ярлык (только владелец) */
+export async function deleteGroupLabel(
+  groupId: string,
+  labelId: string,
+  chatId: string | number
+): Promise<void> {
+  const r = await fetch(
+    `${BASE}/groups/${encodeURIComponent(groupId)}/labels/${encodeURIComponent(labelId)}?chatId=${encodeURIComponent(
+      String(chatId)
+    )}`,
+    { method: 'DELETE' }
+  );
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'deleteGroupLabel_failed');
+}
+
+/** Повесить ярлыки на задачу (участник или владелец группы) */
+export async function attachTaskLabels(
+  taskId: string,
+  chatId: string | number,
+  labelIds: string[]
+): Promise<GroupLabel[]> {
+  const r = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}/labels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, labelIds }),
+  });
+  const j = await r.json();
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'attachTaskLabels_failed');
+  return j.labels as GroupLabel[];
+}
+
+/** Снять один ярлык с задачи (участник или владелец группы) */
+export async function removeTaskLabel(
+  taskId: string,
+  labelId: string,
+  chatId: string | number
+): Promise<void> {
+  const r = await fetch(
+    `${BASE}/tasks/${encodeURIComponent(taskId)}/labels/${encodeURIComponent(labelId)}?chatId=${encodeURIComponent(
+      String(chatId)
+    )}`,
+    { method: 'DELETE' }
+  );
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'removeTaskLabel_failed');
+}
+
+
+
+
+/** Текущие ярлыки задачи */
+export async function getTaskLabels(taskId: string): Promise<GroupLabel[]> {
+  const r = await fetch(`${BASE}/tasks/${encodeURIComponent(taskId)}/labels`);
+  const j = await r.json();
+  if (!r.ok || !j?.ok) throw new Error(j?.error || 'getTaskLabels_failed');
+  return j.labels as GroupLabel[];
+}
+
+
+
+
+

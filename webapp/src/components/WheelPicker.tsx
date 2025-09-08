@@ -33,6 +33,27 @@ export default function WheelPicker({
     [visibleCount, itemHeight]
   );
 
+
+
+
+const [minTranslate, maxTranslate] = useMemo(() => {
+  // translateY = centerOffset - index*itemHeight
+  // index = 0  -> maxTranslate = centerOffset
+  // index = last -> minTranslate = centerOffset - (N-1)*itemHeight
+  const last = Math.max(0, items.length - 1);
+  const maxT = centerOffset; // верхняя граница (первый элемент)
+  const minT = centerOffset - last * itemHeight; // нижняя граница (последний)
+  return [minT, maxT];
+}, [centerOffset, itemHeight, items.length]);
+
+const clampTranslate = (t: number) => Math.max(minTranslate, Math.min(t, maxTranslate));
+
+
+
+
+
+
+
   // начальная установка позиции
   useEffect(() => {
     setImmediatePosition(currentIndexRef.current);
@@ -71,23 +92,35 @@ export default function WheelPicker({
     return 0;
   };
 
-  const setImmediatePosition = (index: number) => {
-    if (!listRef.current) return;
-    const translateY = centerOffset - index * itemHeight;
-    listRef.current.style.transition = 'none';
-    listRef.current.style.transform = `translateY(${translateY}px)`;
-    updateSizesAndHighlight(index);
-  };
 
-  const setAnimatedSnapToIndex = (index: number) => {
-    if (!listRef.current) return;
-    const clamped = Math.max(0, Math.min(index, items.length - 1));
-    currentIndexRef.current = clamped;
-    const translateY = centerOffset - clamped * itemHeight;
-    listRef.current.style.transition = 'transform 0.3s ease-out';
-    listRef.current.style.transform = `translateY(${translateY}px)`;
-    updateSizesAndHighlight(clamped);
-  };
+
+
+const setImmediatePosition = (index: number) => {
+  if (!listRef.current) return;
+  const translateY = clampTranslate(centerOffset - index * itemHeight);
+  listRef.current.style.transition = 'none';
+  listRef.current.style.transform = `translateY(${translateY}px)`;
+  updateSizesAndHighlight(index);
+};
+
+  
+
+
+
+
+const setAnimatedSnapToIndex = (index: number) => {
+  if (!listRef.current) return;
+  const clamped = Math.max(0, Math.min(index, items.length - 1));
+  currentIndexRef.current = clamped;
+  const translateY = clampTranslate(centerOffset - clamped * itemHeight);
+  listRef.current.style.transition = 'transform 0.3s ease-out';
+  listRef.current.style.transform = `translateY(${translateY}px)`;
+  updateSizesAndHighlight(clamped);
+};
+
+
+
+
 
   const startInertia = (initialVelocityPxPerFrame: number) => {
     let velocity = initialVelocityPxPerFrame;
@@ -101,11 +134,25 @@ export default function WheelPicker({
         return;
       }
       const currentTranslate = getCurrentTranslate();
-      const newTranslate = currentTranslate + velocity;
-      listRef.current.style.transform = `translateY(${newTranslate}px)`;
 
-      const rawIndex = (centerOffset - newTranslate) / itemHeight;
-      updateSizesAndHighlight(rawIndex);
+
+
+let newTranslate = currentTranslate + velocity;
+const clampedTranslate = clampTranslate(newTranslate);
+listRef.current.style.transform = `translateY(${clampedTranslate}px)`;
+
+const rawIndex = (centerOffset - clampedTranslate) / itemHeight;
+updateSizesAndHighlight(rawIndex);
+
+// если упёрлись в край — гасим инерцию
+if (clampedTranslate !== newTranslate) {
+  velocity = 0;
+}
+
+
+
+
+
 
       velocity *= 0.95; // трение
       inertiaIdRef.current = requestAnimationFrame(step);
@@ -140,12 +187,22 @@ export default function WheelPicker({
     if (positionsRef.current.length > 5) positionsRef.current.shift();
 
     const deltaY = clientY - startYRef.current;
-    const newTranslate = startTranslateRef.current + deltaY;
-    listRef.current.style.transform = `translateY(${newTranslate}px)`;
 
-    const rawIndex = (centerOffset - newTranslate) / itemHeight;
-    updateSizesAndHighlight(rawIndex);
+
+
+const newTranslate = startTranslateRef.current + deltaY;
+const clamped = clampTranslate(newTranslate);
+listRef.current.style.transform = `translateY(${clamped}px)`;
+
+const rawIndex = (centerOffset - clamped) / itemHeight;
+updateSizesAndHighlight(rawIndex);
+
   };
+
+
+
+
+
 
   const onDragEnd = () => {
     if (!draggingRef.current) return;
@@ -254,24 +311,25 @@ const onUp = () => {
         }}
       >
         {items.map((it) => (
-          <li
-            key={it.id}
-            className="picker-item"
-            style={{
-              height: itemHeight,
-              lineHeight: `${itemHeight}px`,
-              textAlign: 'center',
-              fontSize: 16,
-              color: '#666',
-              padding: '0 8px',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              transition: 'font-size 0.1s ease-out',
-            }}
-          >
-            {it.label}
-          </li>
+<li
+  key={it.id}
+  className="picker-item"
+  style={{
+    height: itemHeight,
+    lineHeight: `${itemHeight}px`,
+    textAlign: 'left',
+    fontSize: 16,
+    color: '#666',
+    padding: '0 12px 0 16px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    transition: 'font-size 0.1s ease-out',
+  }}
+>
+  {it.label}
+</li>
+
         ))}
       </ul>
 

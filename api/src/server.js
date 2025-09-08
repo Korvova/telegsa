@@ -26,6 +26,7 @@ import path from 'node:path';
 
 
 
+ import { labelsRouter } from './routes/labels.js';
 
 
 const prisma = new PrismaClient();
@@ -376,6 +377,14 @@ app.use('/events', eventsRouter);
 /* ---------- Процесс ---------- */
 
 app.use(processRouter);
+
+
+
+
+/* ---------- ярлыки ---------- */
+
+app.use(labelsRouter); 
+
 
 
 /* ---------- helper: имена ответственных в колонках ---------- */

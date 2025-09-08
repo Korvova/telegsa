@@ -83,6 +83,9 @@ model Task {
   media TaskMedia[]   // вложения из Telegram (photo/voice/document)
 
 
+    labels    TaskLabel[]  // NEW
+
+
 }
 
 /* -------------------- GROUPS -------------------- */
@@ -100,6 +103,8 @@ model Group {
 
   @@unique([ownerChatId, title])
   @@index([ownerChatId])
+
+  labels    GroupLabel[] // NEW
 }
 
 model User {
@@ -407,4 +412,36 @@ model RunTask {
   telegramChatId     String? // кому отправили чек-лист
   createdAt         DateTime @default(now())
   doneAt            DateTime?
+}
+
+
+
+
+model GroupLabel {
+  id        String      @id @default(cuid())
+  groupId   String
+  group     Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  title     String
+  color     String?     // опционально: hex, например "#8BC34A"
+  order     Int         @default(0)
+
+  tasks     TaskLabel[]
+
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([groupId, title])
+}
+
+model TaskLabel {
+  taskId     String
+  labelId    String
+  assignedBy String?     // chatId, кто назначил
+  assignedAt DateTime    @default(now())
+
+  task       Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label      GroupLabel  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
 }

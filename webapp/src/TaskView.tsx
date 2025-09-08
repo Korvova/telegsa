@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
-import type { Task, TaskMedia } from './api';
-import { listGroups, API_BASE, fetchBoard, moveTask, type Group } from './api';
+import type { Task, TaskMedia, GroupLabel } from './api';
+import { getTaskLabels, removeTaskLabel, listGroups, API_BASE, fetchBoard, moveTask, type Group } from './api';
+
 
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
@@ -14,6 +15,8 @@ import { createPortal } from 'react-dom';
 
 // сверху рядом с другими импортами
 import StageScroller, { type StageKey } from './components/StageScroller';
+
+import TaskLabelDrawer from './components/TaskLabelDrawer';
 
 
 
@@ -46,6 +49,11 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
   const [phase, setPhase] = useState<string | undefined>(undefined);
   const isDone = phase === 'Done';
+
+
+  const [labelDrawerOpen, setLabelDrawerOpen] = useState(false);
+const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
+
 
 
 
@@ -151,6 +159,25 @@ const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
       })
       .catch(() => {});
   }, [groupId]);
+
+
+
+
+
+
+
+useEffect(() => {
+  let alive = true;
+  (async () => {
+    try {
+      const cur = await getTaskLabels(taskId);
+      if (alive) setTaskLabels(cur);
+    } catch {}
+  })();
+  return () => { alive = false; };
+}, [taskId]);
+
+
 
 
 
@@ -369,6 +396,16 @@ if (targetGroupId) {
     console.error('[TaskView] moveToGroup error', e);
     alert('Не удалось перенести в выбранную группу');
   } finally {
+
+
+try {
+  await Promise.all(taskLabels.map((l) => removeTaskLabel(taskId, l.id, meChatId)));
+} catch {}
+setTaskLabels([]);
+
+
+
+
     setGroupPickerOpen(false);
   }
 };
@@ -600,6 +637,11 @@ return; // не сбрасываем saving до завершения анима
 
 
 
+
+
+
+
+
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -682,6 +724,55 @@ return; // не сбрасываем saving до завершения анима
           >
             {isDone ? 'Возобновить → Doing' : 'Завершить'}
           </button>
+
+
+
+<button
+  onClick={() => setLabelDrawerOpen(true)}
+  style={{
+    padding: '10px 14px',
+    borderRadius: 12,
+    border: '1px solid #2a3346',
+    background: '#202840',
+    color: '#e8eaed',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+  }}
+  aria-label="Выбрать ярлык для задачи"
+  title="Выбрать ярлык"
+>
+  <span>🏷️ Ярлык</span>
+
+  {taskLabels.length ? (
+    <span
+      style={{
+        padding: '2px 8px',
+        border: '1px solid #2a3346',
+        borderRadius: 999,
+        background: '#12202a',
+        color: '#d7ffd7',
+        fontSize: 12,
+        lineHeight: '16px',
+        maxWidth: 160,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+      title={taskLabels.map(l => l.title).join(', ')}
+    >
+      {taskLabels[0].title}
+      {taskLabels.length > 1 ? ` +${taskLabels.length - 1}` : ''}
+    </span>
+  ) : (
+    <span style={{ opacity: .7, fontSize: 12 }}>Без ярлыка</span>
+  )}
+</button>
+
+
+
+
 
 
 
@@ -1111,9 +1202,17 @@ return; // не сбрасываем saving до завершения анима
 )}
 
 
-
-
-
+{labelDrawerOpen && (
+  <TaskLabelDrawer
+    open={labelDrawerOpen}
+    onClose={() => setLabelDrawerOpen(false)}
+    taskId={taskId}
+    groupId={groupId}
+    chatId={meChatId}
+    onSelectionChange={(ls) => setTaskLabels(ls)}
+  />
+)}
     </div>
   );
 }
+
