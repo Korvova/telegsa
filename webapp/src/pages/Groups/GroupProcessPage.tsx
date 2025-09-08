@@ -1,3 +1,5 @@
+//GroupProcessPage.tsx
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import CondEdge from '../../components/CondEdge';
@@ -32,14 +34,21 @@ import {
 import 'reactflow/dist/style.css';
 import './GroupProcessPage.css';
 
-import { fetchProcess, saveProcess, getGroupMembers, type GroupMember } from '../../api';
+import { fetchProcess, saveProcess, getGroupMembers, getTask, type GroupMember } from '../../api';
 
 /* ================= Types ================= */
-type Props = {
-  chatId: string;
-  groupId?: string | null;
-  onOpenTask: (id: string) => void;
-};
+ type Props = {
+   chatId: string;
+   groupId?: string | null;
+   onOpenTask: (id: string) => void;
+   seedTaskId?: string | null;
+   seedAssigneeChatId?: string | null;
+   onSeedConsumed?: () => void;
+  /** Открыть новое полотно процесса именно для seed-задачи (игнорим процесс группы) */
+  forceSeedFromTask?: boolean;
+  /** Временная блокировка сохранения, чтобы не перезатереть групповой процесс */
+  disableSave?: boolean;
+ };
 
 type CondEdgeData = { icon?: string };
 
@@ -441,7 +450,28 @@ const nodeTypes = { editable: EditableNode } as const;
 const edgeTypes = { cond: CondEdge } as const;
 
 /* ================= Inner ================= */
-function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; groupId: string | null }) {
+function GroupProcessInner({
+  chatId,
+  groupId: rawGroupId,
+  seedTaskId,
+  seedAssigneeChatId,
+  onSeedConsumed,
+
+  forceSeedFromTask,
+  disableSave,
+
+
+}: {
+  chatId: string;
+  groupId: string | null;
+  seedTaskId?: string | null;
+  seedAssigneeChatId?: string | null;
+  onSeedConsumed?: () => void;
+  forceSeedFromTask?: boolean;
+  disableSave?: boolean;
+}) {
+
+
   const groupId = rawGroupId ? String(rawGroupId) : null;
 
   const [runMode, setRunMode] = useState<'MANUAL' | 'SCHEDULE'>('MANUAL');
@@ -997,31 +1027,99 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
   /* ---------- загрузка/сохранение из API ---------- */
   async function loadProcess() {
     // демо, если группа не выбрана
-    if (!groupId) {
-      const demo: Node<EditableData>[] = [
+ 
+
+  // 0) Режим: "новое полотно для конкретной задачи"
+  if (seedTaskId && forceSeedFromTask) {
+    try {
+      setLoading(true);
+      setLoadInfo('Подготавливаем полотно…');
+      const resp = await getTask(String(seedTaskId));
+      const t = resp.task;
+      const leftId = 'seed_task_' + String(t.id);
+      const rightId = 'seed_new_' + String(Date.now());
+      const assignee = (t.assigneeChatId || seedAssigneeChatId || chatId)
+        ? String(t.assigneeChatId || seedAssigneeChatId || chatId)
+        : null;
+
+      const seededNodes: Node<EditableData>[] = [
         {
-          id: 'demo_1',
+          id: leftId,
           type: 'editable',
           position: { x: 100, y: 100 },
-          data: { label: 'Demo 1', onChange: onLabelChange, onAction: onNodeAction },
+          data: {
+            label: clampGraphemes(String(t.text || 'Задача')),
+            assigneeName: t.assigneeName || undefined,
+            assigneeChatId: assignee,
+            status: 'NEW',
+            onChange: onLabelChange,
+            onAction: onNodeAction,
+          },
           sourcePosition: Position.Right,
           targetPosition: Position.Left,
         },
         {
-          id: 'demo_2',
+          id: rightId,
           type: 'editable',
           position: { x: 320, y: 100 },
-          data: { label: 'Demo 2', onChange: onLabelChange, onAction: onNodeAction },
+          data: { label: '', autoEdit: true, status: 'NEW', onChange: onLabelChange, onAction: onNodeAction },
           sourcePosition: Position.Right,
           targetPosition: Position.Left,
         },
       ];
-      setNodes(demo);
-      setEdges([{ id: 'e_demo', source: 'demo_1', target: 'demo_2', type: 'cond', data: {} }]);
-      setLoadInfo(`Демо: узлов ${demo.length}, связей 1`);
+      const seededEdges: Edge<CondEdgeData>[] = [
+        { id: 'seed_e_' + Date.now(), source: leftId, target: rightId, type: 'cond', data: { icon: '➡️' } },
+      ];
+      setNodes(seededNodes);
+      setEdges(seededEdges);
+      setLoadInfo('Черновик процесса для задачи');
       setTimeout(() => fitSafe(), 120);
-      return;
+      onSeedConsumed?.();
+    } catch (e) {
+      console.error('[process] seed draft error', e);
+      setLoadInfo('Не удалось подготовить полотно');
+    } finally {
+      setLoading(false);
     }
+    return; // 👈 важно: не грузим процесс группы
+ }
+
+
+
+
+  // Нет выбранной группы → показываем демо-пустышку и не зовём API
+  if (!groupId) {
+    setLoading(false);
+    setLoadInfo('Нет выбранной группы');
+    const demoNodes: Node<EditableData>[] = [
+      {
+        id: 'seed_1',
+        type: 'editable',
+        position: { x: 100, y: 100 },
+        data: { label: 'Старт', onChange: onLabelChange, onAction: onNodeAction },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      },
+      {
+        id: 'seed_2',
+        type: 'editable',
+        position: { x: 320, y: 100 },
+        data: { label: 'Следующий шаг', onChange: onLabelChange, onAction: onNodeAction },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      },
+    ];
+    const demoEdges: Edge<CondEdgeData>[] = [
+      { id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} },
+    ];
+    setNodes(demoNodes);
+    setEdges(demoEdges);
+    setTimeout(() => fitSafe(), 120);
+    return;
+  }
+
+
+
 
     try {
       setLoading(true);
@@ -1092,6 +1190,58 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           data: {},
         }));
       }
+
+
+
+
+
+    // ⬇️ Если пришли seed-параметры из TaskView и сейчас у нас дефолтный пустой процесс,
+      // подменяем на «текущая задача → новая»
+      if (seedTaskId && rfNodes.length === 2 && rfNodes[0].id === 'seed_1') {
+        try {
+          const resp = await getTask(String(seedTaskId));
+          const t = resp.task;
+          const leftId = 'seed_task_' + String(t.id);
+          const rightId = 'seed_new_' + String(Date.now());
+          const assignee = (t.assigneeChatId || seedAssigneeChatId || chatId)
+            ? String(t.assigneeChatId || seedAssigneeChatId || chatId)
+            : null;
+
+          rfNodes = [
+            {
+              id: leftId,
+              type: 'editable',
+              position: { x: 100, y: 100 },
+              data: {
+                label: clampGraphemes(String(t.text || 'Задача')),
+                assigneeName: t.assigneeName || undefined,
+                assigneeChatId: assignee,
+                onChange: onLabelChange,
+                onAction: onNodeAction,
+              },
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+            },
+            {
+              id: rightId,
+              type: 'editable',
+              position: { x: 320, y: 100 },
+              data: { label: '', autoEdit: true, onChange: onLabelChange, onAction: onNodeAction },
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+            },
+          ];
+          rfEdges = [{ id: 'seed_e_' + Date.now(), source: leftId, target: rightId, type: 'cond', data: {} }];
+          onSeedConsumed?.();
+        } catch (e) {
+          console.warn('[process] seed from task failed', e);
+        }
+      }
+
+
+
+
+
 
       setNodes(rfNodes);
       setEdges(rfEdges);
@@ -1211,7 +1361,16 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
           </button>
         )}
 
-        <button onClick={handleSave}>💾 Сохранить</button>
+<button
+  onClick={handleSave}
+  title={disableSave ? 'Сохранение отключено' : 'Сохранить'}
+  disabled={!!disableSave}
+>
+  💾 Сохранить
+</button>
+
+
+
         <button
           onClick={() => {
             const vpCenter = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -1350,12 +1509,22 @@ function GroupProcessInner({ chatId, groupId: rawGroupId }: { chatId: string; gr
 }
 
 /* ================= Outer ================= */
-export default function GroupProcessPage(props: Props) {
-  return (
-    <ReactFlowProvider>
-      <div className="rf-scope" style={{ textAlign: 'initial', height: '100%', minHeight: 0 }}>
-        <GroupProcessInner chatId={props.chatId} groupId={props.groupId ? String(props.groupId) : null} />
-      </div>
-    </ReactFlowProvider>
-  );
-}
+ function GroupProcessPage(props: Props) {
+   return (
+     <ReactFlowProvider>
+       <div className="rf-scope" style={{ textAlign: 'initial', height: '100%', minHeight: 0 }}>
+         <GroupProcessInner
+           chatId={props.chatId}
+           groupId={props.groupId ? String(props.groupId) : null}
+           seedTaskId={props.seedTaskId}
+           seedAssigneeChatId={props.seedAssigneeChatId}
+           onSeedConsumed={props.onSeedConsumed}
+          forceSeedFromTask={props.forceSeedFromTask}
+          disableSave={props.disableSave}
+         />
+       </div>
+     </ReactFlowProvider>
+   );
+ }
+
+ export default GroupProcessPage;

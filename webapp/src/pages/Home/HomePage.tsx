@@ -632,10 +632,11 @@ export default function HomePage({
                           <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4 }}>#{t.id.slice(0, 6)}</div>
 
                           <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
-                            <div style={{ fontSize: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-                              {isEvent ? '📅 ' : ''}
-                              {(t as any).text}
-                            </div>
+<div style={{ fontSize: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
+  {isEvent ? '📅 ' : ''}
+  {(t as any).fromProcess ? '🔀 ' : ''}   {/* ← добавили */}
+  {(t as any).text}
+</div>
                             {badge && (
                               <span
                                 title={badge.text}

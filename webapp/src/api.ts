@@ -12,6 +12,8 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
 
+    fromProcess?: boolean; // 🔀
+
   // назначение
   assigneeChatId?: string | null;
   assigneeName?: string | null;
@@ -638,6 +640,10 @@ export type TaskFeedItem = {
   labelTitles?: string[];
 
 
+    fromProcess?: boolean;       // ← новый флаг
+  taskType?: 'TASK' | 'EVENT'; // ← если пробросишь из бэка
+
+
 };
 
 export async function listMyFeed(params: {
@@ -801,6 +807,11 @@ export async function getTaskLabels(taskId: string): Promise<GroupLabel[]> {
 }
 
 
+
+export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; outgoing: Array<{id:string;text:string}>; incoming: Array<{id:string;text:string}>; }> {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/relations`);
+  return r.json();
+}
 
 
 

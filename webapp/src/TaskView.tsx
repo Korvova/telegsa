@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import type { Task, TaskMedia, GroupLabel } from './api';
+import { getTaskRelations } from './api'; // 👈 обычный импорт значения
 import { getTaskLabels, removeTaskLabel, listGroups, API_BASE, fetchBoard, moveTask, type Group } from './api';
 
 
@@ -54,6 +55,11 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [labelDrawerOpen, setLabelDrawerOpen] = useState(false);
 const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
 
+
+
+
+const [relations, setRelations] = useState<{outgoing: Array<{id:string;text:string}>, incoming: Array<{id:string;text:string}>}>({ outgoing: [], incoming: [] });
+const hasRelations = relations.outgoing.length > 0 || relations.incoming.length > 0;
 
 
 
@@ -162,7 +168,12 @@ const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
 
 
-
+useEffect(() => {
+  if (!task?.id) return;
+  getTaskRelations(task.id).then(r => {
+    if (r?.ok) setRelations({ outgoing: r.outgoing || [], incoming: r.incoming || [] });
+  }).catch(() => {});
+}, [task?.id]);
 
 
 
@@ -426,6 +437,9 @@ setTaskLabels([]);
 
 
   /* --- действия с задачей --- */
+
+
+
   const save = async () => {
     const val = text.trim();
     if (!val) return;
@@ -441,6 +455,9 @@ setTaskLabels([]);
     }
   };
 
+
+
+
 const toggleDone = async () => {
   setSaving(true);
   try {
@@ -454,6 +471,11 @@ await completeTask(taskId);
 setPhase('Done');
 onChanged?.();
 WebApp?.HapticFeedback?.notificationOccurred?.('success');
+
+
+
+
+
 
 // даём карточке "позеленеть" 140–180мс и запускаем эффект
 setTimeout(() => {
@@ -642,20 +664,56 @@ return; // не сбрасываем saving до завершения анима
 
 
 
+        <div style={{ position: 'relative', width: '100%' }}>
         <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={6}
-          style={{
-            width: '95%',
-            background: '#121722',
-            color: '#e8eaed',
-            border: '1px solid #2a3346',
-            borderRadius: 12,
-            padding: 10,
-            resize: 'vertical',
-          }}
-        />
+           value={text}
+           onChange={(e) => setText(e.target.value)}
+           rows={6}
+           style={{
+             width: '95%',
+             background: '#121722',
+             color: '#e8eaed',
+             border: '1px solid #2a3346',
+             borderRadius: 12,
+             padding: 10,
+             resize: 'vertical',
+           }}
+         />
+
+          {/* Process dot */}
+          <button
+            aria-label="Открыть процесс"
+            onClick={() => {
+              try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
+
+
+
+ const ev = new CustomEvent('open-process', { detail: {
+   groupId,
+   seedTaskId: task.id,
+   seedAssigneeChatId: (task.assigneeChatId || meChatId || null),
+   createNewCanvas: true, // 👈 важно
+ }});
+
+
+
+              window.dispatchEvent(ev);
+              onClose?.();
+            }}
+            style={{
+              position: 'absolute',
+              right: -12,
+              bottom: 8,
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              border: '1px solid #2a3346',
+             background: hasRelations ? '#111' : '#9aa0a6',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+            }}
+            title="Открыть процесс"
+          />
+        </div>
 
          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div> 
 
@@ -693,8 +751,11 @@ return; // не сбрасываем saving до завершения анима
 
 
 
-
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+
+
+       
+
           <button
             onClick={save}
             disabled={saving || !text.trim()}
@@ -727,6 +788,8 @@ return; // не сбрасываем saving до завершения анима
 
 
 
+
+
 <button
   onClick={() => setLabelDrawerOpen(true)}
   style={{
@@ -743,7 +806,7 @@ return; // не сбрасываем saving до завершения анима
   aria-label="Выбрать ярлык для задачи"
   title="Выбрать ярлык"
 >
-  <span>🏷️ Ярлык</span>
+  <span>🏷️</span>
 
   {taskLabels.length ? (
     <span
@@ -1032,6 +1095,76 @@ return; // не сбрасываем saving до завершения анима
 )}
 
       
+{/* Связи */}
+{(relations.incoming.length > 0 || relations.outgoing.length > 0) && (
+  <div style={{ marginTop: 16, borderTop: '1px solid #2a3346', paddingTop: 12 }}>
+    <div style={{ display: 'grid', gap: 8 }}>
+      {relations.outgoing.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>→ Связанные</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {relations.outgoing.map(t => (
+              <button
+                key={t.id}
+                onClick={() => {
+                  // откроем другую задачу: сообщим App и закроем текущую
+                  window.dispatchEvent(new CustomEvent('open-task', { detail: { taskId: t.id }}));
+                  onClose?.(groupId);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #2a3346',
+                  borderRadius: 8,
+                  padding: '6px 8px',
+                  color: '#8aa0ff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+                title={t.text}
+              >
+                {t.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {relations.incoming.length > 0 && (
+        <div>
+          <div style={{ fontWeight: 600, marginTop: 8, marginBottom: 6 }}>← Связаны с этой</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {relations.incoming.map(t => (
+              <button
+                key={t.id}
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open-task', { detail: { taskId: t.id }}));
+                  onClose?.(groupId);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #2a3346',
+                  borderRadius: 8,
+                  padding: '6px 8px',
+                  color: '#8aa0ff',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+                title={t.text}
+              >
+                {t.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+
+
+
+
 
 <CommentsThread taskId={taskId} meChatId={meChatId} />
 

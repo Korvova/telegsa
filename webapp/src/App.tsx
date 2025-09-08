@@ -121,7 +121,7 @@ function parseStartParam(sp: string) {
 /* ---------------- UI bits ---------------- */
 function TaskCard({
   text, order, assigneeName, active, dragging, onClick,
-  isEvent, startAt, endAt,
+  isEvent, startAt, endAt, fromProcess,          // 👈 добавили
 }: {
   text: string;
   order: number;
@@ -132,6 +132,7 @@ function TaskCard({
   isEvent?: boolean;
   startAt?: string | null;
   endAt?: string | null;
+  fromProcess?: boolean;                          // 👈 добавили
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
   const dateLine = isEvent && startAt
@@ -155,7 +156,7 @@ function TaskCard({
     overflowWrap: 'anywhere',
   }}
 >
-  {isEvent ? '📅 ' : ''}{text}
+ {isEvent ? '📅 ' : ''}{fromProcess ? '🔀 ' : ''}{text}
 </div>
 
 
@@ -165,11 +166,11 @@ function TaskCard({
       {dateLine && (
         <div style={{ fontSize: 12, opacity: .75, marginBottom: 6 }}>{dateLine}</div>
       )}
-      {assigneeName && !isEvent ? (
-        <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>👤</span><span>{assigneeName}</span>
-        </div>
-      ) : null}
+{assigneeName && !isEvent ? (
+  <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
+    <span>👤</span><span>{assigneeName}</span>
+  </div>
+) : null}
     </div>
   );
 }
@@ -187,15 +188,7 @@ function fmtShort(iso: string) {
 
 
 function SortableTask({
-  taskId,
-  text,
-  order,
-  assigneeName,
-  onOpenTask,
-  armed,
-  isEvent,
-  startAt,
-  endAt,
+  taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess,
 }: {
   taskId: string;
   text: string;
@@ -206,10 +199,17 @@ function SortableTask({
   isEvent?: boolean;
   startAt?: string | null;
   endAt?: string | null;
+  fromProcess?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: taskId });
-  const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, touchAction: armed || isDragging ? 'none' : 'auto' };
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    touchAction: armed || isDragging ? 'none' : 'auto',
+  };
+
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <TaskCard
@@ -222,11 +222,11 @@ function SortableTask({
         isEvent={isEvent}
         startAt={startAt}
         endAt={endAt}
+        fromProcess={fromProcess}
       />
     </div>
   );
 }
-
 
 
 
@@ -282,7 +282,47 @@ const [tab, setTab] = useState<TabKey>('home');
 
 
 
+
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
+  // seed open-process (from TaskView)
+  const [seedTaskIdForProcess, setSeedTaskIdForProcess] = useState<string | null>(null);
+  const [seedAssigneeChatIdForProcess, setSeedAssigneeChatIdForProcess] = useState<string | null>(null);
+
+  // listen to open-process requests from TaskView
+  useEffect(() => {
+    const handler = (e: any) => {
+      const d = (e && (e as CustomEvent).detail) || {};
+      if (!d || !d.groupId) return;
+      setTab('groups');
+      setSelectedGroupId(String(d.groupId));
+      setGroupTab('process');
+
+
+
+ setSeedTaskIdForProcess(d.seedTaskId || null);
+ setSeedAssigneeChatIdForProcess(d.seedAssigneeChatId || null);
+ setShowProcess(true); // сразу показываем канву на весь экран
+
+
+
+     setShowProcess(true);
+     const url = new URL(window.location.href);
+     url.searchParams.set('view', 'process');
+     window.history.pushState({ view: 'process' }, '', url.toString());
+     WebApp?.BackButton?.show?.();
+
+
+
+
+    };
+    window.addEventListener('open-process', handler as any);
+    return () => window.removeEventListener('open-process', handler as any);
+  }, []);
+
+
+
+
+
   const [showGroupEdit, setShowGroupEdit] = useState(false);
   const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
   const [groups, setGroups] = useState<Group[]>([]);
@@ -296,6 +336,18 @@ const [tab, setTab] = useState<TabKey>('home');
     useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } })
   );
+
+
+
+
+useEffect(() => {
+  const handler = (e: any) => {
+    const id = e?.detail?.taskId;
+    if (id) openTask(String(id));
+  };
+  window.addEventListener('open-task', handler as any);
+  return () => window.removeEventListener('open-task', handler as any);
+}, []);
 
 
 
@@ -829,11 +881,21 @@ const title =
         </div>
 
         <div style={{ flex: 1, minHeight: 0 }}>
-          <GroupProcessPage
-            chatId={chatId}
-            groupId={resolvedGroupId ?? null}
-            onOpenTask={openTask}
-          />
+
+
+<GroupProcessPage
+  chatId={chatId}
+  groupId={resolvedGroupId ?? null}
+  onOpenTask={openTask}
+  seedTaskId={seedTaskIdForProcess}
+  seedAssigneeChatId={seedAssigneeChatIdForProcess}
+  forceSeedFromTask
+  onSeedConsumed={() => { setSeedTaskIdForProcess(null); setSeedAssigneeChatIdForProcess(null); }}
+/>
+
+
+
+
         </div>
       </div>
     )}
@@ -1283,18 +1345,20 @@ function ColumnView({
           }}
         >
 {column.tasks.map((t) => (
-  <SortableTask
-    key={t.id}
-    taskId={t.id}
-    text={t.text}
-    order={t.order}
-    assigneeName={t.assigneeName}
-    onOpenTask={onOpenTask}
-    armed={activeId === t.id}
-    isEvent={t.type === 'EVENT'}
-    startAt={t.startAt}
-    endAt={t.endAt}
-  />
+<SortableTask
+  key={t.id}
+  taskId={t.id}
+  text={t.text}
+  order={t.order}
+  assigneeName={t.assigneeName}
+  onOpenTask={onOpenTask}
+  armed={activeId === t.id}
+  isEvent={t.type === 'EVENT'}
+  startAt={t.startAt}
+  endAt={t.endAt}
+  fromProcess={!!t.fromProcess}
+/>
+
 ))}
 
 
