@@ -632,6 +632,12 @@ export type TaskFeedItem = {
   creatorName: string;
   assigneeChatId: string | null;
   assigneeName: string | null;
+
+  labels?: { id: string; title: string }[];
+  
+  labelTitles?: string[];
+
+
 };
 
 export async function listMyFeed(params: {

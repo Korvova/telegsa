@@ -1,7 +1,7 @@
 // webapp/src/pages/Home/HomePage.tsx
 import { useEffect, useMemo, useState, useRef } from 'react';
 import WebApp from '@twa-dev/sdk';
-import { listMyFeed, type TaskFeedItem } from '../../api';
+import { listMyFeed, type TaskFeedItem, getTaskLabels, type GroupLabel } from '../../api';
 
 import StoriesBar from '../../components/stories/StoriesBar';
 import StoriesViewer from '../../components/stories/StoriesViewer';
@@ -148,7 +148,7 @@ export default function HomePage({
 }: { chatId: string; onOpenTask: (id: string) => void }) {
 
 
-
+const [labelsByTask, setLabelsByTask] = useState<Record<string, GroupLabel[]>>({});
 
   const [items, setItems] = useState<TaskFeedItem[]>([]);
   const [offset, setOffset] = useState(0);
@@ -242,6 +242,13 @@ const DEFAULT_STATUSES = ['Новые','В работе','Готово','Сог�
 }, [chatId]);
 
 
+
+
+
+
+
+
+
   const loadMore = async () => {
     if (loading || !hasMore) return;
     setLoading(true);
@@ -262,6 +269,69 @@ const DEFAULT_STATUSES = ['Новые','В работе','Готово','Сог�
       }
     } finally { setLoading(false); }
   };
+
+
+
+
+
+
+
+
+
+
+useEffect(() => {
+  let alive = true;
+
+  const missing = items
+    .filter((t: any) => {
+      const hasFromFeed = Array.isArray(t.labels) || Array.isArray(t.labelTitles);
+      if (hasFromFeed) return false;
+      if (labelsByTask[t.id]) return false;
+      return true;
+    })
+    .slice(0, 15);
+
+  if (!missing.length) return;
+
+  (async () => {
+    const results = await Promise.allSettled(
+      missing.map(async (it) => {
+        const r = await getTaskLabels(it.id);
+        // r — это GroupLabel[] (либо, на всякий, поддержим формат {labels:[]})
+        const arr: GroupLabel[] = Array.isArray(r)
+          ? r
+          : Array.isArray((r as any)?.labels)
+            ? (r as any).labels
+            : [];
+        return [it.id, arr] as const;
+      })
+    );
+
+    if (!alive) return;
+
+    setLabelsByTask((prev) => {
+      const next = { ...prev };
+      for (const res of results) {
+        if (res.status === 'fulfilled') {
+          const [id, labels] = res.value;
+          next[id] = labels;
+        }
+      }
+      return next;
+    });
+  })();
+
+  return () => { alive = false; };
+}, [items, labelsByTask]);
+
+
+
+
+
+
+
+
+
 
 
   // локальный патч только выбранного айтема
@@ -643,6 +713,57 @@ return (
                     >
                       {(t as any).groupTitle}
                     </div>
+
+
+
+
+{/* 🏷️ ярлыки задачи */}
+{(() => {
+  const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+  const titles = (t as any).labelTitles as string[] | undefined;
+
+  const labels: { id: string; title: string }[] =
+    Array.isArray(raw)
+      ? raw.map((l, i) => ({ id: l.id || `${t.id}_f${i}`, title: l.title }))
+      : Array.isArray(titles)
+        ? titles.map((title, i) => ({ id: `${t.id}_ft${i}`, title }))
+        : (labelsByTask[t.id] || []).map((l, i) => ({ id: l.id || `${t.id}_c${i}`, title: l.title }));
+
+  if (!labels.length) return null;
+
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, marginBottom: 6 }}>
+      {labels.slice(0, 3).map((l) => (
+        <span
+          key={l.id}
+          title={`Ярлык: ${l.title}`}
+          style={{
+            display: 'inline-block',
+            padding: '2px 8px',
+            borderRadius: 999,
+            border: '1px solid #dbeafe',
+            background: '#eff6ff',
+            color: '#1e40af',
+            fontSize: 12,
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          🏷️ {l.title}
+        </span>
+      ))}
+      {labels.length > 3 && (
+        <span style={{ fontSize: 12, opacity: 0.7 }}>+{labels.length - 3}</span>
+      )}
+    </div>
+  );
+})()}
+
+
+
+
+
+
 
                     <div style={{ fontSize:12, opacity:.8, display:'flex', gap:10 }}>
                       <span>👤 {(t as any).creatorName}</span>
