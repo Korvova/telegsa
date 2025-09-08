@@ -247,11 +247,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
             }}
           >
             {/* Заголовок */}
+
+
+
+
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontWeight: 700 }}>
-                  {isSimpleMode ? 'Новая задача' : step === 0 ? 'Текст задачи' : 'Выбор группы'}
-                </div>
+
 
                 {isSimpleMode && (
                   <button
@@ -272,6 +275,12 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                     </div>
                   </button>
                 )}
+
+                <div style={{ fontWeight: 700 }}>
+                  {isSimpleMode ? ' ➥ Задача' : step === 0 ? 'Текст задачи' : 'Выбор группы'}
+                </div>
+
+
               </div>
               <button
                 onClick={closeModal}

@@ -12,6 +12,7 @@ import type { StageKey } from '../../components/StageScroller';
 
 
 import FeedScopeTabs, { type FeedScope } from '../../components/FeedScopeTabs';
+import GroupFilterModal from "../../components/GroupFilterModal";
 
 
 
@@ -153,6 +154,9 @@ export default function HomePage({
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+
+
+   const [isGroupPickerOpen, setGroupPickerOpen] = useState(false);
 
 const DEFAULT_STATUSES = ['Новые','В работе','Готово','Согласование','Ждёт'] as const;
 
@@ -672,8 +676,55 @@ return (
           <div style={{ fontSize:12, opacity:.6 }}>Больше задач нет</div>
         )}
       </div>
+
+
+
+  {/* 📁 Кнопка фильтра по группе – фиксируем чуть выше «+» */}
+      <button
+        onClick={() => setGroupPickerOpen(true)}
+        aria-label="Фильтр по группе"
+        style={{
+          position: 'fixed',
+          right: 16,
+          bottom: `calc(152px + env(safe-area-inset-bottom, 0px))`, // выше FAB
+          zIndex: 1200, // выше, чем у "+"
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          border: 'none',
+          background: '#ffffff',
+          boxShadow: '0 6px 18px rgba(0,0,0,0.18)',
+          fontSize: 28,
+          lineHeight: '56px',
+          textAlign: 'center',
+          cursor: 'pointer',
+        }}
+      >
+        📁
+      </button>
+
+      {/* Модалка выбора группы (Шаг 1: заглушка) */}
+<GroupFilterModal
+  isOpen={isGroupPickerOpen}
+  onClose={() => setGroupPickerOpen(false)}
+  chatId={chatId /* если у тебя переменная называется иначе — подставь свою */}
+  initialGroupId={scope.kind === 'group' ? scope.groupId : undefined}
+  onApply={(groupId) => {
+    setGroupPickerOpen(false);
+    setScope({ kind: 'group', groupId }); // лента покажет задачи выбранной группы
+  }}
+/>
+
     </div>
   );
 }
+
+
+
+
+
+
+
+
 
 
