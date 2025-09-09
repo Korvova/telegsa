@@ -59,7 +59,16 @@ const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
 
 
 const [relations, setRelations] = useState<{outgoing: Array<{id:string;text:string}>, incoming: Array<{id:string;text:string}>}>({ outgoing: [], incoming: [] });
-const hasRelations = relations.outgoing.length > 0 || relations.incoming.length > 0;
+
+const hasIncoming = relations.incoming.length > 0;
+const hasOutgoing = relations.outgoing.length > 0;
+// Если где-то ещё понадобится общий флаг:
+// const hasRelations = hasIncoming || hasOutgoing;
+
+
+
+
+
 
 
 
@@ -689,42 +698,94 @@ return; // не сбрасываем saving до завершения анима
          />
 
           {/* Process dot */}
-          <button
-            aria-label="Открыть процесс"
+
+
+{/* ==== Процесс-точки ==== */}
+{/* Левая точка: показываем только если есть входящая связь */}
+{hasIncoming && (
+  <button
+    aria-label="Связи слева — открыть процесс"
+
+
+
+    onClick={() => {
+      try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
+      window.dispatchEvent(new CustomEvent('open-process', {
+        detail: { groupId, focusTaskId: task.id }, // просто открыть и сфокусироваться
+      }));
+      onClose?.(groupId);
+    }}
+    style={{
+      position: 'absolute',
+      left: -12,
+      bottom: 8,
+      width: 24,
+      height: 24,
+      borderRadius: '50%',
+      border: '1px solid #2a3346',
+      background: '#111', // активная
+      boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+    }}
+    title="Открыть процесс (входящие связи)"
+  />
+)}
+
+{/* Правая точка: активная если есть исходящие, иначе серая = можно продолжить */}
+<button
+  aria-label="Связи справа / продолжить процесс"
 
 
 
 onClick={() => {
   try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
 
-  const hasProcess = !!hasRelations || !!(task as any)?.fromProcess;
+  if (hasOutgoing) {
+    // если есть продолжение — просто открыть процесс и сфокусироваться
+    window.dispatchEvent(new CustomEvent('open-process', {
+      detail: { groupId, focusTaskId: task.id, backToTaskId: task.id },
+    }));
+    onClose?.(groupId);
+    return;
+  }
 
-  const ev = new CustomEvent('open-process', {
-    detail: hasProcess
-      ? { groupId, focusTaskId: task.id } // ← открыть СУЩЕСТВУЮЩИЙ процесс и сфокусироваться на этой задаче
-      : {
-          groupId,
-          seedTaskId: task.id,
-          seedAssigneeChatId: (task.assigneeChatId || meChatId || null), // ← старт с засеянной левой задачей
-        },
-  });
+  // НЕТ исходящих → режим «посева»: текущая задача слева + пустая справа с автофокусом
+  window.dispatchEvent(new CustomEvent('open-process', {
+    detail: {
+      groupId,
+      seedTaskId: task.id,                                   // ✅ ключ: передаём seedTaskId
+      seedAssigneeChatId: (task.assigneeChatId || meChatId || null),
+      backToTaskId: task.id,
+      // seedNewRight: true, // больше не нужен, можно удалить
+    },
+  }));
 
-  window.dispatchEvent(ev);
-  onClose?.();
+  onClose?.(groupId);
 }}
-            style={{
-              position: 'absolute',
-              right: -12,
-              bottom: 8,
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              border: '1px solid #2a3346',
-             background: hasRelations ? '#111' : '#9aa0a6',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-            }}
-            title="Открыть процесс"
-          />
+
+
+
+
+
+
+  style={{
+    position: 'absolute',
+    right: -12,
+    bottom: 8,
+    width: 24,
+    height: 24,
+    borderRadius: '50%',
+    border: '1px solid #2a3346',
+    background: hasOutgoing ? '#111' : '#9aa0a6', // активная или серая
+    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+  }}
+  title={hasOutgoing ? 'Открыть процесс (есть продолжение)' : 'Продолжить процесс (создать связь)'}
+/>
+
+
+
+
+
+
         </div>
 
          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div> 

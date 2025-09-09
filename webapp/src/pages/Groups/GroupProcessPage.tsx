@@ -51,6 +51,12 @@ import { fetchProcess, saveProcess, getGroupMembers, getTask, type GroupMember }
 
   focusTaskId?: string | null;
 
+
+  
+  // 👇 новое:
+  spawnNextForFocus?: boolean;
+  onSpawnNextConsumed?: () => void;
+
  };
 
 type CondEdgeData = { icon?: string };
@@ -476,7 +482,10 @@ function GroupProcessInner({
   onSeedConsumed,
   disableSave,
   focusTaskId,
-  forceSeedFromTask,            // 👈 добавили
+  forceSeedFromTask,
+  // ↓ новое:
+  spawnNextForFocus,
+  onSpawnNextConsumed,
 }: {
   chatId: string;
   groupId: string | null;
@@ -486,7 +495,11 @@ function GroupProcessInner({
   forceSeedFromTask?: boolean;
   disableSave?: boolean;
   focusTaskId?: string | null;
+  // ↓ новое:
+  spawnNextForFocus?: boolean;
+  onSpawnNextConsumed?: () => void;
 }) {
+
 
 
 
@@ -1300,8 +1313,60 @@ if (forceSeedFromTask && seedTaskId) {
       }
     }
 
+
+
+
+
+
+// Если пришёл запрос «проростить» новый узел справа от фокусируемого,
+// пробуем найти ноду по taskId и добавить рядом пустую, не теряя контекст.
+if (focusTaskId && spawnNextForFocus) {
+  const focusNode = rfNodes.find(
+    (n) => String(((n.data as any)?.taskId ?? '')) === String(focusTaskId)
+  );
+
+  if (focusNode) {
+    const gapX = 140; // зазор между узлами
+    const w = (focusNode.width ?? 220);
+    const x = (focusNode.position?.x ?? 0) + w + gapX;
+    const y = (focusNode.position?.y ?? 0);
+
+    const newId = 'seed_new_' + Date.now().toString(36);
+    const newNode: Node<EditableData> = {
+      id: newId,
+      type: 'editable',
+      position: { x, y },
+      data: {
+        label: '',
+        autoEdit: true,
+        onChange: onLabelChange,
+        onAction: onNodeAction,
+      },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    };
+
+    const newEdge: Edge = {
+      id: 'seed_e_' + Date.now().toString(36),
+      source: String(focusNode.id),
+      target: newId,
+      type: 'cond',
+      data: {},
+    };
+
+    rfNodes = [...rfNodes, newNode];
+    rfEdges = [...rfEdges, newEdge];
+  }
+}
+
+
+
+
+
+
     setNodes(rfNodes);
     setEdges(rfEdges);
+    onSpawnNextConsumed?.();
 
     // авто-фокус на узел по taskId
     if (focusTaskId) {
@@ -1364,6 +1429,7 @@ useEffect(() => {
         const metaJson: any = {};
         if (d.assigneeName) metaJson.assigneeName = d.assigneeName;
         if (d.conditions) metaJson.conditions = d.conditions;
+        if (d.taskId) metaJson.taskId = d.taskId; // 👈 сохраняем привязку к задаче
 
         return {
           id: String(n.id),
@@ -1601,18 +1667,20 @@ useEffect(() => {
    return (
      <ReactFlowProvider>
        <div className="rf-scope" style={{ textAlign: 'initial', height: '100%', minHeight: 0 }}>
-         <GroupProcessInner
-           chatId={props.chatId}
-           groupId={props.groupId ? String(props.groupId) : null}
-           seedTaskId={props.seedTaskId}
-           seedAssigneeChatId={props.seedAssigneeChatId}
-           onSeedConsumed={props.onSeedConsumed}
-          forceSeedFromTask={props.forceSeedFromTask}
-          disableSave={props.disableSave}
-          focusTaskId={props.focusTaskId}
+<GroupProcessInner
+  chatId={props.chatId}
+  groupId={props.groupId ? String(props.groupId) : null}
+  seedTaskId={props.seedTaskId}
+  seedAssigneeChatId={props.seedAssigneeChatId}
+  onSeedConsumed={props.onSeedConsumed}
+  forceSeedFromTask={props.forceSeedFromTask}
+  disableSave={props.disableSave}
+  focusTaskId={props.focusTaskId}
+  // ↓ новое:
+  spawnNextForFocus={props.spawnNextForFocus}
+  onSpawnNextConsumed={props.onSpawnNextConsumed}
+/>
 
-
-         />
        </div>
      </ReactFlowProvider>
    );

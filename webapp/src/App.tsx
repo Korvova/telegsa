@@ -13,16 +13,11 @@ import GroupProcessPage from './pages/Groups/GroupProcessPage';
 
 import CreateTaskFab from './components/CreateTaskFab';
 
-
 import CalendarView from './CalendarView';
-
 
 import TaskView from './TaskView';
 
 import HomePage from './pages/Home/HomePage';
-
-
-
 
 import {
   fetchBoard,
@@ -33,7 +28,6 @@ import {
   listGroups,
   upsertMe,
 } from './api';
-
 
 import {
   DndContext,
@@ -80,8 +74,6 @@ function getTaskIdFromURL() {
 
 /** Парсер start_param для инвайтов assign/join в компактном и полном виде */
 
-
-
 // заменить parseStartParam на:
 function parseStartParam(sp: string) {
   if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask'; id: string; token?: string };
@@ -115,13 +107,10 @@ function parseStartParam(sp: string) {
   return { type: head as any, id, token };
 }
 
-
-
-
 /* ---------------- UI bits ---------------- */
 function TaskCard({
   text, order, assigneeName, active, dragging, onClick,
-  isEvent, startAt, endAt, fromProcess,          // 👈 добавили
+  isEvent, startAt, endAt, fromProcess,
 }: {
   text: string;
   order: number;
@@ -132,7 +121,7 @@ function TaskCard({
   isEvent?: boolean;
   startAt?: string | null;
   endAt?: string | null;
-  fromProcess?: boolean;                          // 👈 добавили
+  fromProcess?: boolean;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
   const dateLine = isEvent && startAt
@@ -146,31 +135,26 @@ function TaskCard({
     }}>
       <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
 
-
-<div
-  style={{
-    fontSize: 15,
-    marginBottom: 6,
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    overflowWrap: 'anywhere',
-  }}
->
- {isEvent ? '📅 ' : ''}{fromProcess ? '🔀 ' : ''}{text}
-</div>
-
-
-
-
+      <div
+        style={{
+          fontSize: 15,
+          marginBottom: 6,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {isEvent ? '📅 ' : ''}{fromProcess ? '🔀 ' : ''}{text}
+      </div>
 
       {dateLine && (
         <div style={{ fontSize: 12, opacity: .75, marginBottom: 6 }}>{dateLine}</div>
       )}
-{assigneeName && !isEvent ? (
-  <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
-    <span>👤</span><span>{assigneeName}</span>
-  </div>
-) : null}
+      {assigneeName && !isEvent ? (
+        <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>👤</span><span>{assigneeName}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -184,8 +168,6 @@ function fmtShort(iso: string) {
   const mi = pad(d.getMinutes());
   return `${dd}.${mm} ${hh}:${mi}`;
 }
-
-
 
 function SortableTask({
   taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess,
@@ -228,8 +210,6 @@ function SortableTask({
   );
 }
 
-
-
 /* Заглушка для неготовых вкладок */
 function TabPlaceholder({ tab }: { tab: TabKey }) {
   const map = {
@@ -261,14 +241,8 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
 
 /* ---------------- App ---------------- */
 export default function App() {
-
-
   const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(false);
-
-   const [showProcess, setShowProcess] = useState(false); 
-
-
-
+  const [showProcess, setShowProcess] = useState(false);
 
   const chatId = useChatId();
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
@@ -278,17 +252,20 @@ export default function App() {
 
 
 
-const [tab, setTab] = useState<TabKey>('home');
+const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
 
 
 
+
+  const [tab, setTab] = useState<TabKey>('home');
 
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
-  // seed open-process (from TaskView)
-const [seedTaskIdForProcess, setSeedTaskIdForProcess] = useState<string | null>(null);
-const [seedAssigneeChatIdForProcess, setSeedAssigneeChatIdForProcess] = useState<string | null>(null);
-const [focusTaskIdForProcess, setFocusTaskIdForProcess] = useState<string | null>(null); // ← ДОБАВИЛИ
+  const [seedTaskIdForProcess, setSeedTaskIdForProcess] = useState<string | null>(null);
+  const [seedAssigneeChatIdForProcess, setSeedAssigneeChatIdForProcess] = useState<string | null>(null);
+  const [focusTaskIdForProcess, setFocusTaskIdForProcess] = useState<string | null>(null);
 
+  // 👇 НОВОЕ: куда вернуться после полотна
+  const [returnTaskIdForProcess, setReturnTaskIdForProcess] = useState<string | null>(null);
 
   // listen to open-process requests from TaskView
   useEffect(() => {
@@ -298,40 +275,32 @@ const [focusTaskIdForProcess, setFocusTaskIdForProcess] = useState<string | null
       setTab('groups');
       setSelectedGroupId(String(d.groupId));
       setGroupTab('process');
+      setSpawnNextForFocus(!!d.seedNewRight);
 
+      // из TaskView либо фокус на конкретный узел, либо посев
+      if (d.focusTaskId) {
+        setFocusTaskIdForProcess(String(d.focusTaskId));
+        setSeedTaskIdForProcess(null);
+        setSeedAssigneeChatIdForProcess(null);
+      } else {
+        setFocusTaskIdForProcess(null);
+        setSeedTaskIdForProcess(d.seedTaskId || null);
+        setSeedAssigneeChatIdForProcess(d.seedAssigneeChatId || null);
+      }
 
+      // запоминаем задачу для возврата
+      const backId = d.backToTaskId || d.focusTaskId || d.seedTaskId || null;
+      setReturnTaskIdForProcess(backId ? String(backId) : null);
 
-// …внутри того же handler:
-if (d.focusTaskId) {
-  setFocusTaskIdForProcess(String(d.focusTaskId));
-  setSeedTaskIdForProcess(null);
-  setSeedAssigneeChatIdForProcess(null);
-} else {
-  setFocusTaskIdForProcess(null);
-  setSeedTaskIdForProcess(d.seedTaskId || null);
-  setSeedAssigneeChatIdForProcess(d.seedAssigneeChatId || null);
-}
-
-
-setShowProcess(true);
-const url = new URL(window.location.href);
-url.searchParams.set('view', 'process');
-window.history.pushState({ view: 'process' }, '', url.toString());
-WebApp?.BackButton?.show?.();
-
-// НИЧЕГО больше не ставим — никаких focusTaskId тут нет
-
-
-
-
+      setShowProcess(true);
+      const url = new URL(window.location.href);
+      url.searchParams.set('view', 'process');
+      window.history.pushState({ view: 'process' }, '', url.toString());
+      WebApp?.BackButton?.show?.();
     };
     window.addEventListener('open-process', handler as any);
     return () => window.removeEventListener('open-process', handler as any);
   }, []);
-
-
-
-
 
   const [showGroupEdit, setShowGroupEdit] = useState(false);
   const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
@@ -347,46 +316,29 @@ WebApp?.BackButton?.show?.();
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } })
   );
 
+  useEffect(() => {
+    const handler = (e: any) => {
+      const id = e?.detail?.taskId;
+      if (id) openTask(String(id));
+    };
+    window.addEventListener('open-task', handler as any);
+    return () => window.removeEventListener('open-task', handler as any);
+  }, []);
 
-
-
-useEffect(() => {
-  const handler = (e: any) => {
-    const id = e?.detail?.taskId;
-    if (id) openTask(String(id));
-  };
-  window.addEventListener('open-task', handler as any);
-  return () => window.removeEventListener('open-task', handler as any);
-}, []);
-
-
-
-
-
-
-
-
-useEffect(() => {
-  const u = WebApp?.initDataUnsafe?.user;
-  if (!u?.id) return;
-  fetch(`${import.meta.env.VITE_API_BASE}/me`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chatId: String(u.id),
-      firstName: u.first_name ?? null,
-      lastName:  u.last_name  ?? null,
-      username:  u.username   ?? null,
-    }),
-  }).catch(() => {});
-}, []);
-
-
-
-
-
-
-
+  useEffect(() => {
+    const u = WebApp?.initDataUnsafe?.user;
+    if (!u?.id) return;
+    fetch(`${import.meta.env.VITE_API_BASE}/me`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chatId: String(u.id),
+        firstName: u.first_name ?? null,
+        lastName:  u.last_name  ?? null,
+        username:  u.username   ?? null,
+      }),
+    }).catch(() => {});
+  }, []);
 
   // убираем белые поля по X
   useEffect(() => {
@@ -428,15 +380,15 @@ useEffect(() => {
       .catch((e) => console.error('[GROUPS] list error', e));
   }, [chatId]);
 
-  // системная кнопка назад
- useEffect(() => {
-  if (taskId) return; // TaskView сам рулит back
-  if ((tab === 'groups' && groupsPage === 'detail') || tab === 'notifications') {
-    WebApp?.BackButton?.show?.();
-  } else {
-    WebApp?.BackButton?.hide?.();
-  }
-}, [tab, groupsPage, taskId]);
+  // системная кнопка назад (Telegram)
+  useEffect(() => {
+    if (taskId) return; // TaskView сам рулит back
+    if ((tab === 'groups' && groupsPage === 'detail') || tab === 'notifications') {
+      WebApp?.BackButton?.show?.();
+    } else {
+      WebApp?.BackButton?.hide?.();
+    }
+  }, [tab, groupsPage, taskId]);
 
   const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
@@ -480,7 +432,7 @@ useEffect(() => {
       const cols = data.columns.map((c) => ({ ...c, tasks: [...c.tasks].sort((a,b)=>a.order-b.order) }));
       setColumns(cols);
       setError(null);
-    } catch (e:any) {
+    } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки');
     } finally {
       setLoading(false);
@@ -531,7 +483,7 @@ useEffect(() => {
       return;
     }
 
-    // 2) Инвайты assign/join
+    // 2) Инвайты assign/join/event/newtask
     const parsed = parseStartParam(raw);
     console.log('[DEEPLINK] start_param =', raw, { spFromSdk, spFromUrl, parsed });
 
@@ -541,7 +493,6 @@ useEffect(() => {
     const me = sdkId || chatId;
 
     if (!parsed) return;
-
 
     if (parsed.type === 'assign') {
       const url = new URL(window.location.href);
@@ -585,72 +536,69 @@ useEffect(() => {
       }).catch(() => {});
     }
 
-
-
-// 👇 Новое: “Новая задача по ссылке”
-if (parsed.type === 'newtask') {
-  const url = new URL(window.location.href);
-  // пока не знаем ID копии — примем, сервер вернёт taskId
-  fetch(`${import.meta.env.VITE_API_BASE}/sharenewtask/accept`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chatId: me,
-      taskId: parsed.id,
-      token: parsed.token, // сейчас сервер не валидирует, но оставим для будущего
-    }),
-  })
-    .then((r) => r.json())
-    .then((r) => {
-      if (r?.ok && r.taskId) {
-        url.searchParams.set('task', r.taskId);
-        window.history.replaceState(null, '', url.toString());
-        setTaskId(r.taskId);
-      }
-    })
-    .catch(() => {});
-}
-
-
-
-
+    // 👇 Новое: “Новая задача по ссылке”
+    if (parsed.type === 'newtask') {
+      const url = new URL(window.location.href);
+      fetch(`${import.meta.env.VITE_API_BASE}/sharenewtask/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: me,
+          taskId: parsed.id,
+          token: parsed.token,
+        }),
+      })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r?.ok && r.taskId) {
+            url.searchParams.set('task', r.taskId);
+            window.history.replaceState(null, '', url.toString());
+            setTaskId(r.taskId);
+          }
+        })
+        .catch(() => {});
+    }
   }, [chatId, reloadGroups, loadBoard]);
 
+  useEffect(() => {
+    const onBack = () => {
+      if (showProcess) {
+        // фолбэк на taskId, если returnTaskIdForProcess пуст
+        const backId = returnTaskIdForProcess || taskId || null;
+        setShowProcess(false);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('view');
+        window.history.replaceState(null, '', url.toString());
 
+        if (backId) {
+          openTask(backId);
+          setReturnTaskIdForProcess(null);
+        } else {
+          WebApp?.BackButton?.hide?.();
+        }
+        return;
+      }
 
-useEffect(() => {
-  const onBack = () => {
-    if (showProcess) {
-      setShowProcess(false);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('view');
-      window.history.replaceState(null, '', url.toString());
-      WebApp?.BackButton?.hide?.();
-      return;
-    }
+      if (taskId) return;
 
-    if (taskId) return;
+      // если мы на экране уведомлений — возвращаемся в Настройки
+      if (tab === 'notifications') {
+        setTab('settings');
+        WebApp?.BackButton?.hide?.();
+        return;
+      }
 
-    // ⬇️ Новое: если мы на экране уведомлений — возвращаемся в Настройки
-    if (tab === 'notifications') {
-      setTab('settings');
-      WebApp?.BackButton?.hide?.();
-      return;
-    }
+      if (tab === 'groups' && groupsPage === 'detail') {
+        backToGroupsList();
+        return;
+      }
 
-    if (tab === 'groups' && groupsPage === 'detail') {
-      backToGroupsList();
-      return;
-    }
+      try { WebApp?.close(); } catch {}
+    };
 
-    try { WebApp?.close(); } catch {}
-  };
-
-  WebApp?.onEvent?.('backButtonClicked', onBack);
-  return () => WebApp?.offEvent?.('backButtonClicked', onBack);
-}, [taskId, tab, groupsPage, showProcess]);
-
-
+    WebApp?.onEvent?.('backButtonClicked', onBack);
+    return () => WebApp?.offEvent?.('backButtonClicked', onBack);
+  }, [taskId, tab, groupsPage, showProcess, returnTaskIdForProcess]);
 
   // навигация к задаче
   const openTask = (id: string) => {
@@ -716,13 +664,6 @@ useEffect(() => {
     const max = el.scrollWidth - el.clientWidth;
     el.scrollLeft = Math.max(0, Math.min(max, el.scrollLeft + dx));
   };
-
-
-
-
-
-
-
 
   const handleDragStart = (evt: DragStartEvent) => {
     setActiveId(String(evt.active.id));
@@ -813,21 +754,15 @@ useEffect(() => {
     });
   };
 
-
-
-  
-
-const title =
-  tab === 'home' ? 'Главная'
-  : tab === 'groups'
-    ? (groupsPage === 'list'
-        ? 'Группы'
-        : ` ${selectedGroup?.title || 'Группа'}`)
-  : tab === 'calendar' ? 'Календарь'
-  : tab === 'notifications' ? 'Уведомления'
-  : 'Настройки';
-
-  
+  const title =
+    tab === 'home' ? 'Главная'
+    : tab === 'groups'
+      ? (groupsPage === 'list'
+          ? 'Группы'
+          : ` ${selectedGroup?.title || 'Группа'}`)
+    : tab === 'calendar' ? 'Календарь'
+    : tab === 'notifications' ? 'Уведомления'
+    : 'Настройки';
 
   const handleDragEnd = async (event: DragEndEvent) => {
     setDragging(false);
@@ -863,411 +798,342 @@ const title =
   };
 
   /* ---------------- render ---------------- */
- return (
-  <>
-    <WriteAccessGate />
+  return (
+    <>
+      <WriteAccessGate />
 
-    {/* ⬇️ Полноэкранная страница процесса */}
-    {showProcess && (
-      <div
-        className="rf-scope"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 1000,
-          background: '#fff',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: 10, borderBottom:'1px solid #e5e7eb' }}>
-          <button
+      {/* ⬇️ Полноэкранная страница процесса */}
+      {showProcess && (
+        <div
+          className="rf-scope"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2000, // повышаем, чтобы перекрывать всё
+            background: '#fff',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: 10, borderBottom:'1px solid #e5e7eb' }}>
+            <div style={{ fontWeight: 700 }}>🔀 Процесс</div>
+            <div />
+          </div>
 
-
-onClick={() => {
-  setShowProcess(false);
-  setFocusTaskIdForProcess(null);
-  setSeedTaskIdForProcess(null);
-  setSeedAssigneeChatIdForProcess(null);
-  const url = new URL(window.location.href);
-  url.searchParams.delete('view');
-  window.history.replaceState(null, '', url.toString());
-  WebApp?.BackButton?.hide?.();
-}}
-
-
-
-
-            style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px' }}
-          >
-            ⟵ Назад
-          </button>
-          <div style={{ fontWeight: 700 }}>🔀 Процесс</div>
-          <div />
-        </div>
-
-        <div style={{ flex: 1, minHeight: 0 }}>
-
-
+          <div style={{ flex: 1, minHeight: 0 }}>
 <GroupProcessPage
   chatId={chatId}
   groupId={resolvedGroupId ?? null}
   onOpenTask={openTask}
   seedTaskId={seedTaskIdForProcess}
   seedAssigneeChatId={seedAssigneeChatIdForProcess}
-  forceSeedFromTask={!!seedTaskIdForProcess}    // ← только если действительно сидим
-  focusTaskId={focusTaskIdForProcess}           // ← ВАЖНО: фокус на узел по taskId
+  forceSeedFromTask={!!seedTaskIdForProcess}
+  focusTaskId={focusTaskIdForProcess}
+  // ↓ новое: «прорости узел справа» и сброс флага после применения
+  spawnNextForFocus={spawnNextForFocus}
+  onSpawnNextConsumed={() => setSpawnNextForFocus(false)}
   onSeedConsumed={() => { setSeedTaskIdForProcess(null); setSeedAssigneeChatIdForProcess(null); }}
 />
 
-
-
-
-
-
-
-
-        </div>
-      </div>
-    )}
-
-    {taskId ? (
-      <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
-    ) : (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#0f1216',
-          color: '#e8eaed',
-          padding: 16,
-          paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
-        }}
-      >
-
-
-
-
-          {/* Шапка */}
-
-
-{/* ⬇️ ДОБАВИТЬ: дубль кнопки "Назад" внизу, чтобы не перекрывалось Телеграмом */}
-<div
-  style={{
-    position: 'fixed',
-    left: 0,
-    right: 0,
-    bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-    zIndex: 1101,
-    display: 'flex',
-    justifyContent: 'center',
-    pointerEvents: 'none',
-  }}
->
-  <button
-    onClick={() => {
-      setShowProcess(false);
-      setFocusTaskIdForProcess(null);
-      setSeedTaskIdForProcess(null);
-      setSeedAssigneeChatIdForProcess(null);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('view');
-      window.history.replaceState(null, '', url.toString());
-      WebApp?.BackButton?.hide?.();
-    }}
-    style={{
-      pointerEvents: 'auto',
-      background: '#202840',
-      color: '#e8eaed',
-      border: '1px solid #2a3346',
-      borderRadius: 12,
-      padding: '10px 14px',
-      boxShadow: '0 6px 18px rgba(0,0,0,.35)',
-    }}
-  >
-    ⟵ Назад
-  </button>
-</div>
-
-
-
-
-
-
-
-
-       <div
-  style={{
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 12,
-  }}
->
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-    {tab === 'groups' && groupsPage === 'detail' ? (
-      <button
-        onClick={backToGroupsList}
-        title="К списку групп"
-        style={{
-          background: 'transparent',
-          border: '1px solid #2a3346',
-          color: '#e8eaed',
-          borderRadius: 10,
-          padding: '6px 8px',
-          cursor: 'pointer',
-        }}
-      >
-        ⟵ Назад
-      </button>
-    ) : null}
-
-
-{tab === 'notifications' ? (
-  <button
-    onClick={() => setTab('settings')}
-    title="К настройкам"
-    style={{
-      background: 'transparent',
-      border: '1px solid #2a3346',
-      color: '#e8eaed',
-      borderRadius: 10,
-      padding: '6px 8px',
-      cursor: 'pointer',
-    }}
-  >
-    ⟵ Назад
-  </button>
-) : null}
-
-
-
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
-      {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
-        <button
-          title="Переименовать группу"
-          onClick={() => setShowGroupEdit(true)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#8aa0ff',
-            cursor: 'pointer',
-            fontSize: 14,
-            padding: 2,
-            lineHeight: 1,
-          }}
-        >
-          ✏️
-        </button>
-      ) : null}
-    </div>
-  </div>
-
-  {/* <-- вот сюда выносим кнопку RF в правую часть flex */}
-
-
-
-
-</div>
-
-
-
-
-{tab === 'home' ? (
-
-  <HomePage
-    chatId={chatId}
-    onOpenTask={openTask}
-  />
-
-) : tab === 'groups' ? (
-
-  groupsPage === 'list' ? (
-    <GroupList
-      chatId={chatId}
-      groups={groups}
-      onReload={reloadGroups}
-      onOpen={goToGroup}
-    />
-  ) : (
-    <>
-      <GroupTabs current={groupTab} onChange={setGroupTab} />
-
-      {groupTab === 'kanban' ? (
-        loading ? (
-          <div style={{ padding: 16 }}>Загрузка…</div>
-        ) : error ? (
-          <div style={{ padding: 16, color: 'crimson' }}>{error}</div>
-        ) : (
-          <>
-            {/* Создание */}
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCorners}
-              onDragStart={handleDragStart}
-              onDragMove={handleDragMove}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
-              autoScroll={false}
+            {/* Нижняя кнопка назад — только внутри оверлея процесса */}
+            <div
+              style={{
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+                zIndex: 2100,
+                display: 'flex',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+              }}
             >
-              {/* Горизонтальный холст */}
-              <div
-                ref={scrollerRef}
+              <button
+                onClick={() => {
+                  const backId = returnTaskIdForProcess || taskId || null;
+                  setShowProcess(false);
+                  setFocusTaskIdForProcess(null);
+                  setSeedTaskIdForProcess(null);
+                  setSeedAssigneeChatIdForProcess(null);
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('view');
+                  window.history.replaceState(null, '', url.toString());
+
+                  if (backId) {
+                    openTask(backId);
+                    setReturnTaskIdForProcess(null);
+                  } else {
+                    WebApp?.BackButton?.hide?.();
+                  }
+                }}
                 style={{
-                  overflowX: 'auto',
-                  overflowY: 'hidden',
-                  whiteSpace: 'nowrap',
-                  WebkitOverflowScrolling: 'touch',
-                  overscrollBehaviorX: 'contain',
-                  paddingBottom: 8,
-                  touchAction: dragging ? 'none' : 'pan-x',
+                  pointerEvents: 'auto',
+                  background: '#202840',
+                  color: '#e8eaed',
+                  border: '1px solid #2a3346',
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  boxShadow: '0 6px 18px rgba(0,0,0,.35)',
                 }}
               >
-                {columns
-                  .sort((a, b) => a.order - b.order)
-                  .map((col) => (
-                    <ColumnView
-                      key={col.id}
-                      column={col}
-                      onOpenTask={openTask}
-                      onRenamed={reloadBoard}
-                      activeId={activeId}
-                      dragging={dragging}
-                    />
-                  ))}
-              </div>
-
-              <DragOverlay>
-                {activeId
-                  ? (() => {
-                      const t = columns
-                        .flatMap((c) => c.tasks)
-                        .find((t) => t.id === activeId);
-                      return t ? (
-                        <TaskCard text={t.text} order={t.order} dragging />
-                      ) : null;
-                    })()
-                  : null}
-              </DragOverlay>
-            </DndContext>
-          </>
-        )
-      ) : groupTab === 'process' ? (
-        <button
-onClick={() => {
-  setShowProcess(false);
-  setFocusTaskIdForProcess(null);         // ← ДОБАВИЛИ
-  setSeedTaskIdForProcess(null);          // ← ДОБАВИЛИ
-  setSeedAssigneeChatIdForProcess(null);  // ← ДОБАВИЛИ
-  const url = new URL(window.location.href);
-  url.searchParams.delete('view');
-  window.history.replaceState(null, '', url.toString());
-  WebApp?.BackButton?.hide?.();
-}}
-          style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px', margin:12 }}
-        >
-
-
-          🔀 Открыть процесс
-        </button>
-      ) : (
-        <GroupMembers
-          group={selectedGroup as any}
-          chatId={chatId}
-          isOwner={isOwnerOfSelected}
-          onChanged={async () => {
-            await reloadGroups();
-            await loadBoard();
-          }}
-          onLeftGroup={() => {
-            setGroupsPage('list');
-            setSelectedGroupId('');
-            reloadGroups();
-          }}
-        />
-      )}
-    </>
-  )
-
-) : tab === 'calendar' ? (
-
-  <CalendarView
-    chatId={chatId}
-    groupId={resolvedGroupId}
-    onOpenTask={openTask}
-  />
-
-) : tab === 'settings' ? (
-
-  <div
-    style={{
-      background: '#1b2030',
-      border: '1px solid #2a3346',
-      borderRadius: 16,
-      padding: 12,
-      display: 'grid',
-      gap: 8,
-    }}
-  >
-    {/* пункт "Уведомления" */}
-    <button
-      onClick={() => setTab('notifications')}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        textAlign: 'left',
-        background: '#202840',
-        color: '#e8eaed',
-        border: '1px solid #2a3346',
-        borderRadius: 12,
-        padding: '10px 12px',
-        cursor: 'pointer',
-      }}
-    >
-      <span style={{ fontSize: 18 }}>🔔</span>
-      <div>
-        <div style={{ fontWeight: 600, marginBottom: 2 }}>Уведомления</div>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>
-          Настроить подписки и посмотреть историю
+                ⟵ Назад
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </button>
+      )}
 
-    {/* тут можно добавить другие пункты настроек позже */}
-  </div>
+      {taskId ? (
+        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
+      ) : (
+        <div
+          style={{
+            minHeight: '100vh',
+            background: '#0f1216',
+            color: '#e8eaed',
+            padding: 16,
+            paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
+          }}
+        >
+          {/* Шапка */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {tab === 'groups' && groupsPage === 'detail' ? (
+                <button
+                  onClick={backToGroupsList}
+                  title="К списку групп"
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid #2a3346',
+                    color: '#e8eaed',
+                    borderRadius: 10,
+                    padding: '6px 8px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⟵ Назад
+                </button>
+              ) : null}
 
-) : tab === 'notifications' ? (
+              {tab === 'notifications' ? (
+                <button
+                  onClick={() => setTab('settings')}
+                  title="К настройкам"
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid #2a3346',
+                    color: '#e8eaed',
+                    borderRadius: 10,
+                    padding: '6px 8px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⟵ Назад
+                </button>
+              ) : null}
 
-  <NotificationsView />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
+                {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
+                  <button
+                    title="Переименовать группу"
+                    onClick={() => setShowGroupEdit(true)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#8aa0ff',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      padding: 2,
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✏️
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
 
-) : (
+          {tab === 'home' ? (
+            <HomePage
+              chatId={chatId}
+              onOpenTask={openTask}
+            />
+          ) : tab === 'groups' ? (
+            groupsPage === 'list' ? (
+              <GroupList
+                chatId={chatId}
+                groups={groups}
+                onReload={reloadGroups}
+                onOpen={goToGroup}
+              />
+            ) : (
+              <>
+                <GroupTabs current={groupTab} onChange={setGroupTab} />
 
-  <TabPlaceholder tab={tab} />
+                {groupTab === 'kanban' ? (
+                  loading ? (
+                    <div style={{ padding: 16 }}>Загрузка…</div>
+                  ) : error ? (
+                    <div style={{ padding: 16, color: 'crimson' }}>{error}</div>
+                  ) : (
+                    <>
+                      {/* Создание */}
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCorners}
+                        onDragStart={handleDragStart}
+                        onDragMove={handleDragMove}
+                        onDragOver={handleDragOver}
+                        onDragEnd={handleDragEnd}
+                        autoScroll={false}
+                      >
+                        {/* Горизонтальный холст */}
+                        <div
+                          ref={scrollerRef}
+                          style={{
+                            overflowX: 'auto',
+                            overflowY: 'hidden',
+                            whiteSpace: 'nowrap',
+                            WebkitOverflowScrolling: 'touch',
+                            overscrollBehaviorX: 'contain',
+                            paddingBottom: 8,
+                            touchAction: dragging ? 'none' : 'pan-x',
+                          }}
+                        >
+                          {columns
+                            .sort((a, b) => a.order - b.order)
+                            .map((col) => (
+                              <ColumnView
+                                key={col.id}
+                                column={col}
+                                onOpenTask={openTask}
+                                onRenamed={reloadBoard}
+                                activeId={activeId}
+                                dragging={dragging}
+                              />
+                            ))}
+                        </div>
 
-)}
+                        <DragOverlay>
+                          {activeId
+                            ? (() => {
+                                const t = columns
+                                  .flatMap((c) => c.tasks)
+                                  .find((t) => t.id === activeId);
+                                return t ? (
+                                  <TaskCard text={t.text} order={t.order} dragging />
+                                ) : null;
+                              })()
+                            : null}
+                        </DragOverlay>
+                      </DndContext>
+                    </>
+                  )
+                ) : groupTab === 'process' ? (
+                  <button
+                    onClick={() => {
+                      setReturnTaskIdForProcess(null); // открываем «вручную», не из задачи
+                      setShowProcess(true);
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('view', 'process');
+                      window.history.pushState({ view: 'process' }, '', url.toString());
+                      WebApp?.BackButton?.show?.();
+                    }}
+                    style={{
+                      background:'#202840',
+                      color:'#e8eaed',
+                      border:'1px solid #2a3346',
+                      borderRadius:10,
+                      padding:'6px 10px',
+                      margin:12,
+                    }}
+                  >
+                    🔀 Открыть процесс
+                  </button>
+                ) : (
+                  <GroupMembers
+                    group={selectedGroup as any}
+                    chatId={chatId}
+                    isOwner={isOwnerOfSelected}
+                    onChanged={async () => {
+                      await reloadGroups();
+                      await loadBoard();
+                    }}
+                    onLeftGroup={() => {
+                      setGroupsPage('list');
+                      setSelectedGroupId('');
+                      reloadGroups();
+                    }}
+                  />
+                )}
+              </>
+            )
+          ) : tab === 'calendar' ? (
+            <CalendarView
+              chatId={chatId}
+              groupId={resolvedGroupId}
+              onOpenTask={openTask}
+            />
+          ) : tab === 'settings' ? (
+            <div
+              style={{
+                background: '#1b2030',
+                border: '1px solid #2a3346',
+                borderRadius: 16,
+                padding: 12,
+                display: 'grid',
+                gap: 8,
+              }}
+            >
+              {/* пункт "Уведомления" */}
+              <button
+                onClick={() => setTab('notifications')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  textAlign: 'left',
+                  background: '#202840',
+                  color: '#e8eaed',
+                  border: '1px solid #2a3346',
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 18 }}>🔔</span>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>Уведомления</div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    Настроить подписки и посмотреть историю
+                  </div>
+                </div>
+              </button>
 
+              {/* тут можно добавить другие пункты настроек позже */}
+            </div>
+          ) : tab === 'notifications' ? (
+            <NotificationsView />
+          ) : (
+            <TabPlaceholder tab={tab} />
+          )}
 
-
-
-
-
-
-
-
-<CreateTaskFab
-  defaultGroupId={resolvedGroupId ?? null}
-  chatId={chatId}
-  groups={groups}
-  onCreated={reloadBoard}
-/>
-
-
-
-
-
-
+          <CreateTaskFab
+            defaultGroupId={resolvedGroupId ?? null}
+            chatId={chatId}
+            groups={groups}
+            onCreated={reloadBoard}
+          />
 
           {/* Нижняя панель */}
           <BottomNav
@@ -1312,9 +1178,6 @@ onClick={() => {
     </>
   );
 }
-
-
-
 
 function ColumnView({
   column,
@@ -1364,6 +1227,7 @@ function ColumnView({
         marginRight: 16,
         background: '#1b2030',
         border: '1px solid #2a3346',
+       
         borderRadius: 16,
         padding: 12,
         minHeight: 300,
@@ -1427,24 +1291,21 @@ function ColumnView({
             touchAction: dragging ? 'none' : 'pan-x pan-y',
           }}
         >
-{column.tasks.map((t) => (
-<SortableTask
-  key={t.id}
-  taskId={t.id}
-  text={t.text}
-  order={t.order}
-  assigneeName={t.assigneeName}
-  onOpenTask={onOpenTask}
-  armed={activeId === t.id}
-  isEvent={t.type === 'EVENT'}
-  startAt={t.startAt}
-  endAt={t.endAt}
-  fromProcess={!!t.fromProcess}
-/>
-
-))}
-
-
+          {column.tasks.map((t) => (
+            <SortableTask
+              key={t.id}
+              taskId={t.id}
+              text={t.text}
+              order={t.order}
+              assigneeName={t.assigneeName}
+              onOpenTask={onOpenTask}
+              armed={activeId === t.id}
+              isEvent={t.type === 'EVENT'}
+              startAt={t.startAt}
+              endAt={t.endAt}
+              fromProcess={!!t.fromProcess}
+            />
+          ))}
 
           {column.tasks.length === 0 && <div style={{ opacity: 0.6, fontSize: 13 }}>Пусто</div>}
         </div>
