@@ -160,6 +160,11 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
     openMenu();
   };
 
+
+
+  
+
+
   // ПК: открыть меню по левому клику, но не на интерактивах/лейбле
   const onRootClick = (e: React.MouseEvent) => {
     if (editing) return;
@@ -523,6 +528,7 @@ function GroupProcessInner({
   const { screenToFlowPosition } = rfApi;
 
   const rfReadyRef = useRef<ReactFlowInstance | null>(null);
+    const resaveGuardRef = useRef(false);  
 
   // модалка статуса
   const [statusPicker, setStatusPicker] = useState<{ open: boolean; nodeId: string | null }>({
@@ -997,7 +1003,7 @@ function GroupProcessInner({
 
   const addNodeAt = useCallback(
     (pos: XYPosition, label = '', autoEdit = false) => {
-      const id = `n_${nextIdRef.current++}`;
+const id = `seed_new_${Date.now().toString(36)}_${nextIdRef.current++}`;
       const defaultAssigneeName = owner?.name || 'Владелец группы';
       const defaultAssigneeChatId = owner?.chatId ? String(owner.chatId) : null;
 
@@ -1461,13 +1467,34 @@ const handleSave = useCallback(async () => {
       edges: payloadEdges,
     };
 
+
     const resp: any = await (saveProcess as any)(body);
 
     if (resp?.ok) {
       setLoadInfo('Сохранено ✔︎ Обновляю…');
-      // КЛЮЧЕВОЕ: перечитываем процесс, чтобы подхватить выданные сервером taskId
-      await loadProcess();
-      setLoadInfo('Сохранено ✔︎');
+      await loadProcess(); // перечитываем, чтобы подхватить taskId
+
+      // ⬇️ двухфазный трюк: если ещё остались ноды без taskId — один раз досохраним
+      setTimeout(async () => {
+        try {
+          if (resaveGuardRef.current) return;
+          const after = rfApi.getNodes();
+          const missing = after.filter(n => !((n.data as any)?.taskId));
+          if (missing.length > 0) {
+            resaveGuardRef.current = true;
+            setLoadInfo('Досохраняю новые узлы…');
+            // второй вызов сохранит уже «первую волну» с taskId и создаст «вторую»
+            await handleSave();
+          } else {
+            setLoadInfo('Сохранено ✔︎');
+          }
+        } catch {
+          setLoadInfo('Сохранено ✔︎');
+        } finally {
+          // сбросим флаг спустя немного, чтобы не зациклиться при ручных кликах
+          setTimeout(() => { resaveGuardRef.current = false; }, 300);
+        }
+      }, 0);
     } else {
       setLoadInfo(`Ошибка сохранения${resp?.error ? ': ' + resp.error : ''}`);
     }
@@ -1477,7 +1504,7 @@ const handleSave = useCallback(async () => {
   } finally {
     setLoading(false);
   }
-}, [groupId, chatId, nodes, edges, runMode, loadProcess]);
+}, [groupId, chatId, nodes, edges, runMode, loadProcess, rfApi]);
 
 
   return (

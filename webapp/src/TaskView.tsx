@@ -5,6 +5,7 @@ import WebApp from '@twa-dev/sdk';
 import type { Task, TaskMedia, GroupLabel } from './api';
 import { getTaskRelations } from './api'; // 👈 обычный импорт значения
 import { getTaskLabels, removeTaskLabel, listGroups, API_BASE, fetchBoard, moveTask, type Group } from './api';
+import { fetchProcess } from './api';
 
 
 import ResponsibleActions from './components/ResponsibleActions';
@@ -60,11 +61,11 @@ const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
 
 const [relations, setRelations] = useState<{outgoing: Array<{id:string;text:string}>, incoming: Array<{id:string;text:string}>}>({ outgoing: [], incoming: [] });
 
-const hasIncoming = relations.incoming.length > 0;
-const hasOutgoing = relations.outgoing.length > 0;
+
 // Если где-то ещё понадобится общий флаг:
 // const hasRelations = hasIncoming || hasOutgoing;
 
+const [procDeg, setProcDeg] = useState<{in:number; out:number} | null>(null);
 
 
 
@@ -207,6 +208,47 @@ useEffect(() => {
 
 
 
+
+
+// + когда известны groupId / taskId — строим индекс степеней из процесса
+useEffect(() => {
+  let alive = true;
+  (async () => {
+    if (!groupId) { setProcDeg(null); return; }
+    try {
+      const r = await fetchProcess(String(groupId));
+      if (!r?.ok) return;
+ const nodes = r.nodes || [];
+const edges = r.edges || [];
+const taskIdByNode = new Map<string, string>(); // nodeId -> taskId
+
+   
+for (const n of nodes) {
+  const meta = (() => { try { return JSON.parse(n.metaJson || '{}'); } catch { return {}; } })();
+  const tId = meta?.taskId ? String(meta.taskId) : '';
+  if (tId) taskIdByNode.set(String(n.id), tId);
+}
+
+const degByTask = new Map<string, { in: number; out: number }>();
+
+// edges come from API (ProcessEdgeDTO): use sourceNodeId/targetNodeId
+for (const e of edges as Array<{ sourceNodeId: string | number; targetNodeId: string | number }>) {
+  const sTask = taskIdByNode.get(String(e.sourceNodeId));
+  const tTask = taskIdByNode.get(String(e.targetNodeId));
+  if (sTask) degByTask.set(sTask, { in: (degByTask.get(sTask)?.in || 0), out: (degByTask.get(sTask)?.out || 0) + 1 });
+  if (tTask) degByTask.set(tTask, { in: (degByTask.get(tTask)?.in || 0) + 1, out: (degByTask.get(tTask)?.out || 0) });
+}
+
+      if (!alive) return;
+      setProcDeg(degByTask.get(String(taskId)) || null);
+    } catch {}
+  })();
+  return () => { alive = false; };
+}, [groupId, taskId]);
+
+// ⬇️ замените вычисление hasIncoming/hasOutgoing (или просто дополните):
+const hasIncoming = relations.incoming.length > 0 || (procDeg?.in ?? 0) > 0;
+const hasOutgoing = relations.outgoing.length > 0 || (procDeg?.out ?? 0) > 0;
 
 
 
