@@ -254,7 +254,7 @@ export default function App() {
 
 const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
 
-
+const [persistSeedSession, setPersistSeedSession] = useState(false);
 
 
   const [tab, setTab] = useState<TabKey>('home');
@@ -276,6 +276,9 @@ const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
       setSelectedGroupId(String(d.groupId));
       setGroupTab('process');
       setSpawnNextForFocus(!!d.seedNewRight);
+
+         // 👇 включаем сеанс посева, если пришли по seedTaskId
+   setPersistSeedSession(!!d.seedTaskId);
 
       // из TaskView либо фокус на конкретный узел, либо посев
       if (d.focusTaskId) {
@@ -299,6 +302,7 @@ const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
       WebApp?.BackButton?.show?.();
     };
     window.addEventListener('open-process', handler as any);
+  
     return () => window.removeEventListener('open-process', handler as any);
   }, []);
 
@@ -833,6 +837,7 @@ const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
   spawnNextForFocus={spawnNextForFocus}
   onSpawnNextConsumed={() => setSpawnNextForFocus(false)}
   onSeedConsumed={() => { setSeedTaskIdForProcess(null); setSeedAssigneeChatIdForProcess(null); }}
+    persistSeedSession={persistSeedSession} 
 />
 
             {/* Нижняя кнопка назад — только внутри оверлея процесса */}
@@ -858,6 +863,7 @@ const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
                   const url = new URL(window.location.href);
                   url.searchParams.delete('view');
                   window.history.replaceState(null, '', url.toString());
+                    setPersistSeedSession(false); // 👈 сброс сеанса
 
                   if (backId) {
                     openTask(backId);
