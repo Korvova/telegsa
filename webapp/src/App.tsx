@@ -285,8 +285,10 @@ const [tab, setTab] = useState<TabKey>('home');
 
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
   // seed open-process (from TaskView)
-  const [seedTaskIdForProcess, setSeedTaskIdForProcess] = useState<string | null>(null);
-  const [seedAssigneeChatIdForProcess, setSeedAssigneeChatIdForProcess] = useState<string | null>(null);
+const [seedTaskIdForProcess, setSeedTaskIdForProcess] = useState<string | null>(null);
+const [seedAssigneeChatIdForProcess, setSeedAssigneeChatIdForProcess] = useState<string | null>(null);
+const [focusTaskIdForProcess, setFocusTaskIdForProcess] = useState<string | null>(null); // ← ДОБАВИЛИ
+
 
   // listen to open-process requests from TaskView
   useEffect(() => {
@@ -299,17 +301,25 @@ const [tab, setTab] = useState<TabKey>('home');
 
 
 
- setSeedTaskIdForProcess(d.seedTaskId || null);
- setSeedAssigneeChatIdForProcess(d.seedAssigneeChatId || null);
- setShowProcess(true); // сразу показываем канву на весь экран
+// …внутри того же handler:
+if (d.focusTaskId) {
+  setFocusTaskIdForProcess(String(d.focusTaskId));
+  setSeedTaskIdForProcess(null);
+  setSeedAssigneeChatIdForProcess(null);
+} else {
+  setFocusTaskIdForProcess(null);
+  setSeedTaskIdForProcess(d.seedTaskId || null);
+  setSeedAssigneeChatIdForProcess(d.seedAssigneeChatId || null);
+}
 
 
+setShowProcess(true);
+const url = new URL(window.location.href);
+url.searchParams.set('view', 'process');
+window.history.pushState({ view: 'process' }, '', url.toString());
+WebApp?.BackButton?.show?.();
 
-     setShowProcess(true);
-     const url = new URL(window.location.href);
-     url.searchParams.set('view', 'process');
-     window.history.pushState({ view: 'process' }, '', url.toString());
-     WebApp?.BackButton?.show?.();
+// НИЧЕГО больше не ставим — никаких focusTaskId тут нет
 
 
 
@@ -707,6 +717,13 @@ useEffect(() => {
     el.scrollLeft = Math.max(0, Math.min(max, el.scrollLeft + dx));
   };
 
+
+
+
+
+
+
+
   const handleDragStart = (evt: DragStartEvent) => {
     setActiveId(String(evt.active.id));
     prevTotalDxRef.current = 0;
@@ -865,13 +882,22 @@ const title =
       >
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: 10, borderBottom:'1px solid #e5e7eb' }}>
           <button
-            onClick={() => {
-              setShowProcess(false);
-              const url = new URL(window.location.href);
-              url.searchParams.delete('view');
-              window.history.replaceState(null, '', url.toString());
-              WebApp?.BackButton?.hide?.();
-            }}
+
+
+onClick={() => {
+  setShowProcess(false);
+  setFocusTaskIdForProcess(null);
+  setSeedTaskIdForProcess(null);
+  setSeedAssigneeChatIdForProcess(null);
+  const url = new URL(window.location.href);
+  url.searchParams.delete('view');
+  window.history.replaceState(null, '', url.toString());
+  WebApp?.BackButton?.hide?.();
+}}
+
+
+
+
             style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px' }}
           >
             ⟵ Назад
@@ -889,9 +915,14 @@ const title =
   onOpenTask={openTask}
   seedTaskId={seedTaskIdForProcess}
   seedAssigneeChatId={seedAssigneeChatIdForProcess}
-  forceSeedFromTask
+  forceSeedFromTask={!!seedTaskIdForProcess}    // ← только если действительно сидим
+  focusTaskId={focusTaskIdForProcess}           // ← ВАЖНО: фокус на узел по taskId
   onSeedConsumed={() => { setSeedTaskIdForProcess(null); setSeedAssigneeChatIdForProcess(null); }}
 />
+
+
+
+
 
 
 
@@ -917,6 +948,53 @@ const title =
 
 
           {/* Шапка */}
+
+
+{/* ⬇️ ДОБАВИТЬ: дубль кнопки "Назад" внизу, чтобы не перекрывалось Телеграмом */}
+<div
+  style={{
+    position: 'fixed',
+    left: 0,
+    right: 0,
+    bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+    zIndex: 1101,
+    display: 'flex',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+  }}
+>
+  <button
+    onClick={() => {
+      setShowProcess(false);
+      setFocusTaskIdForProcess(null);
+      setSeedTaskIdForProcess(null);
+      setSeedAssigneeChatIdForProcess(null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('view');
+      window.history.replaceState(null, '', url.toString());
+      WebApp?.BackButton?.hide?.();
+    }}
+    style={{
+      pointerEvents: 'auto',
+      background: '#202840',
+      color: '#e8eaed',
+      border: '1px solid #2a3346',
+      borderRadius: 12,
+      padding: '10px 14px',
+      boxShadow: '0 6px 18px rgba(0,0,0,.35)',
+    }}
+  >
+    ⟵ Назад
+  </button>
+</div>
+
+
+
+
+
+
+
+
        <div
   style={{
     display: 'flex',
@@ -1077,15 +1155,20 @@ const title =
         )
       ) : groupTab === 'process' ? (
         <button
-          onClick={() => {
-            setShowProcess(true);
-            const url = new URL(window.location.href);
-            url.searchParams.set('view', 'process');
-            window.history.pushState({ view: 'process' }, '', url.toString());
-            WebApp?.BackButton?.show?.();
-          }}
+onClick={() => {
+  setShowProcess(false);
+  setFocusTaskIdForProcess(null);         // ← ДОБАВИЛИ
+  setSeedTaskIdForProcess(null);          // ← ДОБАВИЛИ
+  setSeedAssigneeChatIdForProcess(null);  // ← ДОБАВИЛИ
+  const url = new URL(window.location.href);
+  url.searchParams.delete('view');
+  window.history.replaceState(null, '', url.toString());
+  WebApp?.BackButton?.hide?.();
+}}
           style={{ background:'#202840', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'6px 10px', margin:12 }}
         >
+
+
           🔀 Открыть процесс
         </button>
       ) : (

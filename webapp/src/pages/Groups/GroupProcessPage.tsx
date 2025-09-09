@@ -48,12 +48,16 @@ import { fetchProcess, saveProcess, getGroupMembers, getTask, type GroupMember }
   forceSeedFromTask?: boolean;
   /** Временная блокировка сохранения, чтобы не перезатереть групповой процесс */
   disableSave?: boolean;
+
+  focusTaskId?: string | null;
+
  };
 
 type CondEdgeData = { icon?: string };
 
 interface EditableData {
   label: string;
+   taskId?: string | null;
 
   /** Ответственный */
   assigneeName?: string;
@@ -155,6 +159,20 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
     const el = e.target as Element;
     if (el.closest('input,textarea,button,.react-flow__handle,.editable-label')) return;
   };
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
 
   useEffect(() => {
     const handler = (e: PointerEvent) => {
@@ -456,11 +474,9 @@ function GroupProcessInner({
   seedTaskId,
   seedAssigneeChatId,
   onSeedConsumed,
-
-  forceSeedFromTask,
   disableSave,
-
-
+  focusTaskId,
+  forceSeedFromTask,            // 👈 добавили
 }: {
   chatId: string;
   groupId: string | null;
@@ -469,7 +485,9 @@ function GroupProcessInner({
   onSeedConsumed?: () => void;
   forceSeedFromTask?: boolean;
   disableSave?: boolean;
+  focusTaskId?: string | null;
 }) {
+
 
 
   const groupId = rawGroupId ? String(rawGroupId) : null;
@@ -495,6 +513,29 @@ function GroupProcessInner({
     open: false,
     nodeId: null,
   });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // подтянуть участников при смене groupId
   useEffect(() => {
@@ -802,6 +843,18 @@ function GroupProcessInner({
       incomingByTarget.set(String(e.target), arr);
     });
 
+
+
+
+
+
+
+
+
+// ⬇️ ДОБАВИТЬ: фокус на уже сохранённый процесс по taskId
+
+
+
     const sourceDone = (edgeIds: string[]) =>
       edgeIds.some((eid) => {
         const e = edges.find((x) => String(x.id) === eid);
@@ -1025,240 +1078,275 @@ function GroupProcessInner({
   useEffect(() => () => detachPointerUp(), []);
 
   /* ---------- загрузка/сохранение из API ---------- */
-  async function loadProcess() {
-    // демо, если группа не выбрана
- 
 
-  // 0) Режим: "новое полотно для конкретной задачи"
-  if (seedTaskId && forceSeedFromTask) {
-    try {
-      setLoading(true);
-      setLoadInfo('Подготавливаем полотно…');
-      const resp = await getTask(String(seedTaskId));
-      const t = resp.task;
-      const leftId = 'seed_task_' + String(t.id);
-      const rightId = 'seed_new_' + String(Date.now());
-      const assignee = (t.assigneeChatId || seedAssigneeChatId || chatId)
-        ? String(t.assigneeChatId || seedAssigneeChatId || chatId)
-        : null;
 
-      const seededNodes: Node<EditableData>[] = [
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+/* ---------- загрузка/сохранение из API ---------- */
+const loadProcess = useCallback(async () => {
+  setLoading(true);
+  try {
+    if (!groupId) {
+      setLoadInfo('Локальный режим: groupId не задан');
+      setLoading(false);
+      return;
+    }
+
+    // ⚠️ Вернули запрос и проверку ok
+    const apiData = await fetchProcess(String(groupId));
+    if (!apiData?.ok) {
+      setLoadInfo('Ошибка загрузки');
+      return;
+    }
+
+    const { process, nodes: n = [], edges: e = [] } = apiData;
+    setRunMode(process?.runMode === 'SCHEDULE' ? 'SCHEDULE' : 'MANUAL');
+
+    let rfNodes: Node<EditableData>[];
+    let rfEdges: Edge<CondEdgeData>[];
+
+
+
+
+// ⬇️ Ранний выход: если пришли с "серой точки" (forceSeedFromTask),
+// игнорим содержимое сохранённого процесса и строим пару "эта задача → новая".
+if (forceSeedFromTask && seedTaskId) {
+  try {
+    const resp = await getTask(String(seedTaskId));
+    const t = resp.task;
+
+    const leftId = 'seed_task_' + String(t.id);
+    const rightId = 'seed_new_' + Date.now();
+
+    const assignee = (t.assigneeChatId || seedAssigneeChatId || chatId)
+      ? String(t.assigneeChatId || seedAssigneeChatId || chatId)
+      : null;
+
+    const seededNodes: Node<EditableData>[] = [
+      {
+        id: leftId,
+        type: 'editable',
+        position: { x: 100, y: 100 },
+        data: {
+          label: clampGraphemes(String(t.text || 'Задача')),
+          assigneeName: t.assigneeName || undefined,
+          assigneeChatId: assignee,
+          taskId: String(t.id),
+          onChange: onLabelChange,
+          onAction: onNodeAction,
+        },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      },
+      {
+        id: rightId,
+        type: 'editable',
+        position: { x: 320, y: 100 },
+        data: {
+          label: '',
+          autoEdit: true,
+          onChange: onLabelChange,
+          onAction: onNodeAction,
+        },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+      },
+    ];
+
+    const seededEdges: Edge<CondEdgeData>[] = [
+      { id: 'seed_e_' + Date.now(), source: leftId, target: rightId, type: 'cond', data: {} },
+    ];
+
+    setNodes(seededNodes);
+    setEdges(seededEdges);
+    onSeedConsumed?.();
+
+    // Центрируем и показываем инфо
+    setLoadInfo('Создание связки от выбранной задачи');
+    setTimeout(() => fitSafe(), 60);
+
+    // ВАЖНО: выходим из loadProcess, чтобы не перетёрло ниже.
+    return;
+  } catch (e) {
+    console.warn('[process] forced seed from task failed', e);
+    // продолжаем обычную загрузку ниже, если вдруг не смогли подтянуть задачу
+  }
+}
+
+
+
+
+
+
+
+    if (n.length === 0) {
+      rfNodes = [
         {
-          id: leftId,
+          id: 'seed_1',
           type: 'editable',
           position: { x: 100, y: 100 },
+          data: { label: 'Старт', onChange: onLabelChange, onAction: onNodeAction },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+        },
+        {
+          id: 'seed_2',
+          type: 'editable',
+          position: { x: 320, y: 100 },
+          data: { label: 'Следующий шаг', onChange: onLabelChange, onAction: onNodeAction },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+        },
+      ];
+      rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} }];
+    } else {
+      rfNodes = n.map((it: any) => {
+        const meta = safeParseJson(it.metaJson);
+        const taskIdFromMeta = meta?.taskId || null;
+        const conditions = meta?.conditions || undefined;
+        const assigneeName = meta?.assigneeName || undefined;
+        const assigneeChatId = it.assigneeChatId ? String(it.assigneeChatId) : null;
+        const statusFromDb = String(it.status || 'NEW').toUpperCase() as NodeStatus;
+
+        return {
+          id: String(it.id),
+          type: 'editable',
+          position: { x: Number(it.posX) || 0, y: Number(it.posY) || 0 },
           data: {
-            label: clampGraphemes(String(t.text || 'Задача')),
-            assigneeName: t.assigneeName || undefined,
-            assigneeChatId: assignee,
-            status: 'NEW',
+            label: String(it.title || 'Новая задача'),
+            assigneeName,
+            assigneeChatId,
+            conditions,
+            status: statusFromDb,
             onChange: onLabelChange,
             onAction: onNodeAction,
+            taskId: taskIdFromMeta ?? undefined,
           },
           sourcePosition: Position.Right,
           targetPosition: Position.Left,
-        },
-        {
-          id: rightId,
-          type: 'editable',
-          position: { x: 320, y: 100 },
-          data: { label: '', autoEdit: true, status: 'NEW', onChange: onLabelChange, onAction: onNodeAction },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-        },
-      ];
-      const seededEdges: Edge<CondEdgeData>[] = [
-        { id: 'seed_e_' + Date.now(), source: leftId, target: rightId, type: 'cond', data: { icon: '➡️' } },
-      ];
-      setNodes(seededNodes);
-      setEdges(seededEdges);
-      setLoadInfo('Черновик процесса для задачи');
-      setTimeout(() => fitSafe(), 120);
-      onSeedConsumed?.();
-    } catch (e) {
-      console.error('[process] seed draft error', e);
-      setLoadInfo('Не удалось подготовить полотно');
-    } finally {
-      setLoading(false);
+        };
+      });
+
+      rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
+        id: String(it.id),
+        source: String(it.sourceNodeId),
+        target: String(it.targetNodeId),
+        type: 'cond',
+        data: {},
+      }));
     }
-    return; // 👈 важно: не грузим процесс группы
- }
 
+    // если есть seed — подменяем на «эта задача → новая»
+ if (!focusTaskId && seedTaskId && rfNodes.length === 2 && rfNodes[0].id === 'seed_1') {
 
+      try {
+        const resp = await getTask(String(seedTaskId));
+        const t = resp.task;
+        const leftId = 'seed_task_' + String(t.id);
+        const rightId = 'seed_new_' + String(Date.now());
+        const assignee = (t.assigneeChatId || seedAssigneeChatId || chatId)
+          ? String(t.assigneeChatId || seedAssigneeChatId || chatId)
+          : null;
 
-
-  // Нет выбранной группы → показываем демо-пустышку и не зовём API
-  if (!groupId) {
-    setLoading(false);
-    setLoadInfo('Нет выбранной группы');
-    const demoNodes: Node<EditableData>[] = [
-      {
-        id: 'seed_1',
-        type: 'editable',
-        position: { x: 100, y: 100 },
-        data: { label: 'Старт', onChange: onLabelChange, onAction: onNodeAction },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      },
-      {
-        id: 'seed_2',
-        type: 'editable',
-        position: { x: 320, y: 100 },
-        data: { label: 'Следующий шаг', onChange: onLabelChange, onAction: onNodeAction },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      },
-    ];
-    const demoEdges: Edge<CondEdgeData>[] = [
-      { id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} },
-    ];
-    setNodes(demoNodes);
-    setEdges(demoEdges);
-    setTimeout(() => fitSafe(), 120);
-    return;
-  }
-
-
-
-
-    try {
-      setLoading(true);
-      setLoadInfo('Загрузка…');
-      const data = await fetchProcess(groupId);
-      if (!data?.ok) {
-        setLoadInfo('Ошибка загрузки');
-        return;
-      }
-
-      const { process, nodes: n = [], edges: e = [] } = data;
-      setRunMode(process?.runMode === 'SCHEDULE' ? 'SCHEDULE' : 'MANUAL');
-
-      let rfNodes: Node<EditableData>[];
-      let rfEdges: Edge<CondEdgeData>[];
-
-      if (n.length === 0) {
         rfNodes = [
           {
-            id: 'seed_1',
+            id: leftId,
             type: 'editable',
             position: { x: 100, y: 100 },
-            data: { label: 'Старт', onChange: onLabelChange, onAction: onNodeAction },
+            data: {
+              label: clampGraphemes(String(t.text || 'Задача')),
+              assigneeName: t.assigneeName || undefined,
+              assigneeChatId: assignee,
+                taskId: String(t.id), 
+              onChange: onLabelChange,
+              onAction: onNodeAction,
+
+
+
+            },
             sourcePosition: Position.Right,
             targetPosition: Position.Left,
           },
           {
-            id: 'seed_2',
+            id: rightId,
             type: 'editable',
             position: { x: 320, y: 100 },
-            data: { label: 'Следующий шаг', onChange: onLabelChange, onAction: onNodeAction },
+            data: { label: '', autoEdit: true, onChange: onLabelChange, onAction: onNodeAction },
             sourcePosition: Position.Right,
             targetPosition: Position.Left,
           },
         ];
-        rfEdges = [{ id: 'seed_e1', source: 'seed_1', target: 'seed_2', type: 'cond', data: {} }];
-      } else {
-        rfNodes = n.map((it: any) => {
-          const meta = safeParseJson(it.metaJson);
-          const conditions = meta?.conditions || undefined;
-          const assigneeName = meta?.assigneeName || undefined;
-          const assigneeChatId = it.assigneeChatId ? String(it.assigneeChatId) : null;
-          const statusFromDb = String(it.status || 'NEW').toUpperCase() as NodeStatus;
-
-          return {
-            id: String(it.id),
-            type: 'editable',
-            position: { x: Number(it.posX) || 0, y: Number(it.posY) || 0 },
-            data: {
-              label: String(it.title || 'Новая задача'),
-              assigneeName,
-              assigneeChatId,
-              conditions,
-              status: statusFromDb,
-              onChange: onLabelChange,
-              onAction: onNodeAction,
-            },
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
-          };
-        });
-
-        rfEdges = e.map((it: any): Edge<CondEdgeData> => ({
-          id: String(it.id),
-          source: String(it.sourceNodeId),
-          target: String(it.targetNodeId),
-          type: 'cond',
-          data: {},
-        }));
+        rfEdges = [{ id: 'seed_e_' + Date.now(), source: leftId, target: rightId, type: 'cond', data: {} }];
+        onSeedConsumed?.();
+      } catch (e) {
+        console.warn('[process] seed from task failed', e);
       }
-
-
-
-
-
-    // ⬇️ Если пришли seed-параметры из TaskView и сейчас у нас дефолтный пустой процесс,
-      // подменяем на «текущая задача → новая»
-      if (seedTaskId && rfNodes.length === 2 && rfNodes[0].id === 'seed_1') {
-        try {
-          const resp = await getTask(String(seedTaskId));
-          const t = resp.task;
-          const leftId = 'seed_task_' + String(t.id);
-          const rightId = 'seed_new_' + String(Date.now());
-          const assignee = (t.assigneeChatId || seedAssigneeChatId || chatId)
-            ? String(t.assigneeChatId || seedAssigneeChatId || chatId)
-            : null;
-
-          rfNodes = [
-            {
-              id: leftId,
-              type: 'editable',
-              position: { x: 100, y: 100 },
-              data: {
-                label: clampGraphemes(String(t.text || 'Задача')),
-                assigneeName: t.assigneeName || undefined,
-                assigneeChatId: assignee,
-                onChange: onLabelChange,
-                onAction: onNodeAction,
-              },
-              sourcePosition: Position.Right,
-              targetPosition: Position.Left,
-            },
-            {
-              id: rightId,
-              type: 'editable',
-              position: { x: 320, y: 100 },
-              data: { label: '', autoEdit: true, onChange: onLabelChange, onAction: onNodeAction },
-              sourcePosition: Position.Right,
-              targetPosition: Position.Left,
-            },
-          ];
-          rfEdges = [{ id: 'seed_e_' + Date.now(), source: leftId, target: rightId, type: 'cond', data: {} }];
-          onSeedConsumed?.();
-        } catch (e) {
-          console.warn('[process] seed from task failed', e);
-        }
-      }
-
-
-
-
-
-
-      setNodes(rfNodes);
-      setEdges(rfEdges);
-      setLoadInfo(`Загружено: узлов ${rfNodes.length}, связей ${rfEdges.length}`);
-
-      setTimeout(() => fitSafe(), 120);
-    } catch (err) {
-      console.error('[PROCESS] load error', err);
-      setLoadInfo('Ошибка сети');
-    } finally {
-      setLoading(false);
     }
-  }
 
-  useEffect(() => {
-    loadProcess();
-  }, [groupId]); // eslint-disable-line
+    setNodes(rfNodes);
+    setEdges(rfEdges);
+
+    // авто-фокус на узел по taskId
+    if (focusTaskId) {
+      setTimeout(() => {
+        const n = rfApi.getNodes().find(
+          (x: any) => String((x.data as any)?.taskId || '') === String(focusTaskId)
+        );
+        if (n) {
+          const w = n.width ?? 220, h = n.height ?? 80;
+          const cx = (n.positionAbsolute?.x ?? n.position.x) + w / 2;
+          const cy = (n.positionAbsolute?.y ?? n.position.y) + h / 2;
+          rfApi.setCenter(cx, cy, { zoom: Math.min(1.2, rfApi.getZoom() || 1), duration: 400 });
+        }
+      }, 120);
+    }
+
+    setLoadInfo(`Загружено: узлов ${rfNodes.length}, связей ${rfEdges.length}`);
+    setTimeout(() => fitSafe(), 120);
+  } catch (err) {
+    console.error('[PROCESS] load error', err);
+    setLoadInfo('Ошибка сети');
+  } finally {
+    setLoading(false);
+  }
+}, [
+  groupId,
+  seedTaskId,
+  seedAssigneeChatId,
+
+    forceSeedFromTask, 
+  chatId,
+  focusTaskId,
+  rfApi,
+  fitSafe,
+  onLabelChange,
+  onNodeAction,
+]);
+
+useEffect(() => {
+  loadProcess();
+}, [loadProcess]);
+
+
+
+
 
   const handleSave = useCallback(async () => {
     if (!groupId) {
@@ -1521,6 +1609,9 @@ function GroupProcessInner({
            onSeedConsumed={props.onSeedConsumed}
           forceSeedFromTask={props.forceSeedFromTask}
           disableSave={props.disableSave}
+          focusTaskId={props.focusTaskId}
+
+
          />
        </div>
      </ReactFlowProvider>

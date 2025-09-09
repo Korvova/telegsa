@@ -105,6 +105,14 @@ const [media, setMedia] = useState<TaskMedia[]>([]);
 
 
 
+
+
+
+
+
+
+
+
 // Считаем вложение аудио, если kind = voice|audio,
 // либо MIME начинается с audio/, либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
 const isAudioLike = (m: TaskMedia) => {
@@ -683,23 +691,27 @@ return; // не сбрасываем saving до завершения анима
           {/* Process dot */}
           <button
             aria-label="Открыть процесс"
-            onClick={() => {
-              try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
 
 
 
- const ev = new CustomEvent('open-process', { detail: {
-   groupId,
-   seedTaskId: task.id,
-   seedAssigneeChatId: (task.assigneeChatId || meChatId || null),
-   createNewCanvas: true, // 👈 важно
- }});
+onClick={() => {
+  try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
 
+  const hasProcess = !!hasRelations || !!(task as any)?.fromProcess;
 
+  const ev = new CustomEvent('open-process', {
+    detail: hasProcess
+      ? { groupId, focusTaskId: task.id } // ← открыть СУЩЕСТВУЮЩИЙ процесс и сфокусироваться на этой задаче
+      : {
+          groupId,
+          seedTaskId: task.id,
+          seedAssigneeChatId: (task.assigneeChatId || meChatId || null), // ← старт с засеянной левой задачей
+        },
+  });
 
-              window.dispatchEvent(ev);
-              onClose?.();
-            }}
+  window.dispatchEvent(ev);
+  onClose?.();
+}}
             style={{
               position: 'absolute',
               right: -12,
