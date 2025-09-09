@@ -751,10 +751,25 @@ return; // не сбрасываем saving до завершения анима
 
 
     onClick={() => {
+
+
+
       try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
-      window.dispatchEvent(new CustomEvent('open-process', {
-        detail: { groupId, focusTaskId: task.id }, // просто открыть и сфокусироваться
-      }));
+
+
+
+
+window.dispatchEvent(new CustomEvent('open-process', {
+  detail: {
+    groupId,
+    focusTaskId: task.id,         // сфокусироваться на текущей
+    spawnNextForFocus: true,      // досадить новый узел справа
+    backToTaskId: task.id,
+  },
+}));
+
+
+
       onClose?.(groupId);
     }}
     style={{
@@ -781,27 +796,33 @@ return; // не сбрасываем saving до завершения анима
 onClick={() => {
   try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
 
-  if (hasOutgoing) {
-    // если есть продолжение — просто открыть процесс и сфокусироваться
-    window.dispatchEvent(new CustomEvent('open-process', {
-      detail: { groupId, focusTaskId: task.id, backToTaskId: task.id },
-    }));
-    onClose?.(groupId);
-    return;
-  }
+ // если есть исходящие — просто открыть процесс и сфокусироваться
+ if (hasOutgoing) {
+   window.dispatchEvent(new CustomEvent('open-process', {
+     detail: { groupId, focusTaskId: task.id, backToTaskId: task.id },
+   }));
+   onClose?.(groupId);
+   return;
+ }
 
-  // НЕТ исходящих → режим «посева»: текущая задача слева + пустая справа с автофокусом
-  window.dispatchEvent(new CustomEvent('open-process', {
-    detail: {
-      groupId,
-      seedTaskId: task.id,                                   // ✅ ключ: передаём seedTaskId
-      seedAssigneeChatId: (task.assigneeChatId || meChatId || null),
-      backToTaskId: task.id,
-      // seedNewRight: true, // больше не нужен, можно удалить
-    },
-  }));
-
-  onClose?.(groupId);
+ // исходящих нет → выбираем режим в зависимости от того, есть ли узел в процессе
+ const inProcess = procDeg !== null; // procDeg ставится только если нашёлся node в процессе
+ window.dispatchEvent(new CustomEvent('open-process', {
+   detail: inProcess
+     ? {
+         groupId,
+         focusTaskId: task.id,
+         spawnNextForFocus: true, // досадить новый узел справа
+         backToTaskId: task.id,
+       }
+     : {
+         groupId,
+         seedTaskId: task.id,      // открыть подграф «Текущая → Новый»
+         seedAssigneeChatId: (task.assigneeChatId || meChatId || null),
+         backToTaskId: task.id,
+       },
+ }));
+ onClose?.(groupId);
 }}
 
 
