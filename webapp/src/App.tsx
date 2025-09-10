@@ -19,6 +19,7 @@ import TaskView from './TaskView';
 
 import HomePage from './pages/Home/HomePage';
 import DeadlinePicker from './components/DeadlinePicker';
+import CameraCaptureModal from './components/CameraCaptureModal';
 
 import {
   fetchBoard,
@@ -29,6 +30,9 @@ import {
   listGroups,
   upsertMe,
   setTaskDeadline,
+  uploadTaskMedia,
+  addComment,
+  completeTask,
 } from './api';
 
 import {
@@ -293,6 +297,9 @@ export default function App() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [deadlineEdit, setDeadlineEdit] = useState<{ taskId: string; value: string | null } | null>(null);
+  const [acceptPrompt, setAcceptPrompt] = useState<{ id: string } | null>(null);
+  const acceptFileRef = useRef<HTMLInputElement | null>(null);
+  const [acceptCamOpen, setAcceptCamOpen] = useState(false);
 
 
 
@@ -860,6 +867,13 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
 
     const toIndex = col.tasks.findIndex((t) => t.id === active);
     try {
+      // если бросили в Done и у задачи требуется фото — прервём перенос и попросим фото
+      const moved = columns.flatMap((c) => c.tasks).find((t) => t.id === active) as any;
+      if (col.name === 'Done' && moved && moved.acceptCondition === 'PHOTO') {
+        setAcceptPrompt({ id: active });
+        await reloadBoard();
+        return;
+      }
       await apiMoveTask(active, finalColId, Math.max(0, toIndex));
     } catch (e) {
       console.error('[DND] move error', e);
@@ -1297,6 +1311,54 @@ setPersistSeedSession(false);
                     tasks: c.tasks.map((t) => (t.id === id ? ({ ...t, deadlineAt: r.task!.deadlineAt || null } as any) : t)),
                   })));
                 }
+              } catch {}
+            }}
+          />
+
+          {/* ☝️ Завершение с фото при dnd → Done */}
+          {acceptPrompt && (
+            <div
+              onClick={() => setAcceptPrompt(null)}
+              style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+            >
+              <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
+                <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <button onClick={()=> acceptFileRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>🖼️ Выбрать</button>
+                  <button onClick={()=> setAcceptCamOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>📸 Камера</button>
+                  <input ref={acceptFileRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (!file || !acceptPrompt) return;
+                    try {
+                      const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
+                      if ((up as any)?.ok && (up as any)?.media?.url) {
+                        await addComment(acceptPrompt.id, chatId, (up as any).media.url);
+                      }
+                      await completeTask(acceptPrompt.id);
+                      setAcceptPrompt(null);
+                      await reloadBoard();
+                    } catch {}
+                  }} />
+                  <button onClick={()=> setAcceptPrompt(null)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <CameraCaptureModal
+            open={acceptCamOpen}
+            onClose={() => setAcceptCamOpen(false)}
+            onCapture={async (file) => {
+              if (!acceptPrompt) return;
+              try {
+                const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
+                if ((up as any)?.ok && (up as any)?.media?.url) {
+                  await addComment(acceptPrompt.id, chatId, (up as any).media.url);
+                }
+                await completeTask(acceptPrompt.id);
+                setAcceptCamOpen(false);
+                setAcceptPrompt(null);
+                await reloadBoard();
               } catch {}
             }}
           />

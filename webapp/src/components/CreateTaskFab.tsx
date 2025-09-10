@@ -491,6 +491,21 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
                                 const newTaskId = r.task.id;
 
+                                // Привязать выбранный ярлык
+                                if (groupId && selectedLabelId) {
+                                  try { await (await import('../api')).attachTaskLabels(newTaskId, chatId, [selectedLabelId]); } catch {}
+                                }
+
+                                // Привязать дедлайн
+                                if (deadlineAt) {
+                                  try { await (await import('../api')).setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {}
+                                }
+
+                                // Привязать условия приёма
+                                if (acceptCondition === 'PHOTO') {
+                                  try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, 'PHOTO'); } catch {}
+                                }
+
                                 if (pendingFiles.length) {
                                   for (const f of pendingFiles) {
                                     try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}

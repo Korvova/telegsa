@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { createPortal } from 'react-dom';
+import CameraCaptureModal from './components/CameraCaptureModal';
 
 import type { Task, TaskMedia, GroupLabel } from './api';
 import {
@@ -10,7 +11,6 @@ import {
   getTaskWithGroup,
   updateTask,
   completeTask,
-  reopenTask,
   deleteTask,
   // участники группы
   type GroupMember,
@@ -45,7 +45,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<Task | null>(null);
   const [text, setText] = useState('');
-  const [saving, setSaving] = useState(false);
+  // автосохранение — отдельный таймер; статуса saving не держим
   const [error, setError] = useState<string | null>(null);
 
   const [phase, setPhase] = useState<string | undefined>(undefined);
@@ -88,6 +88,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [media, setMedia] = useState<TaskMedia[]>([]);
   const [completeNeedPhotoOpen, setCompleteNeedPhotoOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const autosaveTimer = useRef<any>(null);
 
   // Считаем вложение аудио, если kind = voice|audio, либо MIME начинается с audio/,
   // либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
@@ -342,48 +344,24 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   };
 
   /* --- действия с задачей --- */
-  const save = async () => {
-    const val = text.trim();
-    if (!val) return;
-    setSaving(true);
-    try {
-      await updateTask(taskId, val);
-      onChanged?.();
-      WebApp?.HapticFeedback?.impactOccurred?.('light');
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка сохранения');
-    } finally {
-      setSaving(false);
-    }
-  };
+  // save() удалён — используем автосохранение
 
-  const toggleDone = async () => {
-    setSaving(true);
-    try {
-      if (isDone) {
-        await reopenTask(taskId);
-        setPhase('Doing');
+  // Автосохранение текста при вводе (debounce ~600ms)
+  useEffect(() => {
+    if (!task) return;
+    clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(async () => {
+      try {
+        const val = text.trim();
+        if (!val || val === task.text) return;
+        await updateTask(taskId, val);
         onChanged?.();
-        WebApp?.HapticFeedback?.impactOccurred?.('medium');
-      } else {
-        await completeTask(taskId);
-        setPhase('Done');
-        onChanged?.();
-        WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      } catch {}
+    }, 600);
+    return () => clearTimeout(autosaveTimer.current);
+  }, [text, taskId, task]);
 
-        // даём карточке «позеленеть» 140–180мс и запускаем эффект
-        setTimeout(() => {
-          animateCloseWithThumb(groupIdRef.current);
-        }, 160);
-
-        return; // не сбрасываем saving до завершения анимации
-      }
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка операции');
-    } finally {
-      setSaving(false);
-    }
-  };
+  // toggleDone удалён — используем StageScroller/onRequestComplete
 
   const handleDelete = async () => {
     if (!confirm('Удалить задачу? Действие необратимо.')) return;
@@ -606,35 +584,6 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         />
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-          <button
-            onClick={save}
-            disabled={saving || !text.trim()}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-            }}
-          >
-            Сохранить
-          </button>
-
-          <button
-            onClick={toggleDone}
-            disabled={saving}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: isDone ? '#3a2b1f' : '#234324',
-              color: isDone ? '#ffe7c7' : '#d7ffd7',
-              cursor: 'pointer',
-            }}
-          >
-            {isDone ? 'Возобновить → Doing' : 'Завершить'}
-          </button>
 
           <button
             onClick={() => setLabelDrawerOpen(true)}
@@ -871,7 +820,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
             <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <button onClick={()=> photoInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>🖼️ Выбрать / 📸 Камера</button>
+              <button onClick={()=> photoInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>🖼️ Выбрать</button>
+              <button onClick={()=> setCameraOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>📸 Камера</button>
               <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
                 const file = e.target.files && e.target.files[0];
                 if (!file) return;
@@ -895,6 +845,28 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           </div>
         </div>
       )}
+
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (file) => {
+          try {
+            const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
+            if ((up as any)?.ok && (up as any)?.media?.url) {
+              await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
+            }
+            await completeTask(taskId);
+            setPhase('Done');
+            onChanged?.();
+            setCameraOpen(false);
+            setCompleteNeedPhotoOpen(false);
+            WebApp?.HapticFeedback?.notificationOccurred?.('success');
+            setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+          } catch (err) {
+            setError('Не удалось прикрепить фото');
+          }
+        }}
+      />
 
       {/* Портал с 👍, вне любых трансформов */}
       <DeadlinePicker

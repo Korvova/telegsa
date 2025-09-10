@@ -14,6 +14,7 @@ import {
 } from '../../api';
 import StageQuickBar from '../../components/StageQuickBar';
 import DeadlinePicker from '../../components/DeadlinePicker';
+import CameraCaptureModal from '../../components/CameraCaptureModal';
 import type { StageKey } from '../../components/StageScroller';
 import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
@@ -144,6 +145,7 @@ export default function HomePage({
   const [isLabelWheelOpen, setLabelWheelOpen] = useState(false);
   const [completePrompt, setCompletePrompt] = useState<{ id: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
@@ -910,7 +912,11 @@ export default function HomePage({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
-              >🖼️ Выбрать / 📸 Камера</button>
+              >🖼️ Выбрать</button>
+              <button
+                onClick={() => setCameraOpen(true)}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+              >📸 Камера</button>
               <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
                 const file = e.target.files && e.target.files[0];
                 if (!file || !completePrompt) return;
@@ -932,6 +938,24 @@ export default function HomePage({
           </div>
         </div>
       )}
+
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (file) => {
+          if (!completePrompt) return;
+          try {
+            const up = await uploadTaskMedia(completePrompt.id, chatId, file);
+            if ((up as any)?.ok && (up as any)?.media?.url) {
+              await addComment(completePrompt.id, chatId, (up as any).media.url);
+            }
+            await completeTask(completePrompt.id);
+            patchItem(completePrompt.id, { status: 'Готово', phase: 'Done' } as any);
+            setCameraOpen(false);
+            setCompletePrompt(null);
+          } catch {}
+        }}
+      />
       {/* 🚩 Пикер дедлайна для карточек в ленте */}
       <DeadlinePicker
         open={!!deadlineEdit}
