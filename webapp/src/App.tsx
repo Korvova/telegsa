@@ -182,6 +182,11 @@ function TaskCard({
           🚩 {fmtShort(deadlineAt)} • {leftText}
         </button>
       )}
+      {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
+        <div style={{ fontSize: 11, marginBottom: 6 }}>
+          <span style={{ background:'#7f1d1d', color:'#fee2e2', border:'1px solid #dc2626', borderRadius:999, padding:'2px 6px' }}>⚠️ Просрочен</span>
+        </div>
+      )}
       {acceptCondition === 'PHOTO' && (
         <div style={{ fontSize: 12, marginBottom: 6 }} title="Требуется фото">
           ☝️📸 Требуется фото
@@ -300,6 +305,7 @@ export default function App() {
   const [acceptPrompt, setAcceptPrompt] = useState<{ id: string } | null>(null);
   const acceptFileRef = useRef<HTMLInputElement | null>(null);
   const [acceptCamOpen, setAcceptCamOpen] = useState(false);
+  const [acceptUploadBusy, setAcceptUploadBusy] = useState(false);
 
 
 
@@ -1324,12 +1330,13 @@ setPersistSeedSession(false);
               <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
                 <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
                 <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                  <button onClick={()=> acceptFileRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>🖼️ Выбрать</button>
-                  <button onClick={()=> setAcceptCamOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>📸 Камера</button>
+                  <button disabled={acceptUploadBusy} onClick={()=> acceptFileRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: acceptUploadBusy ? 0.6 : 1 }}>🖼️ Выбрать</button>
+                  <button disabled={acceptUploadBusy} onClick={()=> setAcceptCamOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: acceptUploadBusy ? 0.6 : 1 }}>📸 Камера</button>
                   <input ref={acceptFileRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
                     const file = e.target.files && e.target.files[0];
                     if (!file || !acceptPrompt) return;
                     try {
+                      setAcceptUploadBusy(true);
                       const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
                       if ((up as any)?.ok && (up as any)?.media?.url) {
                         await addComment(acceptPrompt.id, chatId, (up as any).media.url);
@@ -1338,8 +1345,10 @@ setPersistSeedSession(false);
                       setAcceptPrompt(null);
                       await reloadBoard();
                     } catch {}
+                    finally { setAcceptUploadBusy(false); }
                   }} />
-                  <button onClick={()=> setAcceptPrompt(null)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
+                  <div style={{ fontSize: 12, opacity: 0.85 }}>{acceptUploadBusy ? 'Загружаю фото…' : ''}</div>
+                  <button disabled={acceptUploadBusy} onClick={()=> setAcceptPrompt(null)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: acceptUploadBusy ? 0.6 : 1 }}>Отмена</button>
                 </div>
               </div>
             </div>
@@ -1348,20 +1357,22 @@ setPersistSeedSession(false);
           <CameraCaptureModal
             open={acceptCamOpen}
             onClose={() => setAcceptCamOpen(false)}
-            onCapture={async (file) => {
-              if (!acceptPrompt) return;
-              try {
-                const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
-                if ((up as any)?.ok && (up as any)?.media?.url) {
-                  await addComment(acceptPrompt.id, chatId, (up as any).media.url);
-                }
-                await completeTask(acceptPrompt.id);
-                setAcceptCamOpen(false);
-                setAcceptPrompt(null);
-                await reloadBoard();
-              } catch {}
-            }}
-          />
+          onCapture={async (file) => {
+            if (!acceptPrompt) return;
+            try {
+              setAcceptUploadBusy(true);
+              const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
+              if ((up as any)?.ok && (up as any)?.media?.url) {
+                await addComment(acceptPrompt.id, chatId, (up as any).media.url);
+              }
+              await completeTask(acceptPrompt.id);
+              setAcceptCamOpen(false);
+              setAcceptPrompt(null);
+              await reloadBoard();
+            } catch {}
+            finally { setAcceptUploadBusy(false); }
+          }}
+        />
         </div>
       )}
     </>

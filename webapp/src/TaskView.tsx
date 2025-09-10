@@ -90,6 +90,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const autosaveTimer = useRef<any>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const saveDoneTimer = useRef<any>(null);
+  const [uploadBusy, setUploadBusy] = useState(false);
 
   // Считаем вложение аудио, если kind = voice|audio, либо MIME начинается с audio/,
   // либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
@@ -350,13 +353,24 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   useEffect(() => {
     if (!task) return;
     clearTimeout(autosaveTimer.current);
+    setSaveStatus('saving');
     autosaveTimer.current = setTimeout(async () => {
       try {
         const val = text.trim();
-        if (!val || val === task.text) return;
+        if (!val || val === task.text) {
+          setSaveStatus('idle');
+          return;
+        }
         await updateTask(taskId, val);
         onChanged?.();
-      } catch {}
+        setSaveStatus('saved');
+        clearTimeout(saveDoneTimer.current);
+        saveDoneTimer.current = setTimeout(() => setSaveStatus('idle'), 1200);
+      } catch {
+        setSaveStatus('error');
+        clearTimeout(saveDoneTimer.current);
+        saveDoneTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      }
     }, 600);
     return () => clearTimeout(autosaveTimer.current);
   }, [text, taskId, task]);
@@ -524,6 +538,21 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               {task?.deadlineAt ? new Date(String(task.deadlineAt)).toLocaleString() : 'Без дедлайна'}
             </span>
           </button>
+          {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 12,
+                background: '#7f1d1d',
+                color: '#fee2e2',
+                border: '1px solid #dc2626',
+                borderRadius: 999,
+                padding: '2px 8px',
+              }}
+            >
+              ⚠️ Просрочен
+            </span>
+          )}
         </div>
 
         <div style={{ position: 'relative', width: '100%' }}>
@@ -541,6 +570,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               resize: 'vertical',
             }}
           />
+          <div style={{ position:'absolute', right: 6, top: -20, fontSize: 12, opacity: 0.8 }}>
+            {saveStatus === 'saving' ? 'Сохраняю…' : saveStatus === 'saved' ? '✓ Сохранено' : saveStatus === 'error' ? 'Ошибка' : ''}
+          </div>
 
           {/* Точки и списки связей процесса */}
           <ProcessLinks
@@ -820,12 +852,13 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
             <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <button onClick={()=> photoInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>🖼️ Выбрать</button>
-              <button onClick={()=> setCameraOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>📸 Камера</button>
+              <button disabled={uploadBusy} onClick={()=> photoInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1, cursor: uploadBusy ? 'default' : 'pointer' }}>🖼️ Выбрать</button>
+              <button disabled={uploadBusy} onClick={()=> setCameraOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1, cursor: uploadBusy ? 'default' : 'pointer' }}>📸 Камера</button>
               <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
                 const file = e.target.files && e.target.files[0];
                 if (!file) return;
                 try {
+                  setUploadBusy(true);
                   const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
                   if ((up as any)?.ok && (up as any)?.media?.url) {
                     await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
@@ -838,9 +871,12 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                   setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
                 } catch (err) {
                   setError('Не удалось прикрепить фото');
+                } finally {
+                  setUploadBusy(false);
                 }
               }} />
-              <button onClick={()=> setCompleteNeedPhotoOpen(false)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>{uploadBusy ? 'Загружаю фото…' : ''}</div>
+              <button disabled={uploadBusy} onClick={()=> setCompleteNeedPhotoOpen(false)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}>Отмена</button>
             </div>
           </div>
         </div>
@@ -851,6 +887,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         onClose={() => setCameraOpen(false)}
         onCapture={async (file) => {
           try {
+            setUploadBusy(true);
             const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
             if ((up as any)?.ok && (up as any)?.media?.url) {
               await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
@@ -864,6 +901,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
             setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
           } catch (err) {
             setError('Не удалось прикрепить фото');
+          } finally {
+            setUploadBusy(false);
           }
         }}
       />

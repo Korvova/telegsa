@@ -146,6 +146,7 @@ export default function HomePage({
   const [completePrompt, setCompletePrompt] = useState<{ id: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
 
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
@@ -698,6 +699,11 @@ export default function HomePage({
                               🚩 {fmtShort(deadlineAt)} • {leftText}
                             </button>
                           )}
+                          {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
+                            <span style={{ fontSize: 11, background:'#7f1d1d', color:'#fee2e2', border:'1px solid #dc2626', borderRadius:999, padding:'2px 6px', marginBottom:6 }}>
+                              ⚠️ Просрочен
+                            </span>
+                          )}
 
                           <div
                             style={{
@@ -910,17 +916,20 @@ export default function HomePage({
             <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
               <button
+                disabled={uploadBusy}
                 onClick={() => fileInputRef.current?.click()}
-                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}
               >🖼️ Выбрать</button>
               <button
+                disabled={uploadBusy}
                 onClick={() => setCameraOpen(true)}
-                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}
               >📸 Камера</button>
               <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
                 const file = e.target.files && e.target.files[0];
                 if (!file || !completePrompt) return;
                 try {
+                  setUploadBusy(true);
                   const up = await uploadTaskMedia(completePrompt.id, chatId, file);
                   if ((up as any)?.ok && (up as any)?.media?.url) {
                     await addComment(completePrompt.id, chatId, (up as any).media.url);
@@ -929,10 +938,13 @@ export default function HomePage({
                   patchItem(completePrompt.id, { status: 'Готово', phase: 'Done' } as any);
                   setCompletePrompt(null);
                 } catch {}
+                finally { setUploadBusy(false); }
               }} />
+              <div style={{ fontSize: 12, opacity: 0.85 }}>{uploadBusy ? 'Загружаю фото…' : ''}</div>
               <button
+                disabled={uploadBusy}
                 onClick={() => setCompletePrompt(null)}
-                style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+                style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}
               >Отмена</button>
             </div>
           </div>
@@ -945,6 +957,7 @@ export default function HomePage({
         onCapture={async (file) => {
           if (!completePrompt) return;
           try {
+            setUploadBusy(true);
             const up = await uploadTaskMedia(completePrompt.id, chatId, file);
             if ((up as any)?.ok && (up as any)?.media?.url) {
               await addComment(completePrompt.id, chatId, (up as any).media.url);
@@ -954,6 +967,7 @@ export default function HomePage({
             setCameraOpen(false);
             setCompletePrompt(null);
           } catch {}
+          finally { setUploadBusy(false); }
         }}
       />
       {/* 🚩 Пикер дедлайна для карточек в ленте */}
