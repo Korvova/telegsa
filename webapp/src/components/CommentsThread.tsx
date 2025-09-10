@@ -40,11 +40,12 @@ export default function CommentsThread({
     setBusy(true);
     try {
       const r = await addComment(taskId, meChatId, val);
-      if (r.ok && r.comment) {
-        setItems(prev => [...prev, r.comment!]);
+      if (r.ok) {
+        // Сразу очищаем поле и подгружаем актуальный список, чтобы комментарий появился
         setText('');
         WebApp?.HapticFeedback?.impactOccurred?.('light');
-      } 
+        await load();
+      }
     } finally {
       setBusy(false);
     }
