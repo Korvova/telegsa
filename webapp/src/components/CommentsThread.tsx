@@ -13,6 +13,22 @@ export default function CommentsThread({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const scrollToBottom = () => {
+    try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {}
+  };
+
+  const ensureVisible = () => {
+    // Прокрутить список вниз и гарантированно показать инпут
+    scrollToBottom();
+    try { inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+    // Повторить после возможного появления клавиатуры/пересчёта верстки
+    setTimeout(scrollToBottom, 50);
+    setTimeout(scrollToBottom, 220);
+    setTimeout(() => { try { inputRef.current?.scrollIntoView({ block: 'nearest' }); } catch {} }, 220);
+    try { window.scrollTo({ top: document.body.scrollHeight }); } catch {}
+  };
 
   const load = async () => {
     try {
@@ -31,7 +47,7 @@ export default function CommentsThread({
 
   useEffect(() => {
     // автоскролл к последнему комменту
-    try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {}
+    scrollToBottom();
   }, [items.length]);
 
   const send = async () => {
@@ -45,6 +61,8 @@ export default function CommentsThread({
         setText('');
         WebApp?.HapticFeedback?.impactOccurred?.('light');
         await load();
+        // Вернуть фокус и прокрутить, чтобы инпут и последний коммент были видны
+        setTimeout(() => { try { inputRef.current?.focus(); } catch {}; ensureVisible(); }, 0);
       }
     } finally {
       setBusy(false);
@@ -54,6 +72,17 @@ export default function CommentsThread({
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) send();
   };
+
+  useEffect(() => {
+    // Пересчёт видимой области при открытии клавиатуры
+    const onResize = () => ensureVisible();
+    try { window.addEventListener('resize', onResize); } catch {}
+    try { (window as any).visualViewport?.addEventListener?.('resize', onResize); } catch {}
+    return () => {
+      try { window.removeEventListener('resize', onResize); } catch {}
+      try { (window as any).visualViewport?.removeEventListener?.('resize', onResize); } catch {}
+    };
+  }, []);
 
   const remove = async (id: string) => {
     if (!confirm('Удалить комментарий?')) return;
@@ -85,6 +114,7 @@ export default function CommentsThread({
                     src={`${(import.meta as any).env.VITE_API_BASE}${String(c.text)}`}
                     alt="Фото"
                     style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
+                    onLoad={() => { try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {} }}
                   />
                 </div>
               ) : (
@@ -105,9 +135,11 @@ export default function CommentsThread({
 
       <div style={inputRow}>
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
+          onFocus={ensureVisible}
           placeholder="Напишите комментарий…"
           style={input}
         />
