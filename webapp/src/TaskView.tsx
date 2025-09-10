@@ -30,6 +30,7 @@ import DeadlinePicker from './components/DeadlinePicker';
 import StageScroller, { type StageKey } from './components/StageScroller';
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
+import WatchersBlock from './components/WatchersBlock';
 import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 import TaskLabelDrawer from './components/TaskLabelDrawer';
@@ -969,6 +970,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           />
         )}
 
+      {/* Наблюдатели */}
+      <WatchersBlock taskId={taskId} meChatId={meChatId} />
       {/* Комментарии */}
       <CommentsThread taskId={taskId} meChatId={meChatId} />
       {/* Пикер условий приёма */}

@@ -22,6 +22,8 @@ import { shareNewTaskRouter } from './routes/sharenewtask.js';
 import { bountyRouter } from './routes/bounty.js';
 import { payoutMethodRouter } from './routes/payoutMethod.js';
 import { starsRouter } from './routes/stars.js';
+import { likesRouter } from './routes/likes.js';
+import { watchersRouter } from './routes/watchers.js';
 
 
 import { execa } from 'execa';
@@ -378,6 +380,8 @@ app.use('/tasks', tasksRouter);
 app.use(bountyRouter);
 app.use(payoutMethodRouter);
 app.use(starsRouter);
+app.use(likesRouter);
+app.use(watchersRouter({ prisma }));
 // условия приёмки задач
 app.use(acceptRouter);
 // дедлайны (отдельный роутер, но в пространстве /tasks)
@@ -1423,7 +1427,8 @@ app.post('/invites/accept', async (req, res) => {
       ok: true,
       groupId: invite.groupId,
       taskId: invite.taskId ?? null,
-      assigned
+      assigned,
+      watched
     });
   } catch (e) {
     console.error('POST /invites/accept error:', e);
@@ -2502,4 +2507,14 @@ app.post('/groups/:id/share-prepared', async (req, res) => {
 const PORT = process.env.PORT || 3300;
 app.listen(PORT, () => {
   console.log(`telegsar-api listening on :${PORT}`);
+    // === WATCH: подписаться наблюдателем ===
+    let watched = false;
+    if (invite.type === 'WATCH' && invite.taskId) {
+      await prisma.taskWatcher.upsert({
+        where: { taskId_chatId: { taskId: invite.taskId, chatId: who } },
+        update: {},
+        create: { taskId: invite.taskId, chatId: who },
+      });
+      watched = true;
+    }
 });

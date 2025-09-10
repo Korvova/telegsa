@@ -83,10 +83,10 @@ function getTaskIdFromURL() {
 
 // заменить parseStartParam на:
 function parseStartParam(sp: string) {
-  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask'; id: string; token?: string };
+  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask' | 'watch'; id: string; token?: string };
 
   // 1) Полный вид
-  let m = sp.match(/^(assign|join|event|newtask)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
+  let m = sp.match(/^(assign|join|event|newtask|watch)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
   if (m) return { type: m[1] as any, id: m[2], token: m[3] };
 
   // 2) task_<id>
@@ -102,6 +102,8 @@ function parseStartParam(sp: string) {
     ? 'event'
     : sp.startsWith('newtask')
     ? 'newtask'
+    : sp.startsWith('watch')
+    ? 'watch'
     : null;
   if (!head) return null;
 
@@ -608,6 +610,19 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
     if (!parsed) return;
 
     if (parsed.type === 'assign') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('task', parsed.id);
+      window.history.replaceState(null, '', url.toString());
+      setTaskId(parsed.id);
+
+      fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: me, token: parsed.token }),
+      }).catch(() => {});
+    }
+
+    if (parsed.type === 'watch') {
       const url = new URL(window.location.href);
       url.searchParams.set('task', parsed.id);
       window.history.replaceState(null, '', url.toString());
