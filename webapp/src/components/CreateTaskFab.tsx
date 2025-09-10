@@ -297,11 +297,16 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       background: '#202840',
                       color: '#e8eaed',
                       fontSize: 12,
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      flex: '0 0 40%',
+                      maxWidth: '40%',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <div style={{ fontSize: 12, opacity: 0.85 }}>
-                      Группа: <b>{groupLabel()}</b>
+                    <div style={{ fontSize: 12, opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                       📁 <b>{groupLabel()}</b>
                     </div>
                   </button>
                 )}
@@ -320,6 +325,11 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         padding: '4px 10px',
                         fontSize: 12,
                         cursor: 'pointer',
+                        flex: '0 0 40%',
+                        maxWidth: '40%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       <option value="">{labelsLoading ? '🏷️ Загрузка…' : '🏷️ Без ярлыка'}</option>
