@@ -97,6 +97,7 @@ export default function CreateTaskFab({
   const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO'>('NONE');
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
@@ -537,6 +538,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                     </div>
 
                     {/* Панель вложений под полем */}
+                    {toolsOpen && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button
                         type="button"
@@ -547,7 +549,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           border: '1px solid #2a3346', background: '#202840',
                           color: '#e8eaed', cursor: 'pointer',
                         }}
-                      >@</button>
+                      >📑</button>
 
                       <button
                         type="button"
@@ -593,6 +595,9 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         }}
                       >☝️</button>
 
+                  </div>
+                  )}
+
                     {deadlineAt ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
                     ) : null}
@@ -615,7 +620,6 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
                       </div>
                     ) : null}
-                  </div>
                   </div>
 
                   {/* скрытые инпуты */}
@@ -640,25 +644,47 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
               <>
                 {step === 0 && (
                   <div style={{ display: 'grid', gap: 10 }}>
-                    <textarea
-                      ref={textAreaRef}
-                      autoFocus
-                      rows={5}
-                      placeholder="Опиши задачу…"
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      style={{
-                        width: '100%',
-                        background: '#0b1220',
-                        color: '#e5e7eb',
-                        border: '1px solid #1f2937',
-                        borderRadius: 12,
-                        padding: 10,
-                        resize: 'vertical',
-                      }}
-                    />
+                    <div style={{ position: 'relative' }}>
+                      <textarea
+                        ref={textAreaRef}
+                        autoFocus
+                        rows={5}
+                        placeholder="Опиши задачу…"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        style={{
+                          width: '100%',
+                          background: '#0b1220',
+                          color: '#e5e7eb',
+                          border: '1px solid #1f2937',
+                          borderRadius: 12,
+                          padding: 10,
+                          resize: 'vertical',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setToolsOpen(v => !v); focusText(); }}
+                        title={toolsOpen ? 'Скрыть вложения' : 'Показать вложения'}
+                        style={{
+                          position: 'absolute',
+                          right: 8,
+                          top: 8,
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          border: '1px solid #2a3346',
+                          background: '#202840',
+                          color: '#e8eaed',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        🔗
+                      </button>
+                    </div>
 
                     {/* Панель вложений (мастер, шаг 0) */}
+                    {toolsOpen && (
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button
                         type="button"
@@ -666,7 +692,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         title="Прикрепить файл"
                         style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                       >
-                        @
+                        📑
                       </button>
                       <button
                         type="button"
@@ -697,6 +723,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       <input ref={fileAnyRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
                       <input ref={filePhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
                     </div>
+                    )}
 
                     {deadlineAt ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
