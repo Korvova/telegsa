@@ -1382,7 +1382,18 @@ app.post('/invites/accept', async (req, res) => {
       }
     }
 
-    // === GROUP или TASK (после обработки) — пометить тикет использованным
+    // === WATCH: подписаться наблюдателем ===
+    let watched = false;
+    if (invite.type === 'WATCH' && invite.taskId) {
+      await prisma.taskWatcher.upsert({
+        where: { taskId_chatId: { taskId: invite.taskId, chatId: who } },
+        update: {},
+        create: { taskId: invite.taskId, chatId: who },
+      });
+      watched = true;
+    }
+
+    // === GROUP/TASK/EVENT (после обработки) — пометить тикет использованным
     await prisma.inviteTicket.update({
       where: { token: tok },
       data: { status: 'USED' }
@@ -2472,14 +2483,4 @@ app.post('/groups/:id/share-prepared', async (req, res) => {
 const PORT = process.env.PORT || 3300;
 app.listen(PORT, () => {
   console.log(`telegsar-api listening on :${PORT}`);
-    // === WATCH: подписаться наблюдателем ===
-    let watched = false;
-    if (invite.type === 'WATCH' && invite.taskId) {
-      await prisma.taskWatcher.upsert({
-        where: { taskId_chatId: { taskId: invite.taskId, chatId: who } },
-        update: {},
-        create: { taskId: invite.taskId, chatId: who },
-      });
-      watched = true;
-    }
 });
