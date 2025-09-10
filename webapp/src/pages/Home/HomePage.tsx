@@ -11,6 +11,8 @@ import {
   uploadTaskMedia,
   addComment,
   completeTask,
+  fetchBoard,
+  moveTask,
 } from '../../api';
 import StageQuickBar from '../../components/StageQuickBar';
 import DeadlinePicker from '../../components/DeadlinePicker';
@@ -620,6 +622,20 @@ export default function HomePage({
                                 setCompletePrompt({ id: t.id });
                                 return false;
                               }
+                              if ((t as any).acceptCondition === 'APPROVAL') {
+                                try {
+                                  const board = await fetchBoard(meChatId, groupId ?? undefined);
+                                  const approvalCol = (board?.columns || []).find((c) => String(c.name) === 'Approval');
+                                  if (approvalCol) {
+                                    await moveTask(t.id, approvalCol.id, 0);
+                                    patchItem(t.id, { phase: 'Approval', status: 'Согласование' } as any);
+                                  }
+                                } catch {}
+                                finally {
+                                  setOpenQBarId(null);
+                                }
+                                return false;
+                              }
                             }}
                           />
                         )}
@@ -662,7 +678,12 @@ export default function HomePage({
                           onContextMenu={(e) => e.preventDefault()}
                           onDragStart={(e) => e.preventDefault()}
                         >
-                          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4 }}>#{t.id.slice(0, 6)}</div>
+                          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
+                            {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
+                              <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
+                            ) : null}
+                            <span>#{t.id.slice(0, 6)}</span>
+                          </div>
 
                           <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
 <div style={{ fontSize: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
@@ -690,11 +711,6 @@ export default function HomePage({
 
                     {dateLine && (
                       <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
-                    )}
-                    {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 && (
-                      <div style={{ marginBottom: 6 }}>
-                        <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
-                      </div>
                     )}
                           {deadlineAt && (
                             <button

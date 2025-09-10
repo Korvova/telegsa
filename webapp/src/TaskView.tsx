@@ -54,6 +54,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [labelDrawerOpen, setLabelDrawerOpen] = useState(false);
   const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
   const [acceptPickerOpen, setAcceptPickerOpen] = useState(false);
+  const [approvalReason, setApprovalReason] = useState('');
+  const [approvalAction, setApprovalAction] = useState<null | 'RETURN' | 'CANCEL'>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
 
   // список всех групп для селектора
   const [allGroups, setAllGroups] = useState<Group[]>([]);
@@ -584,8 +587,16 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           />
         </div>
 
-        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div>
+        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display:'flex', alignItems:'center', gap:6 }}>
+          {typeof (task as any).bountyStars === 'number' && (task as any).bountyStars > 0 ? (
+            <span title={String((task as any).bountyStatus)==='PAID' ? 'Выплачено' : 'Ожидает выплаты'} style={{ display:'inline-block', border:`1px solid ${String((task as any).bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String((task as any).bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String((task as any).bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'0 6px', lineHeight:'16px', fontSize:12 }}>
+              {String((task as any).bountyStatus)==='PAID' ? '💫' : '🪙'} ({(task as any).bountyStars})
+            </span>
+          ) : null}
+          <span>ID: {task.id}</span>
+        </div>
 
+        {String(phase) !== 'Approval' && (
         <StageScroller
           taskId={task.id}
           type={task.type ?? 'TASK'}
@@ -599,9 +610,26 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           onRequestComplete={() => {
             (async () => {
               try {
-                const needPhoto = String((task as any)?.acceptCondition || 'NONE') === 'PHOTO';
+                const cond = String((task as any)?.acceptCondition || 'NONE');
+                const needPhoto = cond === 'PHOTO';
+                const needApproval = cond === 'APPROVAL';
                 const hasPhoto = media.some(m => m.kind === 'photo');
                 if (needPhoto && !hasPhoto) { setCompleteNeedPhotoOpen(true); return; }
+                if (needApproval) {
+                  try {
+                    const board = await fetchBoard(meChatId, groupId || undefined);
+                    const col = (board?.columns || []).find((c) => String(c.name) === 'Approval');
+                    if (col) {
+                      await moveTask(taskId, col.id, 0);
+                      setPhase('Approval');
+                      onChanged?.();
+                      WebApp?.HapticFeedback?.impactOccurred?.('light');
+                    } else {
+                      alert('Нет колонки «Согласование» в текущей доске');
+                    }
+                  } catch {}
+                  return;
+                }
                 await completeTask(taskId);
                 setPhase('Done');
                 onChanged?.();
@@ -612,7 +640,90 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               }
             })();
           }}
-        />
+        />)}
+
+        {String(phase) === 'Approval' && task?.assigneeChatId && String(task.assigneeChatId) === String(meChatId) && (
+          <div style={{ margin: '8px 0', padding: 10, border: '1px solid #6a4a20', background: '#3a2a10', color: '#ffe5bf', borderRadius: 12 }}>
+            ⌛ Ждёт согласования
+          </div>
+        )}
+
+        {String(phase) === 'Approval' && task && String(task.chatId) === String(meChatId) && (
+          <div style={{ margin: '8px 0', padding: 10, border: '1px solid #6a4a20', background: '#3a2a10', color: '#ffe5bf', borderRadius: 12 }}>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              <button
+                onClick={async () => {
+                  if (approvalBusy) return;
+                  setApprovalBusy(true);
+                  try {
+                    await completeTask(taskId);
+                    setPhase('Done');
+                    onChanged?.();
+                    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                  } catch {}
+                  finally { setApprovalBusy(false); }
+                }}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#15251a', color:'#d7ffd7' }}
+              >✅ Согласовать</button>
+
+              <button
+                onClick={() => { setApprovalAction(approvalAction==='RETURN'?null:'RETURN'); setApprovalReason(''); }}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+              >⟳ Вернуть в работу</button>
+
+              <button
+                onClick={() => { setApprovalAction(approvalAction==='CANCEL'?null:'CANCEL'); setApprovalReason(''); }}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #5a2b2b', background:'#3a1f1f', color:'#ffd7d7' }}
+              >⛔ Отмена</button>
+            </div>
+
+            {approvalAction && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, opacity: .9, marginBottom: 6 }}>
+                  {approvalAction === 'RETURN' ? 'Причина возврата:' : 'Причина отмены:'}
+                </div>
+                <textarea
+                  value={approvalReason}
+                  onChange={(e) => setApprovalReason(e.target.value)}
+                  placeholder="Напишите причину..."
+                  rows={3}
+                  style={{ width:'100%', background:'#0b1220', color:'#e5e7eb', border:'1px solid #2a3346', borderRadius:10, padding:8 }}
+                />
+                <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                  <button
+                    disabled={approvalBusy}
+                    onClick={async () => {
+                      if (approvalBusy) return;
+                      setApprovalBusy(true);
+                      try {
+                        const reason = approvalReason.trim();
+                        if (reason) { try { await (await import('./api')).addComment(taskId, meChatId, reason); } catch {} }
+                        const board = await fetchBoard(meChatId, groupId || undefined);
+                        const columns = board?.columns || [];
+                        const targetName = approvalAction === 'RETURN' ? 'Doing' : 'Cancel';
+                        const col = columns.find(c => String(c.name) === targetName);
+                        if (col) {
+                          await moveTask(taskId, col.id, 0);
+                          setPhase(targetName as StageKey);
+                          onChanged?.();
+                        }
+                        WebApp?.HapticFeedback?.impactOccurred?.('light');
+                        setApprovalAction(null);
+                        setApprovalReason('');
+                      } catch {}
+                      finally { setApprovalBusy(false); }
+                    }}
+                    style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+                  >Применить</button>
+                  <button
+                    onClick={() => { setApprovalAction(null); setApprovalReason(''); }}
+                    style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' }}
+                  >Отмена</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
 
@@ -675,7 +786,12 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           >
             <span>☝️</span>
             <span style={{ fontSize: 12, opacity: 0.9 }}>
-              {String((task as any)?.acceptCondition || 'NONE') === 'PHOTO' ? 'Нужно фото 📸' : 'Без условий'}
+              {(() => {
+                const cond = String((task as any)?.acceptCondition || 'NONE');
+                if (cond === 'PHOTO') return 'Нужно фото 📸';
+                if (cond === 'APPROVAL') return 'Нужно согласование 🤝';
+                return 'Без условий';
+              })()}
             </span>
           </button>
 
@@ -833,6 +949,12 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                 }} />
                 <span>Нужно фото 📸</span>
               </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='APPROVAL'} onChange={async ()=>{
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'APPROVAL' } as any) : prev); } catch {}
+                }} />
+                <span>Нужно согласование 🤝</span>
+              </label>
             </div>
             <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>
               <button onClick={()=> setAcceptPickerOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Готово</button>
@@ -906,7 +1028,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         }}
       />
 
-      {/* Портал с 👍, вне любых трансформов */}
+      {/* Портал с анимацией завершения: 👍 либо 🪙→💫 при наличии вознаграждения */}
       <DeadlinePicker
         open={deadlineOpen}
         value={task?.deadlineAt || null}
@@ -934,19 +1056,27 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               zIndex: 99999,
             }}
           >
+            {(() => {
+              const bounty = Number((task as any)?.bountyStars || 0);
+              const hasBounty = bounty > 0;
+              const scale = (thumbStage === 1) ? 'scale(1.0)' : (thumbStage === 2) ? 'scale(1.22)' : 'scale(0.8)';
+              const rot = hasBounty ? ((thumbStage === 1) ? 'rotate(360deg)' : (thumbStage === 2) ? 'rotate(720deg)' : 'rotate(0deg)') : 'rotate(0deg)';
+              const icon = hasBounty ? ((String((task as any)?.bountyStatus || 'PLEDGED') === 'PAID' || thumbStage === 2) ? '💫' : '🪙') : '👍';
+              return (
             <div
               style={{
                 fontSize: 96,
-                transform:
-                  thumbStage === 1 ? 'scale(1.0)' : thumbStage === 2 ? 'scale(1.22)' : 'scale(0.8)',
+                transform: `${scale} ${rot}`,
                 opacity: thumbStage === 1 ? 1 : 0,
                 transition: 'transform 300ms cubic-bezier(.2,.9,.2,1), opacity 300ms ease',
                 filter: 'drop-shadow(0 10px 32px rgba(0,0,0,.45))',
                 willChange: 'transform, opacity',
               }}
             >
-              👍
+              {icon}
             </div>
+              );
+            })()}
           </div>,
           document.body
         )

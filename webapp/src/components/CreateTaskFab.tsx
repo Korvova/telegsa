@@ -97,7 +97,7 @@ export default function CreateTaskFab({
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
   const [acceptOpen, setAcceptOpen] = useState(false);
-  const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO'>('NONE');
+  const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO' | 'APPROVAL'>('NONE');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [bountyOpen, setBountyOpen] = useState(false);
   const [bountyAmount, setBountyAmount] = useState<number>(0);
@@ -451,6 +451,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                             border: '1px solid #1f2937',
                             borderRadius: 14,
                             padding: '8px 12px',
+                            paddingLeft: 44,
                             resize: 'none',
                             minHeight: 38,
                             maxHeight: 80,
@@ -459,6 +460,28 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           }}
                         />
                       )}
+                      
+                      <button
+                        type="button"
+                        onClick={() => { setBountyOpen(true); focusText(); }}
+                        title="Вознаграждение"
+                        style={{
+                          position: 'absolute',
+                          left: 8,
+                          top: 6,
+                          width: 28,
+                          height: 28,
+                          borderRadius: 999,
+                          border: '1px solid #1f2937',
+                          background: '#0b1220',
+                          color: '#facc15',
+                          cursor: 'pointer',
+                          zIndex: 5,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        🪙
+                      </button>
 
                       {/* Тогглер вложений (🧷) — простая форма */}
                       <button
@@ -533,8 +556,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 }
 
                                 // Привязать условия приёма
-                                if (acceptCondition === 'PHOTO') {
-                                  try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, 'PHOTO'); } catch {}
+                                if (acceptCondition === 'PHOTO' || acceptCondition === 'APPROVAL') {
+                                  try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition); } catch {}
                                 }
 
                                 // Привязать вознаграждение (и симулировать депозит)
@@ -637,12 +660,15 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
                     ) : null}
 
-                    {acceptCondition === 'PHOTO' ? (
+                    {acceptCondition === 'PHOTO' && (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>☝️ Требуется фото 📸</div>
-                    ) : null}
+                    )}
+                    {acceptCondition === 'APPROVAL' && (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>☝️ Требуется согласование 🤝</div>
+                    )}
 
                     {bountyAmount > 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.9 }}>⭐ Вознаграждение: {bountyAmount}</div>
+                      <div style={{ fontSize: 12, opacity: 0.9 }}>🪙 Вознаграждение: {bountyAmount}</div>
                     ) : null}
 
                     {pendingFiles.length ? (
@@ -698,9 +724,31 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           border: '1px solid #1f2937',
                           borderRadius: 12,
                           padding: 10,
+                          paddingLeft: 44,
                           resize: 'vertical',
                         }}
                       />
+                      {/* ⭐ слева внутри инпута (мастер) */}
+                      <button
+                        type="button"
+                        onClick={() => { setBountyOpen(true); focusText(); }}
+                        title="Вознаграждение"
+                        style={{
+                          position: 'absolute',
+                          left: 8,
+                          top: 8,
+                          width: 26,
+                          height: 26,
+                          borderRadius: 999,
+                          border: '1px solid #1f2937',
+                          background: '#0b1220',
+                          color: '#facc15',
+                          cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        🪙
+                      </button>
                       <button
                         type="button"
                         onClick={() => { setToolsOpen(v => !v); focusText(); }}
@@ -719,7 +767,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🖇️
+                        @
                       </button>
                     </div>
 
@@ -732,7 +780,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         title="Вознаграждение"
                         style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                       >
-                        ⭐
+                        🪙
                       </button>
                       <button
                         type="button"
@@ -1023,6 +1071,10 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={acceptCondition==='PHOTO'} onChange={()=>setAcceptConditionState('PHOTO')} />
                 <span>Нужно фото 📸</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={acceptCondition==='APPROVAL'} onChange={()=>setAcceptConditionState('APPROVAL')} />
+                <span>Нужно согласование 🤝</span>
               </label>
             </div>
             <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>

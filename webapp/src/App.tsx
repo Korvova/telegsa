@@ -137,7 +137,7 @@ function TaskCard({
   deadlineAt?: string | null;
   bountyStars?: number | null;
   bountyStatus?: 'NONE'|'PLEDGED'|'PAID'|'REFUNDED'|string;
-  acceptCondition?: 'NONE' | 'PHOTO';
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
   onEditDeadline?: () => void;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
@@ -161,7 +161,14 @@ function TaskCard({
       background: bg, border: '1px solid #2a3346', borderRadius: 12, padding: 12,
       userSelect: 'none', cursor: 'pointer', boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
     }}>
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
+      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
+        {typeof bountyStars === 'number' && bountyStars > 0 ? (
+          <span title={String(bountyStatus)==='PAID' ? 'Выплачено' : 'Ожидает выплаты'} style={{ display:'inline-block', border:`1px solid ${String(bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String(bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String(bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'0 6px', lineHeight:'16px', fontSize:12 }}>
+            {String(bountyStatus)==='PAID' ? '💫' : '🪙'} ({bountyStars})
+          </span>
+        ) : null}
+        <span>#{order}</span>
+      </div>
 
       <div
         style={{
@@ -195,6 +202,11 @@ function TaskCard({
       {acceptCondition === 'PHOTO' && (
         <div style={{ fontSize: 12, marginBottom: 6 }} title="Требуется фото">
           ☝️📸 Требуется фото
+        </div>
+      )}
+      {acceptCondition === 'APPROVAL' && (
+        <div style={{ fontSize: 12, marginBottom: 6 }} title="Требуется согласование">
+          ☝️🤝 Требуется согласование
         </div>
       )}
       {typeof bountyStars === 'number' && bountyStars > 0 && (
@@ -242,7 +254,7 @@ function SortableTask({
   fromProcess?: boolean;
   deadlineAt?: string | null;
   onEditDeadline?: () => void;
-  acceptCondition?: 'NONE' | 'PHOTO';
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
   bountyStars?: number | null;
   bountyStatus?: 'NONE'|'PLEDGED'|'PAID'|'REFUNDED'|string;
 }) {
@@ -897,6 +909,16 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
         setAcceptPrompt({ id: active });
         await reloadBoard();
         return;
+      }
+      if (col.name === 'Done' && moved && moved.acceptCondition === 'APPROVAL') {
+        try {
+          const approvalCol = columns.find((c) => String(c.name) === 'Approval');
+          if (approvalCol) {
+            await apiMoveTask(active, approvalCol.id, 0);
+            await reloadBoard();
+            return;
+          }
+        } catch {}
       }
       await apiMoveTask(active, finalColId, Math.max(0, toIndex));
     } catch (e) {

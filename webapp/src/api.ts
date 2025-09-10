@@ -12,7 +12,7 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
   deadlineAt?: string | null;
-  acceptCondition?: 'NONE' | 'PHOTO';
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
 
@@ -632,7 +632,7 @@ export type TaskFeedItem = {
   updatedAt: string;
   createdAt: string;
   deadlineAt?: string | null;
-  acceptCondition?: 'NONE' | 'PHOTO';
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
   status: string;
@@ -863,11 +863,40 @@ export async function getStarsSummary(chatId: string) {
   return r.json() as Promise<{ ok: boolean; received: number; sent: number }>;
 }
 
+// ==== Likes API ====
+export async function getTaskLikes(taskId: string, chatId?: string) {
+  const u = new URL(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/likes`, window.location.origin);
+  if (chatId) u.searchParams.set('chatId', chatId);
+  const r = await fetch(u.toString().replace(window.location.origin, ''));
+  return r.json() as Promise<{ ok: boolean; count: number; me?: boolean }>;
+}
+export async function likeTask(taskId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/likes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId }) });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+export async function unlikeTask(taskId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/likes?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+export async function getCommentLikes(taskId: string, commentId: string, chatId?: string) {
+  const url = `${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/likes` + (chatId ? `?chatId=${encodeURIComponent(chatId)}` : '');
+  const r = await fetch(url);
+  return r.json() as Promise<{ ok: boolean; count: number; me?: boolean }>;
+}
+export async function likeComment(taskId: string, commentId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/likes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId }) });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+export async function unlikeComment(taskId: string, commentId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/likes?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+
 // ==== Accept condition API ====
 export async function setAcceptCondition(
   taskId: string,
   chatId: string,
-  condition: 'NONE' | 'PHOTO'
+  condition: 'NONE' | 'PHOTO' | 'APPROVAL'
 ) {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/accept-condition`, {
     method: 'PATCH',
