@@ -50,6 +50,8 @@ export default function CreateTaskFab({
   const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
 
   const [members, setMembers] = useState<MemberOption[]>([]);
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
+  const focusText = () => { try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} };
   const membersAsOptions: MemberOption[] = members.map(m => ({ chatId: m.chatId, name: m.name }));
 
   // Локальные вложения ДО отправки (обязательно объявляем ДО firstAudio)
@@ -111,6 +113,7 @@ export default function CreateTaskFab({
     if (!files || !files.length) return;
     const arr = Array.from(files).slice(0, 10);
     setPendingFiles(prev => [...prev, ...arr]);
+    focusText();
   };
 
   const openCamera = () => {
@@ -323,7 +326,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                   groupId ? (
                     <select
                       value={selectedLabelId ?? ''}
-                      onChange={(e) => setSelectedLabelId(e.target.value || null)}
+                      onChange={(e) => { setSelectedLabelId(e.target.value || null); focusText(); }}
                       title="Выбрать ярлык"
                       style={{
                         background: '#0b1220',
@@ -422,6 +425,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         </div>
                       ) : (
                         <textarea
+                          ref={textAreaRef}
                           autoFocus
                           rows={1}
                           placeholder="Опиши задачу…"
@@ -637,6 +641,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                 {step === 0 && (
                   <div style={{ display: 'grid', gap: 10 }}>
                     <textarea
+                      ref={textAreaRef}
                       autoFocus
                       rows={5}
                       placeholder="Опиши задачу…"
@@ -808,7 +813,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
       {/* Пикер группы */}
       {pickerOpen && isSimpleMode && (
         <div
-          onClick={() => setPickerOpen(false)}
+          onClick={() => { setPickerOpen(false); focusText(); }}
           style={{
             position: 'fixed',
             inset: 0,
@@ -833,7 +838,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontWeight: 700 }}>Выберите группу</div>
               <button
-                onClick={() => setPickerOpen(false)}
+                onClick={() => { setPickerOpen(false); focusText(); }}
                 style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
               >
                 ✕
@@ -897,7 +902,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
               <button
-                onClick={() => setPickerOpen(false)}
+                onClick={() => { setPickerOpen(false); focusText(); }}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,
@@ -916,8 +921,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
       {/* модалка камеры */}
       <CameraCaptureModal
         open={cameraOpen}
-        onClose={() => setCameraOpen(false)}
-        onCapture={(file) => setPendingFiles((prev) => [...prev, file])}
+        onClose={() => { setCameraOpen(false); focusText(); }}
+        onCapture={(file) => { setPendingFiles((prev) => [...prev, file]); focusText(); }}
       />
 
       {/* модалка дедлайна */}
@@ -925,12 +930,12 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
         open={deadlineOpen}
         value={deadlineAt}
         onChange={(v) => setDeadlineAt(v)}
-        onClose={() => setDeadlineOpen(false)}
+        onClose={() => { setDeadlineOpen(false); focusText(); }}
       />
 
       {acceptOpen && (
         <div
-          onClick={() => setAcceptOpen(false)}
+          onClick={() => { setAcceptOpen(false); focusText(); }}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex: 2000, display:'flex', alignItems:'center', justifyContent:'center' }}
         >
           <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(420px, 92vw)' }}>
@@ -946,7 +951,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
               </label>
             </div>
             <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>
-              <button onClick={()=>setAcceptOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Готово</button>
+              <button onClick={()=>{ setAcceptOpen(false); focusText(); }} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Готово</button>
             </div>
           </div>
         </div>
