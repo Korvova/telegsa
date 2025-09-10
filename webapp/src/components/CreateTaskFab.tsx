@@ -457,7 +457,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         />
                       )}
 
-                      {/* Тогглер вложений (🔗) — простая форма */}
+                      {/* Тогглер вложений (🧷) — простая форма */}
                       <button
                         type="button"
                         onClick={() => { setToolsOpen(v => !v); focusText(); }}
@@ -465,18 +465,19 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         style={{
                           position: 'absolute',
                           right: 52,
-                          top: 6,
-                          width: 32,
-                          height: 32,
-                          borderRadius: 10,
-                          border: '1px solid #475569',
-                          background: '#374151',
-                          color: '#e5e7eb',
+                          top: 8,
+                          width: 28,
+                          height: 28,
+                          borderRadius: 999,
+                          border: '1px solid #1f2937',
+                          background: '#0b1220',
+                          color: '#9ca3af',
                           cursor: 'pointer',
                           zIndex: 5,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🔗
+                        🧷
                       </button>
 
                       {/* Кнопка справа (➤ / 🎙️) */}
@@ -692,16 +693,17 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           position: 'absolute',
                           right: 8,
                           top: 8,
-                          width: 28,
-                          height: 28,
-                          borderRadius: 8,
-                          border: '1px solid #2a3346',
-                          background: '#202840',
-                          color: '#e8eaed',
+                          width: 26,
+                          height: 26,
+                          borderRadius: 999,
+                          border: '1px solid #1f2937',
+                          background: '#0b1220',
+                          color: '#9ca3af',
                           cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🔗
+                        🧷
                       </button>
                     </div>
 
