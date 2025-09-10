@@ -19,6 +19,9 @@ import { initReminderScheduler, scheduleRemindersForEvent } from './scheduler.js
 import processRouter from './routes/process.js';
 
 import { shareNewTaskRouter } from './routes/sharenewtask.js';
+import { bountyRouter } from './routes/bounty.js';
+import { payoutMethodRouter } from './routes/payoutMethod.js';
+import { starsRouter } from './routes/stars.js';
 
 
 import { execa } from 'execa';
@@ -371,6 +374,10 @@ app.use('/sharenewtask', shareNewTaskRouter({ prisma })); // ⬅️ новый
 
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
+// Bounty (virtual stars) + payout method + summary
+app.use(bountyRouter);
+app.use(payoutMethodRouter);
+app.use(starsRouter);
 // условия приёмки задач
 app.use(acceptRouter);
 // дедлайны (отдельный роутер, но в пространстве /tasks)
@@ -1607,7 +1614,18 @@ app.post('/tasks/:id/complete', async (req, res) => {
         where: { columnId: fromColumnId, order: { gt: task.order } },
         data: { order: { decrement: 1 } },
       });
-      return tx.task.update({ where: { id }, data: { columnId: done.id, order: toIndex } });
+      const moved = await tx.task.update({ where: { id }, data: { columnId: done.id, order: toIndex } });
+      // === Bounty handling (virtual) ===
+      if (Number(moved.bountyStars || 0) > 0 && String(moved.bountyStatus || 'NONE') !== 'PAID') {
+        if (moved.assigneeChatId) {
+          await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: String(moved.assigneeChatId), amount: Number(moved.bountyStars), kind: 'PAYOUT' } });
+          await tx.task.update({ where: { id }, data: { bountyStatus: 'PAID' } });
+        } else {
+          await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: null, amount: Number(moved.bountyStars), kind: 'REFUND' } });
+          await tx.task.update({ where: { id }, data: { bountyStatus: 'REFUNDED', bountyStars: 0 } });
+        }
+      }
+      return await tx.task.findUnique({ where: { id } });
     });
 
     // 🔔 Уведомляем ПОСТАНОВЩИКА (sourceChatId), если включено receiveTaskCompletedMine

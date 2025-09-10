@@ -4,6 +4,7 @@ import CameraCaptureModal from './CameraCaptureModal';
 import PostCreateActionsLauncher from './PostCreateActionsLauncher';
 import VoiceRecorder from './VoiceRecorder';
 import DeadlinePicker from './DeadlinePicker';
+import BountyPicker from './BountyPicker';
 
 import WebApp from '@twa-dev/sdk';
 import {
@@ -98,6 +99,8 @@ export default function CreateTaskFab({
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO'>('NONE');
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [bountyOpen, setBountyOpen] = useState(false);
+  const [bountyAmount, setBountyAmount] = useState<number>(0);
 
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
@@ -517,7 +520,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 const title = val || 'Голосовая заметка';
                                 const r = await createTask(chatId, title, groupId ?? undefined);
                                 if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
-                                const newTaskId = r.task.id;
+                              const newTaskId = r.task.id;
 
                                 // Привязать выбранный ярлык
                                 if (groupId && selectedLabelId) {
@@ -532,6 +535,15 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 // Привязать условия приёма
                                 if (acceptCondition === 'PHOTO') {
                                   try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, 'PHOTO'); } catch {}
+                                }
+
+                                // Привязать вознаграждение (и симулировать депозит)
+                                if (bountyAmount > 0) {
+                                  try {
+                                    const api = await import('../api');
+                                    await api.setTaskBounty(newTaskId, chatId, bountyAmount);
+                                    await api.fakeDeposit(newTaskId, chatId, bountyAmount);
+                                  } catch {}
                                 }
 
                                 if (pendingFiles.length) {
@@ -629,6 +641,10 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       <div style={{ fontSize: 12, opacity: 0.85 }}>☝️ Требуется фото 📸</div>
                     ) : null}
 
+                    {bountyAmount > 0 ? (
+                      <div style={{ fontSize: 12, opacity: 0.9 }}>⭐ Вознаграждение: {bountyAmount}</div>
+                    ) : null}
+
                     {pendingFiles.length ? (
                       <div
                         style={{
@@ -697,19 +713,27 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           height: 26,
                           borderRadius: 999,
                           border: '1px solid #1f2937',
-                          background: '#0b1220',
+                          background: '#172133ff',
                           color: '#9ca3af',
                           cursor: 'pointer',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🧷
+                        🖇️
                       </button>
                     </div>
 
                     {/* Панель вложений (мастер, шаг 0) */}
                     {toolsOpen && (
                     <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setBountyOpen(true); focusText(); }}
+                        title="Вознаграждение"
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                      >
+                        ⭐
+                      </button>
                       <button
                         type="button"
                         onClick={() => fileAnyRef.current?.click()}
@@ -1007,6 +1031,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
           </div>
         </div>
       )}
+
+      {/* ⭐ Bounty picker */}
+      <BountyPicker
+        open={bountyOpen}
+        initial={bountyAmount}
+        onApply={(n) => setBountyAmount(n)}
+        onClose={() => { setBountyOpen(false); focusText(); }}
+      />
     </>
   );
 }

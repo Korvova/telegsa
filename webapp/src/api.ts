@@ -13,6 +13,8 @@ export type Task = {
   updatedAt: string;
   deadlineAt?: string | null;
   acceptCondition?: 'NONE' | 'PHOTO';
+  bountyStars?: number;
+  bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
 
     fromProcess?: boolean; // 🔀
 
@@ -631,6 +633,8 @@ export type TaskFeedItem = {
   createdAt: string;
   deadlineAt?: string | null;
   acceptCondition?: 'NONE' | 'PHOTO';
+  bountyStars?: number;
+  bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
   status: string;
   groupId: string | null;
   groupTitle: string;
@@ -821,6 +825,44 @@ export async function setTaskDeadline(taskId: string, chatId: string, deadlineAt
   return j as { ok: boolean; task?: Task; error?: string };
 }
 
+// ==== Bounty (virtual stars) API ====
+export async function setTaskBounty(taskId: string, chatId: string, amount: number) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/bounty`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, amount }),
+  });
+  return r.json() as Promise<{ ok: boolean; task?: Task }>;
+}
+
+export async function fakeDeposit(taskId: string, chatId: string, amount: number) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/deposit/fake`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, amount }),
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+export async function getPayoutMethod(chatId: string) {
+  const r = await fetch(`${API_BASE}/payout-method?chatId=${encodeURIComponent(chatId)}`);
+  return r.json() as Promise<{ ok: boolean; method?: { chatId: string; phone: string; bankCode?: string } | null }>;
+}
+
+export async function setPayoutMethod(chatId: string, phone: string, bankCode?: string) {
+  const r = await fetch(`${API_BASE}/payout-method`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, phone, bankCode }),
+  });
+  return r.json();
+}
+
+export async function getStarsSummary(chatId: string) {
+  const r = await fetch(`${API_BASE}/stars/summary?chatId=${encodeURIComponent(chatId)}`);
+  return r.json() as Promise<{ ok: boolean; received: number; sent: number }>;
+}
+
 // ==== Accept condition API ====
 export async function setAcceptCondition(
   taskId: string,
@@ -842,4 +884,3 @@ export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; o
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/relations`);
   return r.json();
 }
-

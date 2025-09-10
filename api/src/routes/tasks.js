@@ -249,6 +249,11 @@ router.delete('/:id', async (req, res) => {
     if (i > 0) groupId = nm.slice(0, i);
 
     await prisma.$transaction(async (tx) => {
+      // Если есть PLEDGED bounty — вернём
+      if ((task as any).bountyStars > 0 && String((task as any).bountyStatus) !== 'PAID') {
+        await tx.starLedger.create({ data: { taskId: id, fromChatId: String(task.chatId), toChatId: null, amount: (task as any).bountyStars, kind: 'REFUND' } });
+      }
+      // удалим и сместим ордера
       await tx.task.delete({ where: { id } });
       await tx.task.updateMany({
         where: { columnId: task.columnId, order: { gt: task.order } },
@@ -414,6 +419,8 @@ const items = tasks.map(t => {
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     deadlineAt: t.deadlineAt,
+    bountyStars: t.bountyStars,
+    bountyStatus: t.bountyStatus,
     acceptCondition: t.acceptCondition,
     status,
     groupId,

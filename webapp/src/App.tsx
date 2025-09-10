@@ -55,6 +55,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
+import SettingsStars from './SettingsStars';
 
 /* ---------------- helpers ---------------- */
 function useChatId() {
@@ -119,6 +120,8 @@ function TaskCard({
   isEvent, startAt, endAt, fromProcess,
   deadlineAt,
   acceptCondition,
+  bountyStars,
+  bountyStatus,
   onEditDeadline,
 }: {
   text: string;
@@ -132,6 +135,8 @@ function TaskCard({
   endAt?: string | null;
   fromProcess?: boolean;
   deadlineAt?: string | null;
+  bountyStars?: number | null;
+  bountyStatus?: 'NONE'|'PLEDGED'|'PAID'|'REFUNDED'|string;
   acceptCondition?: 'NONE' | 'PHOTO';
   onEditDeadline?: () => void;
 }) {
@@ -192,6 +197,13 @@ function TaskCard({
           ☝️📸 Требуется фото
         </div>
       )}
+      {typeof bountyStars === 'number' && bountyStars > 0 && (
+        <div style={{ fontSize: 12, marginBottom: 6 }} title={String(bountyStatus) === 'PAID' ? 'Выплачено' : 'Ожидает выплаты'}>
+          <span style={{
+            display:'inline-block', border:`1px solid ${String(bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String(bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String(bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'2px 8px'
+          }}>⭐ ({bountyStars})</span>
+        </div>
+      )}
       {assigneeName && !isEvent ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>👤</span><span>{assigneeName}</span>
@@ -215,6 +227,8 @@ function SortableTask({
   taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess, deadlineAt,
   onEditDeadline,
   acceptCondition,
+  bountyStars,
+  bountyStatus,
 }: {
   taskId: string;
   text: string;
@@ -229,6 +243,8 @@ function SortableTask({
   deadlineAt?: string | null;
   onEditDeadline?: () => void;
   acceptCondition?: 'NONE' | 'PHOTO';
+  bountyStars?: number | null;
+  bountyStatus?: 'NONE'|'PLEDGED'|'PAID'|'REFUNDED'|string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: taskId });
@@ -255,6 +271,8 @@ function SortableTask({
         deadlineAt={deadlineAt}
         onEditDeadline={onEditDeadline}
         acceptCondition={acceptCondition}
+        bountyStars={bountyStars}
+        bountyStatus={bountyStatus}
       />
     </div>
   );
@@ -1241,6 +1259,9 @@ setPersistSeedSession(false);
                 </div>
               </button>
 
+              {/* Звёзды — сводка и способ получения (SBP) */}
+              <SettingsStars chatId={chatId} />
+
               {/* тут можно добавить другие пункты настроек позже */}
             </div>
           ) : tab === 'notifications' ? (
@@ -1505,6 +1526,8 @@ function ColumnView({
               endAt={t.endAt}
               fromProcess={!!t.fromProcess}
               deadlineAt={(t as any).deadlineAt || null}
+              bountyStars={(t as any).bountyStars || 0}
+              bountyStatus={(t as any).bountyStatus || 'NONE'}
               acceptCondition={(t as any).acceptCondition || 'NONE'}
             />
           ))}

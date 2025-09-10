@@ -18,6 +18,7 @@ import CameraCaptureModal from '../../components/CameraCaptureModal';
 import type { StageKey } from '../../components/StageScroller';
 import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
+import StarBadge from '../../components/StarBadge';
 
 const LONG_PRESS_MS = 500;
 
@@ -687,9 +688,14 @@ export default function HomePage({
                             )}
                           </div>
 
-                          {dateLine && (
-                            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
-                          )}
+                    {dateLine && (
+                      <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
+                    )}
+                    {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
+                      </div>
+                    )}
                           {deadlineAt && (
                             <button
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeadlineEdit({ id: t.id, value: deadlineAt }); }}

@@ -99,6 +99,11 @@ model Task {
 
   fromProcess Boolean @default(false) // 🔀 задача создана через процесс
 
+  // === Bounty (virtual stars)
+  bountyStars    Int      @default(0)
+  bountyStatus   String   @default("NONE") // NONE | PLEDGED | PAID | REFUNDED
+  bountyByChatId String?
+
   // (опционально) если реально используешь где-то прямой FK на узел,
   // можешь оставить processNodeId; иначе лучше убрать, чтобы не плодить лишних уникальных ограничений
   // processNodeId   String?  @unique
@@ -456,4 +461,29 @@ model TaskRelation {
 
   @@index([fromTaskId])
   @@index([toTaskId])
+}
+
+/// Ledger of star operations
+model StarLedger {
+  id         String   @id @default(cuid())
+  taskId     String
+  fromChatId String
+  toChatId   String?
+  amount     Int
+  kind       String   // PLEDGE | PAYOUT | REFUND
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@index([taskId])
+  @@index([fromChatId])
+  @@index([toChatId])
+}
+
+/// User payout method (MVP: SBP phone)
+model UserPayoutMethod {
+  chatId    String @id
+  method    String @default("SBP")
+  phone     String
+  bankCode  String?
+  updatedAt DateTime @updatedAt
 }
