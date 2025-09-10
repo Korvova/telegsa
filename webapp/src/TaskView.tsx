@@ -96,6 +96,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveDoneTimer = useRef<any>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
+  // Временный флаг: только что назначаем ответственного — пока нет имени, показываем плейсхолдер
+  const [assigningAssigneeChatId, setAssigningAssigneeChatId] = useState<string | null>(null);
 
   // Считаем вложение аудио, если kind = voice|audio, либо MIME начинается с audio/,
   // либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
@@ -262,6 +264,13 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
     t = setTimeout(tick, 4000);
     return () => { alive = false; clearTimeout(t); };
   }, [taskId, refreshTick]);
+
+  // Как только имя ответственного появилось — убираем плейсхолдер
+  useEffect(() => {
+    if (!task) return;
+    if (task.assigneeName) setAssigningAssigneeChatId(null);
+    if (!task.assigneeChatId) setAssigningAssigneeChatId(null);
+  }, [task?.assigneeName, task?.assigneeChatId]);
 
   // Плавное сворачивание карточки в 👍 и возврат на канбан
   const animateCloseWithThumb = (finalGroupId?: string | null) => {
@@ -812,7 +821,12 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                 title="Ответственный по задаче"
               >
                 <span style={{ opacity: 0.8 }}>Ответственный:</span>
-                <strong>{task.assigneeName || task.assigneeChatId}</strong>
+                <strong>
+                  {task.assigneeName
+                    || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
+                          ? '(назначаю …)'
+                          : String(task.assigneeChatId))}
+                </strong>
                 <button
                   onClick={async () => {
                     if (!confirm('Убрать ответственного?')) return;
@@ -821,6 +835,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                       const r = await api.unassign(taskId, meChatId);
                       if ((r as any)?.ok) {
                         setTask((prev) => (prev ? { ...prev, assigneeChatId: null, assigneeName: null } : prev));
+                        setAssigningAssigneeChatId(null);
                         setRefreshTick((t) => t + 1);
                       }
                     } catch {}
@@ -851,6 +866,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                     const name = (found as any)?.name || prev.assigneeName || null;
                     return { ...prev, assigneeChatId: String(newAssigneeChatId), assigneeName: name } as any;
                   });
+                  setAssigningAssigneeChatId(String(newAssigneeChatId));
                   try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
                   setRefreshTick((t) => t + 1);
                 }}
