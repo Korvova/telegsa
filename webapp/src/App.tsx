@@ -245,6 +245,8 @@ export default function App() {
   const [showProcess, setShowProcess] = useState(false);
 
   const chatId = useChatId();
+  // Ключ для перезагрузки ленты на Home после создания задачи
+  const [feedReloadKey, setFeedReloadKey] = useState(0);
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState<Column[]>([]);
@@ -255,6 +257,13 @@ export default function App() {
 const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
 
 const [persistSeedSession, setPersistSeedSession] = useState(false);
+
+
+
+
+// добавь СРАЗУ ПОСЛЕ:
+const [spawnPrevForFocus, setSpawnPrevForFocus] = useState<boolean>(false);
+const [seedPrevForProcess, setSeedPrevForProcess] = useState<boolean>(false);
 
 
   const [tab, setTab] = useState<TabKey>('home');
@@ -275,10 +284,25 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
       setTab('groups');
       setSelectedGroupId(String(d.groupId));
       setGroupTab('process');
-      setSpawnNextForFocus(!!d.seedNewRight);
 
-         // 👇 включаем сеанс посева, если пришли по seedTaskId
-   setPersistSeedSession(!!d.seedTaskId);
+
+
+// право: поддерживаем и старый d.seedNewRight, и явный d.spawnNextForFocus
+setSpawnNextForFocus(Boolean(d.seedNewRight || d.spawnNextForFocus));
+
+// лево: новый флаг
+setSpawnPrevForFocus(Boolean(d.spawnPrevForFocus));
+
+// сеанс посева активен, если пришёл seedTaskId
+setPersistSeedSession(!!d.seedTaskId);
+
+// посев слева (мини-связка «Новый ← Текущая»)
+setSeedPrevForProcess(Boolean(d.seedPrev));
+
+
+
+
+
 
       // из TaskView либо фокус на конкретный узел, либо посев
       if (d.focusTaskId) {
@@ -829,15 +853,33 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
   chatId={chatId}
   groupId={resolvedGroupId ?? null}
   onOpenTask={openTask}
+
+  /* seed-сценарии */
   seedTaskId={seedTaskIdForProcess}
   seedAssigneeChatId={seedAssigneeChatIdForProcess}
   forceSeedFromTask={!!seedTaskIdForProcess}
   focusTaskId={focusTaskIdForProcess}
-  // ↓ новое: «прорости узел справа» и сброс флага после применения
+
+  /* справа: «прорости узел от фокуса» */
   spawnNextForFocus={spawnNextForFocus}
   onSpawnNextConsumed={() => setSpawnNextForFocus(false)}
-  onSeedConsumed={() => { setSeedTaskIdForProcess(null); setSeedAssigneeChatIdForProcess(null); }}
-    persistSeedSession={persistSeedSession} 
+
+  /* слева: НОВОЕ — «прорости узел слева от фокуса» */
+  spawnPrevForFocus={spawnPrevForFocus}
+  onSpawnPrevConsumed={() => setSpawnPrevForFocus(false)}
+
+  /* посев в режиме «Новый ← Текущая» (если задачи ещё нет в графе) */
+  seedPrev={seedPrevForProcess}
+
+  /* когда seed-сессия отработана — сбросить семена */
+  onSeedConsumed={() => {
+    setSeedTaskIdForProcess(null);
+    setSeedAssigneeChatIdForProcess(null);
+    setSeedPrevForProcess(false);
+  }}
+
+  /* продолжать seed-сессию между повторными открытиями полотна */
+  persistSeedSession={persistSeedSession}
 />
 
             {/* Нижняя кнопка назад — только внутри оверлея процесса */}
@@ -860,6 +902,16 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
                   setFocusTaskIdForProcess(null);
                   setSeedTaskIdForProcess(null);
                   setSeedAssigneeChatIdForProcess(null);
+
+setSpawnNextForFocus(false);
+setSpawnPrevForFocus(false);
+setSeedPrevForProcess(false);
+setFocusTaskIdForProcess(null);
+setSeedTaskIdForProcess(null);
+setSeedAssigneeChatIdForProcess(null);
+setPersistSeedSession(false);
+
+
                   const url = new URL(window.location.href);
                   url.searchParams.delete('view');
                   window.history.replaceState(null, '', url.toString());
@@ -970,10 +1022,11 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
           </div>
 
           {tab === 'home' ? (
-            <HomePage
-              chatId={chatId}
-              onOpenTask={openTask}
-            />
+          <HomePage
+            chatId={chatId}
+            onOpenTask={openTask}
+            reloadKey={feedReloadKey}
+          />
           ) : tab === 'groups' ? (
             groupsPage === 'list' ? (
               <GroupList
@@ -1138,7 +1191,13 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
             defaultGroupId={resolvedGroupId ?? null}
             chatId={chatId}
             groups={groups}
-            onCreated={reloadBoard}
+            onCreated={() => {
+              if (tab === 'home') {
+                setFeedReloadKey((k) => k + 1);
+              } else {
+                reloadBoard();
+              }
+            }}
           />
 
           {/* Нижняя панель */}

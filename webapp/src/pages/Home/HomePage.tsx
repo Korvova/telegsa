@@ -105,9 +105,11 @@ type FeedScope = { kind: 'all' } | { kind: 'group'; groupId: string };
 export default function HomePage({
   chatId,
   onOpenTask,
+  reloadKey = 0,
 }: {
   chatId: string;
   onOpenTask: (id: string) => void;
+  reloadKey?: number;
 }) {
   // 🏷️ кэш ярлыков по задачам
   const [labelsByTask, setLabelsByTask] = useState<Record<string, GroupLabel[]>>({});
@@ -176,7 +178,7 @@ export default function HomePage({
     return () => {
       alive = false;
     };
-  }, [chatId, search]);
+  }, [chatId, search, reloadKey]);
 
   const loadMore = async () => {
     if (loading || !hasMore) return;
