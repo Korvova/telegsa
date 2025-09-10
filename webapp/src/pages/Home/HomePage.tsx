@@ -793,8 +793,9 @@ export default function HomePage({
                           })()}
 
                           <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', gap: 10 }}>
-                            <span>👤 {(t as any).creatorName}</span>
-                            {(t as any).assigneeName ? <span>→ {(t as any).assigneeName}</span> : null}
+                            {(t as any).assigneeName ? (
+                              <span>👤 {(t as any).assigneeName}</span>
+                            ) : null}
                             {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
                             <span style={{ marginLeft: 'auto' }}>
                               {new Date((t as any).updatedAt).toLocaleString()}
