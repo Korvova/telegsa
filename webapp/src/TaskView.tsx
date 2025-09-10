@@ -349,19 +349,18 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   /* --- действия с задачей --- */
   // save() удалён — используем автосохранение
 
-  // Автосохранение текста при вводе (debounce ~600ms)
+  // Автосохранение текста при вводе (debounce ~600ms), только при реальном изменении
   useEffect(() => {
     if (!task) return;
+    const next = text.trim();
+    const initial = String(task.text || '').trim();
+    if (next === initial) return; // ничего не меняли — не сохраняем и не мигаем статусом
+
     clearTimeout(autosaveTimer.current);
-    setSaveStatus('saving');
     autosaveTimer.current = setTimeout(async () => {
+      setSaveStatus('saving');
       try {
-        const val = text.trim();
-        if (!val || val === task.text) {
-          setSaveStatus('idle');
-          return;
-        }
-        await updateTask(taskId, val);
+        await updateTask(taskId, next);
         onChanged?.();
         setSaveStatus('saved');
         clearTimeout(saveDoneTimer.current);
@@ -373,7 +372,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       }
     }, 600);
     return () => clearTimeout(autosaveTimer.current);
-  }, [text, taskId, task]);
+  }, [text, taskId, task?.text]);
 
   // toggleDone удалён — используем StageScroller/onRequestComplete
 

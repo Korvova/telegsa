@@ -457,6 +457,28 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         />
                       )}
 
+                      {/* Тогглер вложений (🔗) — простая форма */}
+                      <button
+                        type="button"
+                        onClick={() => { setToolsOpen(v => !v); focusText(); }}
+                        title={toolsOpen ? 'Скрыть вложения' : 'Показать вложения'}
+                        style={{
+                          position: 'absolute',
+                          right: 52,
+                          top: 6,
+                          width: 32,
+                          height: 32,
+                          borderRadius: 10,
+                          border: '1px solid #475569',
+                          background: '#374151',
+                          color: '#e5e7eb',
+                          cursor: 'pointer',
+                          zIndex: 5,
+                        }}
+                      >
+                        🔗
+                      </button>
+
                       {/* Кнопка справа (➤ / 🎙️) */}
                       <div
                         style={{
