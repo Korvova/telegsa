@@ -813,6 +813,23 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               >
                 <span style={{ opacity: 0.8 }}>Ответственный:</span>
                 <strong>{task.assigneeName || task.assigneeChatId}</strong>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Убрать ответственного?')) return;
+                    try {
+                      const api = await import('./api/assign');
+                      const r = await api.unassign(taskId, meChatId);
+                      if ((r as any)?.ok) {
+                        setTask((prev) => (prev ? { ...prev, assigneeChatId: null, assigneeName: null } : prev));
+                        setRefreshTick((t) => t + 1);
+                      }
+                    } catch {}
+                  }}
+                  title="Убрать ответственного"
+                  style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid #375249', background: '#254235', color: '#d7ffd7', cursor: 'pointer' }}
+                >
+                  ×
+                </button>
               </div>
             ) : (
               <ResponsibleActions

@@ -174,5 +174,50 @@ export function assignRouter({ prisma }) {
     }
   });
 
+  // 👉 POST /assign/unassign { taskId, chatId }
+  // Убирает ответственного. Разрешено постановщику задачи, текущему ответственному,
+  // а также владельцу/участнику группы, если задача в группе.
+  router.post('/unassign', async (req, res) => {
+    try {
+      const { taskId, chatId } = req.body || {};
+      if (!taskId || !chatId) {
+        return res.status(400).json({ ok: false, error: 'bad_request' });
+      }
+
+      const task = await prisma.task.findUnique({
+        where: { id: String(taskId) },
+        include: { column: true },
+      });
+      if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+      // Проверка прав
+      const colName = task?.column?.name || '';
+      const groupId = parseGroupIdFromColumnName(colName);
+      const isCreator = String(task.chatId) === String(chatId);
+      const isAssignee = task.assigneeChatId && String(task.assigneeChatId) === String(chatId);
+
+      let allowed = isCreator || isAssignee;
+      if (!allowed && groupId) {
+        // владелец/участник группы
+        const g = await prisma.group.findUnique({ where: { id: groupId } });
+        if (g && String(g.ownerChatId) === String(chatId)) allowed = true;
+        if (!allowed) {
+          const m = await prisma.groupMember.findFirst({ where: { groupId, chatId: String(chatId) } });
+          allowed = Boolean(m);
+        }
+      }
+      if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+
+      const updated = await prisma.task.update({
+        where: { id: String(taskId) },
+        data: { assigneeChatId: null },
+      });
+      return res.json({ ok: true, task: { id: updated.id, assigneeChatId: updated.assigneeChatId } });
+    } catch (e) {
+      console.error('[assign.unassign] error', e);
+      res.status(500).json({ ok: false, error: 'internal' });
+    }
+  });
+
   return router;
 }
