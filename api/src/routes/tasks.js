@@ -263,6 +263,42 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+
+
+
+
+
+
+// для процесса
+
+
+// GET /tasks/:id/relations -> { outgoing: Task[], incoming: Task[] }
+router.get('/:id/relations', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const outs = await prisma.taskRelation.findMany({ where: { fromTaskId: id } });
+    const ins  = await prisma.taskRelation.findMany({ where: { toTaskId: id } });
+
+    const outIds = outs.map(r => r.toTaskId);
+    const inIds  = ins.map(r => r.fromTaskId);
+
+    const outTasks = outIds.length
+      ? await prisma.task.findMany({ where: { id: { in: outIds } }, select: { id: true, text: true } })
+      : [];
+    const inTasks = inIds.length
+      ? await prisma.task.findMany({ where: { id: { in: inIds } }, select: { id: true, text: true } })
+      : [];
+
+    res.json({ ok: true, outgoing: outTasks, incoming: inTasks });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'relations_failed' });
+  }
+});
+
+
+
+
+
 // Обновить задачу (текст / перемещение / назначение исполнителя)
 router.patch('/:id', async (req, res) => {
   try {
@@ -366,26 +402,31 @@ router.get('/feed', async (req, res) => {
       return u.username ? `@${u.username}` : String(cid);
     };
 
-    const items = tasks.map(t => {
-      const cname = t.column?.name || '';
-      const i = cname.indexOf(GROUP_SEP);
-      const status  = i >= 0 ? cname.slice(i + GROUP_SEP.length) : cname;
-      const groupId = i >= 0 ? cname.slice(0, i) : null;
+const items = tasks.map(t => {
+  const cname = t.column?.name || '';
+  const i = cname.indexOf(GROUP_SEP);
+  const status  = i >= 0 ? cname.slice(i + GROUP_SEP.length) : cname;
+  const groupId = i >= 0 ? cname.slice(0, i) : null;
 
-      return {
-        id: t.id,
-        text: t.text,
-        createdAt: t.createdAt,
-        updatedAt: t.updatedAt,
-        status,
-        groupId,
-        groupTitle: groupId ? (gmap.get(groupId) || 'Без группы') : 'Моя группа',
-        creatorChatId: String(t.chatId),
-        creatorName: fullName(t.chatId),
-        assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
-        assigneeName: t.assigneeChatId ? fullName(t.assigneeChatId) : null,
-      };
-    });
+  return {
+    id: t.id,
+    text: t.text,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    deadlineAt: t.deadlineAt,
+    status,
+    groupId,
+    groupTitle: groupId ? (gmap.get(groupId) || 'Без группы') : 'Моя группа',
+    creatorChatId: String(t.chatId),
+    creatorName: fullName(t.chatId),
+    assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
+    assigneeName: t.assigneeChatId ? fullName(t.assigneeChatId) : null,
+
+    fromProcess: !!t.fromProcess,     // ← добавили 🔀
+    taskType: t.type || 'TASK',       // ← (необязательно, но удобно)
+  };
+});
+
 
     res.json({
       ok: true,

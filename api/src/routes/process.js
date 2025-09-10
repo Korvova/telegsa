@@ -5,6 +5,33 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const router = Router();
 
+/**
+ * Найти Inbox для группы и вернуть { boardChatId, inbox, nextOrder }.
+ * Inbox — колонка с именем `${groupId}::Inbox` у владельца группы.
+ */
+async function resolveInbox(prisma, groupId) {
+  const g = await prisma.group.findUnique({ where: { id: String(groupId) } });
+  if (!g) throw new Error('group_not_found');
+
+  const boardChatId = g.ownerChatId;
+  const GROUP_SEP = '::';
+  const inboxName = `${groupId}${GROUP_SEP}Inbox`;
+
+  const inbox = await prisma.column.findFirst({
+    where: { chatId: boardChatId, name: inboxName },
+  });
+  if (!inbox) throw new Error('inbox_not_found');
+
+  const last = await prisma.task.findFirst({
+    where: { columnId: inbox.id },
+    orderBy: { order: 'desc' },
+    select: { order: true },
+  });
+
+  const nextOrder = (last?.order ?? -1) + 1;
+  return { boardChatId, inbox, nextOrder };
+}
+
 /* GET /groups/:groupId/process */
 router.get('/groups/:groupId/process', async (req, res) => {
   const { groupId } = req.params;
@@ -34,14 +61,20 @@ router.get('/groups/:groupId/process', async (req, res) => {
   }
 });
 
-/* POST /groups/:groupId/process */
+/* POST /groups/:groupId/process
+ *
+ * Тело: { chatId, nodes, edges }
+ * - seed_task_<ID>  → ссылка на существующую задачу
+ * - seed_new_*      → создать новую задачу в Inbox группы
+ * После сохранения рёбер — создаём TaskRelation между связанными задачами.
+ */
 router.post('/groups/:groupId/process', async (req, res) => {
   const { groupId } = req.params;
   const { chatId, nodes = [], edges = [] } = req.body || {};
   if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
 
   try {
-    // найти/создать активный процесс
+    // 1) найти/создать активный процесс
     let proc = await prisma.groupProcess.findFirst({
       where: { groupId: String(groupId), isActive: true },
       orderBy: { createdAt: 'desc' },
@@ -57,83 +90,134 @@ router.post('/groups/:groupId/process', async (req, res) => {
       });
     }
 
-    // снести старую схему
+    // 2) снести старую схему процесса
     await prisma.processEdge.deleteMany({ where: { processId: proc.id } });
     await prisma.processNode.deleteMany({ where: { processId: proc.id } });
 
-    // карта clientId -> dbId
-    const idMap = new Map();
+    // 3) подготовка мапов
+    const idMap = new Map();          // clientId -> dbNodeId
+    const nodeTaskId = new Map();     // dbNodeId  -> taskId (если есть)
 
-    // создать узлы (id не передаём — БД генерит)
+    // ленивое получение Inbox (только если встретится seed_new_)
+    let inboxInfo = null;
+    const getInbox = async () => {
+      if (!inboxInfo) inboxInfo = await resolveInbox(prisma, groupId);
+      return inboxInfo;
+    };
+
+    // 4) создать узлы (и при необходимости задачи)
     for (const n of nodes) {
       const clientId = n?.id ? String(n.id) : null;
+      const title = String(n?.title || 'Новая задача').slice(0, 100);
+      const createdBy = n?.createdByChatId ? String(n.createdByChatId) : String(chatId);
 
-  const created = await prisma.processNode.create({
-  data: {
-    processId: proc.id,
-    title: String(n?.title || 'Новая задача').slice(0, 100),
+      let taskId = null;
 
-    posX: Number.isFinite(n?.posX) ? Number(n.posX) : 0,
-    posY: Number.isFinite(n?.posY) ? Number(n.posY) : 0,
+      // seed_task_<ID> → существующая задача
+      if (clientId && clientId.startsWith('seed_task_')) {
+        taskId = clientId.slice('seed_task_'.length);
+      }
+      // seed_new_* → создать новую задачу в Inbox
+      else if (clientId && clientId.startsWith('seed_new_')) {
+        const info = await getInbox(); // { boardChatId, inbox, nextOrder }
+        const assignee = n?.assigneeChatId ? String(n.assigneeChatId) : String(chatId);
 
-    // роли
-    assigneeChatId: n?.assigneeChatId ?? null,
-    createdByChatId: n?.createdByChatId ?? String(chatId),
+        const t = await prisma.task.create({
+          data: {
+            chatId: info.boardChatId,
+            columnId: info.inbox.id,
+            order: info.nextOrder,
+            text: title,
+            assigneeChatId: assignee,
+            type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
+            fromProcess: true, // 🔀
+          },
+        });
+        taskId = t.id;
+        // следующий order на будущее создание
+        inboxInfo.nextOrder++;
+      }
+      // если фронт прислал явный taskId — привяжем
+      else if (n?.taskId) {
+        taskId = String(n.taskId);
+      }
 
-    // тип/статус
-    type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
-    status: String(n?.status || 'PLANNED'),
+      // создаём сам узел процесса
+      const created = await prisma.processNode.create({
+        data: {
+          processId: proc.id,
+          title,
+          posX: Number.isFinite(n?.posX) ? Number(n.posX) : 0,
+          posY: Number.isFinite(n?.posY) ? Number(n.posY) : 0,
 
-    // стартовые условия
-    startMode: (n?.startMode ?? 'AFTER_ANY'),
-    startDate: n?.startDate ? new Date(n.startDate) : null,
-    startAfterDays: (Number.isFinite(n?.startAfterDays) ? Number(n.startAfterDays) : null),
+          assigneeChatId: n?.assigneeChatId ?? null,
+          createdByChatId: createdBy,
 
-    // условия отмены
-    cancelMode: (n?.cancelMode ?? 'NONE'),
+          type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
+          status: String(n?.status || 'PLANNED'),
 
-    // связь с задачей (если есть)
-    taskId: n?.taskId ?? null,
+          startMode: (n?.startMode ?? 'AFTER_ANY'),
+          startDate: n?.startDate ? new Date(n.startDate) : null,
+          startAfterDays: (Number.isFinite(n?.startAfterDays) ? Number(n.startAfterDays) : null),
 
-    // расширяемый карман
-    metaJson: n?.metaJson ?? null,
-  },
-});
+          cancelMode: (n?.cancelMode ?? 'NONE'),
 
-// watchers (если пришли)
-if (Array.isArray(n?.watchers) && n.watchers.length) {
-  await prisma.processNodeWatcher.createMany({
-    data: n.watchers
-      .filter(Boolean)
-      .map((w) => ({ nodeId: created.id, chatId: String(w) })),
-    skipDuplicates: true,
-  });
-}
+          taskId,                    // ← связь с реальной задачей (если есть/создали)
+          metaJson: n?.metaJson ?? null,
+        },
+      });
 
-if (clientId) idMap.set(clientId, created.id);
+      if (clientId) idMap.set(clientId, created.id);
+      if (taskId) nodeTaskId.set(created.id, taskId);
 
-
-     
+      // watchers (если пришли)
+      if (Array.isArray(n?.watchers) && n.watchers.length) {
+        await prisma.processNodeWatcher.createMany({
+          data: n.watchers
+            .filter(Boolean)
+            .map((w) => ({ nodeId: created.id, chatId: String(w) })),
+          skipDuplicates: true,
+        });
+      }
     }
 
-    // создать рёбра с ремапом source/target (id не передаём — БД генерит)
+    // 5) создать рёбра и связи задач (TaskRelation)
     for (const e of edges) {
       if (!e?.source || !e?.target) continue;
 
       const rawSrc = String(e.source);
       const rawTgt = String(e.target);
-      const src = idMap.get(rawSrc) ?? rawSrc;
-      const tgt = idMap.get(rawTgt) ?? rawTgt;
+      const srcDbId = idMap.get(rawSrc) ?? rawSrc;
+      const tgtDbId = idMap.get(rawTgt) ?? rawTgt;
 
-await prisma.processEdge.create({
-  data: {
-    processId: proc.id,
-    sourceNodeId: src,
-    targetNodeId: tgt,
-    enabled: (e?.enabled !== false), // по умолчанию true
-  },
-});
+      await prisma.processEdge.create({
+        data: {
+          processId: proc.id,
+          sourceNodeId: srcDbId,
+          targetNodeId: tgtDbId,
+          enabled: (e?.enabled !== false),
+        },
+      });
 
+      // если оба узла привязаны к задачам — добавим связь задач (без дублей)
+      const srcTaskId = nodeTaskId.get(srcDbId);
+      const tgtTaskId = nodeTaskId.get(tgtDbId);
+      if (srcTaskId && tgtTaskId) {
+        const exists = await prisma.taskRelation.findFirst({
+          where: { fromTaskId: srcTaskId, toTaskId: tgtTaskId },
+          select: { id: true },
+        });
+        if (!exists) {
+          await prisma.taskRelation.create({
+            data: {
+              fromTaskId: srcTaskId,
+              toTaskId: tgtTaskId,
+              groupId: String(groupId),
+              createdBy: String(chatId),
+            },
+          });
+        }
+      }
     }
 
     res.json({ ok: true, processId: proc.id });

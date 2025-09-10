@@ -37,28 +37,30 @@ import './GroupProcessPage.css';
 import { fetchProcess, saveProcess, getGroupMembers, getTask, type GroupMember } from '../../api';
 
 /* ================= Types ================= */
- type Props = {
-   chatId: string;
-   groupId?: string | null;
-   persistSeedSession?: boolean;
-   onOpenTask: (id: string) => void;
-   seedTaskId?: string | null;
-   seedAssigneeChatId?: string | null;
-   onSeedConsumed?: () => void;
-  /** Открыть новое полотно процесса именно для seed-задачи (игнорим процесс группы) */
+type Props = {
+  chatId: string;
+  groupId?: string | null;
+  persistSeedSession?: boolean;
+  onOpenTask: (id: string) => void;
+  seedTaskId?: string | null;
+  seedAssigneeChatId?: string | null;
+  onSeedConsumed?: () => void;
   forceSeedFromTask?: boolean;
-  /** Временная блокировка сохранения, чтобы не перезатереть групповой процесс */
   disableSave?: boolean;
 
   focusTaskId?: string | null;
 
-
-  
-  // 👇 новое:
+  // справа
   spawnNextForFocus?: boolean;
   onSpawnNextConsumed?: () => void;
 
- };
+  // ⬇️ НОВОЕ — слева
+  spawnPrevForFocus?: boolean;
+  onSpawnPrevConsumed?: () => void;
+
+  // ⬇️ НОВОЕ — сеанс «Новый ← Текущая»
+  seedPrev?: boolean;
+};
 
 type CondEdgeData = { icon?: string };
 
@@ -490,9 +492,17 @@ function GroupProcessInner({
   disableSave,
   focusTaskId,
   forceSeedFromTask,
-  // ↓ новое:
+
+  // справа
   spawnNextForFocus,
   onSpawnNextConsumed,
+
+  // ⬇️ НОВОЕ — слева
+  spawnPrevForFocus,
+  onSpawnPrevConsumed,
+
+  // ⬇️ НОВОЕ — «Новый ← Текущая»
+  seedPrev,
 }: {
   chatId: string;
   groupId: string | null;
@@ -502,11 +512,20 @@ function GroupProcessInner({
   forceSeedFromTask?: boolean;
   disableSave?: boolean;
   focusTaskId?: string | null;
-  persistSeedSession?: boolean; 
+  persistSeedSession?: boolean;
 
+  // справа
   spawnNextForFocus?: boolean;
   onSpawnNextConsumed?: () => void;
+
+  // слева
+  spawnPrevForFocus?: boolean;
+  onSpawnPrevConsumed?: () => void;
+
+  // seed «Новый ← Текущая»
+  seedPrev?: boolean;
 }) {
+
 
 
 
@@ -1201,44 +1220,43 @@ const loadProcess = useCallback(async () => {
     }
 
     // Если пришёл запрос «проростить» новый узел справа от фокусируемого
-    if (focusTaskId && spawnNextForFocus) {
-      const focusNode = rfNodes.find(
-        (n) => String(((n.data as any)?.taskId ?? '')) === String(focusTaskId)
-      );
+// Если нужно «проростить» новый узел слева от фокусируемого
+if (focusTaskId && spawnPrevForFocus) {
+  const focusNode = rfNodes.find(
+    (n) => String(((n.data as any)?.taskId ?? '')) === String(focusTaskId)
+  );
+  if (focusNode) {
+    const GAP_X = 140;
+    const NEW_W = 220;
+    const baseX = (focusNode.position?.x ?? 0);
+    const baseY = (focusNode.position?.y ?? 0);
 
-      if (focusNode) {
-        const gapX = 140;
-        const w = (focusNode.width ?? 220);
-        const x = (focusNode.position?.x ?? 0) + w + gapX;
-        const y = (focusNode.position?.y ?? 0);
+    const newId = 'spawn_prev_' + Date.now().toString(36);
+    const newNode: Node<EditableData> = {
+      id: newId,
+      type: 'editable',
+      position: { x: baseX - (GAP_X + NEW_W), y: baseY },
+      data: { label: '', autoEdit: true, onChange: onLabelChange, onAction: onNodeAction },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    };
 
-        const newId = 'seed_new_' + Date.now().toString(36);
-        const newNode: Node<EditableData> = {
-          id: newId,
-          type: 'editable',
-          position: { x, y },
-          data: {
-            label: '',
-            autoEdit: true,
-            onChange: onLabelChange,
-            onAction: onNodeAction,
-          },
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-        };
+    const newEdge: Edge = {
+      id: 'seed_e_' + Date.now().toString(36),
+      source: newId,
+      target: String(focusNode.id),
+      type: 'cond',
+      data: {},
+    };
 
-        const newEdge: Edge = {
-          id: 'seed_e_' + Date.now().toString(36),
-          source: String(focusNode.id),
-          target: newId,
-          type: 'cond',
-          data: {},
-        };
+    rfNodes = [...rfNodes, newNode];
+    rfEdges = [...rfEdges, newEdge];
+  }
+}
 
-        rfNodes = [...rfNodes, newNode];
-        rfEdges = [...rfEdges, newEdge];
-      }
-    }
+
+
+
 
     // 🔸 ЕДИНСТВЕННЫЙ seed-блок: сеансовый режим (BFS вправо от seedTaskId)
     if (seedTaskId && (forceSeedFromTask || persistSeedSession)) {
@@ -1274,37 +1292,56 @@ const loadProcess = useCallback(async () => {
         let subEdgesFinal = subEdges;
 
         const hasChildren = subEdges.some(e => String(e.source) === String(left.id));
-        if (!hasChildren) {
-          const gapX = 140;
-          const w = (left.width ?? 220);
-          const newId = 'seed_new_' + Date.now().toString(36);
 
-          const newNode: Node<EditableData> = {
-            id: newId,
-            type: 'editable',
-            position: {
-              x: (left.position?.x ?? 100) + w + gapX,
-              y: (left.position?.y ?? 100),
-            },
-            data: { label: '', autoEdit: true, onChange: onLabelChange, onAction: onNodeAction },
-            sourcePosition: Position.Right,
-            targetPosition: Position.Left,
-          };
 
-          const newEdge: Edge = {
-            id: 'seed_e_' + Date.now().toString(36),
-            source: String(left.id),
-            target: newId,
-            type: 'cond',
-            data: {},
-          };
 
-          subNodes = [...subNodes, newNode];
-          subEdgesFinal = [...subEdgesFinal, newEdge];
-        }
+if (!hasChildren) {
+  const GAP_X = 140;
+  const NEW_W = 220;
+  const baseX = (left.position?.x ?? 100);
+  const baseY = (left.position?.y ?? 100);
+  const newId = 'seed_new_' + Date.now().toString(36);
+
+  // если seedPrev: «Новый ← Текущая», иначе — «Текущая → Новый»
+  const newNode: Node<EditableData> = {
+    id: newId,
+    type: 'editable',
+    position: seedPrev
+      ? { x: baseX - (GAP_X + NEW_W), y: baseY }
+      : { x: baseX + (left.width ?? NEW_W) + GAP_X, y: baseY },
+    data: { label: '', autoEdit: true, onChange: onLabelChange, onAction: onNodeAction },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  };
+
+  const newEdge: Edge = seedPrev
+    ? {
+        id: 'seed_e_' + Date.now().toString(36),
+        source: newId,
+        target: String(left.id),
+        type: 'cond',
+        data: {},
+      }
+    : {
+        id: 'seed_e_' + Date.now().toString(36),
+        source: String(left.id),
+        target: newId,
+        type: 'cond',
+        data: {},
+      };
+
+  subNodes = [...subNodes, newNode];
+  subEdgesFinal = [...subEdgesFinal, newEdge];
+}
+
 
         setNodes(subNodes);
         setEdges(subEdgesFinal);
+
+onSpawnNextConsumed?.();
+onSpawnPrevConsumed?.();
+
+
         if (!persistSeedSession) onSeedConsumed?.();
 
         setTimeout(() => {
@@ -1706,6 +1743,10 @@ const handleSave = useCallback(async () => {
    return (
      <ReactFlowProvider>
        <div className="rf-scope" style={{ textAlign: 'initial', height: '100%', minHeight: 0 }}>
+
+
+
+
 <GroupProcessInner
   chatId={props.chatId}
   groupId={props.groupId ? String(props.groupId) : null}
@@ -1715,11 +1756,21 @@ const handleSave = useCallback(async () => {
   forceSeedFromTask={props.forceSeedFromTask}
   disableSave={props.disableSave}
   focusTaskId={props.focusTaskId}
-    persistSeedSession={props.persistSeedSession}
-  // ↓ новое:
+  persistSeedSession={props.persistSeedSession}
+
+  /* справа */
   spawnNextForFocus={props.spawnNextForFocus}
   onSpawnNextConsumed={props.onSpawnNextConsumed}
+
+  /* слева — НОВОЕ */
+  spawnPrevForFocus={props.spawnPrevForFocus}
+  onSpawnPrevConsumed={props.onSpawnPrevConsumed}
+
+  /* seed «Новый ← Текущая» — НОВОЕ */
+  seedPrev={props.seedPrev}
 />
+
+
 
        </div>
      </ReactFlowProvider>

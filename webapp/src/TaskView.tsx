@@ -2,28 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
-import type { Task, TaskMedia, GroupLabel } from './api';
-import { getTaskRelations } from './api'; // 👈 обычный импорт значения
-import { getTaskLabels, removeTaskLabel, listGroups, API_BASE, fetchBoard, moveTask, type Group } from './api';
-import { fetchProcess } from './api';
-
-
-import ResponsibleActions from './components/ResponsibleActions';
-import CommentsThread from './components/CommentsThread';
-import EventPanel from './components/EventPanel';
-import ShareNewTaskMenu from './components/ShareNewTaskMenu';
-
 import { createPortal } from 'react-dom';
 
-// сверху рядом с другими импортами
-import StageScroller, { type StageKey } from './components/StageScroller';
-
-import TaskLabelDrawer from './components/TaskLabelDrawer';
-
-
-
-
-
+import type { Task, TaskMedia, GroupLabel } from './api';
 import {
   getTask,
   getTaskWithGroup,
@@ -34,7 +15,25 @@ import {
   // участники группы
   type GroupMember,
   getGroupMembers,
+  // борда / группы / ярлыки
+  getTaskLabels,
+  removeTaskLabel,
+  listGroups,
+  API_BASE,
+  fetchBoard,
+  moveTask,
+  type Group,
+  setTaskDeadline,
 } from './api';
+import DeadlinePicker from './components/DeadlinePicker';
+
+import StageScroller, { type StageKey } from './components/StageScroller';
+import ResponsibleActions from './components/ResponsibleActions';
+import CommentsThread from './components/CommentsThread';
+import EventPanel from './components/EventPanel';
+import ShareNewTaskMenu from './components/ShareNewTaskMenu';
+import TaskLabelDrawer from './components/TaskLabelDrawer';
+import ProcessLinks from './components/ProcessLinks';
 
 type Props = {
   taskId: string;
@@ -52,43 +51,21 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [phase, setPhase] = useState<string | undefined>(undefined);
   const isDone = phase === 'Done';
 
-
   const [labelDrawerOpen, setLabelDrawerOpen] = useState(false);
-const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
+  const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
 
+  // список всех групп для селектора
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
 
+  // табы селектора
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
+  const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
 
+  const ownGroups = useMemo(() => allGroups.filter(g => g.kind === 'own'), [allGroups]);
+  const memberGroups = useMemo(() => allGroups.filter(g => g.kind === 'member'), [allGroups]);
 
-const [relations, setRelations] = useState<{outgoing: Array<{id:string;text:string}>, incoming: Array<{id:string;text:string}>}>({ outgoing: [], incoming: [] });
-
-
-// Если где-то ещё понадобится общий флаг:
-// const hasRelations = hasIncoming || hasOutgoing;
-
-const [procDeg, setProcDeg] = useState<{in:number; out:number} | null>(null);
-
-
-
-
-
-
-
-// список всех групп для селектора
-const [allGroups, setAllGroups] = useState<Group[]>([]);
-
-// табы селектора
-const [groupPickerOpen, setGroupPickerOpen] = useState(false);
-const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
-
-const ownGroups = useMemo(() => allGroups.filter(g => g.kind === 'own'), [allGroups]);
-const memberGroups = useMemo(() => allGroups.filter(g => g.kind === 'member'), [allGroups]);
-
-
-
-const [isClosing, setIsClosing] = useState(false);
-const [thumbStage, setThumbStage] = useState<0 | 1 | 2>(0); // 0=скрыт, 1=появление, 2=затухание
-
-
+  const [isClosing, setIsClosing] = useState(false);
+  const [thumbStage, setThumbStage] = useState<0 | 1 | 2>(0); // 0=скрыт, 1=появление, 2=затухание
 
   // заголовок группы
   const [groupTitle, setGroupTitle] = useState<string | null>(null);
@@ -107,72 +84,41 @@ const [thumbStage, setThumbStage] = useState<0 | 1 | 2>(0); // 0=скрыт, 1=�
       ''
   );
 
+  const [media, setMedia] = useState<TaskMedia[]>([]);
 
+  // Считаем вложение аудио, если kind = voice|audio, либо MIME начинается с audio/,
+  // либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
+  const isAudioLike = (m: TaskMedia) => {
+    const k = String((m as any)?.kind || '').toLowerCase();
+    if (k === 'voice' || k === 'audio') return true;
 
-const [media, setMedia] = useState<TaskMedia[]>([]);
+    const mime = String((m as any)?.mime || (m as any)?.contentType || '').toLowerCase();
+    if (mime.startsWith('audio/')) return true;
 
+    const name = String(m.fileName || '').toLowerCase();
+    return /\.(ogg|opus|oga|mp3|m4a|wav|webm)$/.test(name);
+  };
 
+  // аудио и «прочие документы»
+  const audioMedias = useMemo(() => media.filter(isAudioLike), [media]);
+  const docMedias = useMemo(
+    () => media.filter(m => m.kind !== 'photo' && !isAudioLike(m)),
+    [media]
+  );
 
+  // для модалки с фото
+  const photos = useMemo(() => media.filter(m => m.kind === 'photo'), [media]);
+  const [isLightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
-
-
-
-
-
-
-
-
-// Считаем вложение аудио, если kind = voice|audio,
-// либо MIME начинается с audio/, либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
-const isAudioLike = (m: TaskMedia) => {
-  const k = String((m as any)?.kind || '').toLowerCase();
-  if (k === 'voice' || k === 'audio') return true;
-
-  const mime = String((m as any)?.mime || (m as any)?.contentType || '').toLowerCase();
-  if (mime.startsWith('audio/')) return true;
-
-  const name = String(m.fileName || '').toLowerCase();
-  return /\.(ogg|opus|oga|mp3|m4a|wav|webm)$/.test(name);
-};
-
-
-
-// Новое: аудио и «прочие документы»
-const audioMedias = useMemo(() => media.filter(isAudioLike), [media]);
-const docMedias = useMemo(
-  () => media.filter(m => m.kind !== 'photo' && !isAudioLike(m)),
-  [media]
-);
-
-
-
-
-
-
-
-// NEW: для модалки с фото
-const photos = useMemo(() => media.filter(m => m.kind === 'photo'), [media]);
-const [isLightboxOpen, setLightboxOpen] = useState(false);
-const [lightboxIndex, setLightboxIndex] = useState(0);
-
-
-
-
-
-
-const cardRef = useRef<HTMLDivElement | null>(null);
-
-// куда «тянуть» карточку (в пикселях) при закрытии
-const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
-
-
-
-
+  // куда «тянуть» карточку (в пикселях) при закрытии
+  const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // участники текущей группы (для «Выбрать из группы»)
   const [members, setMembers] = useState<GroupMember[]>([]);
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
 
   // когда узнали groupId — подтягиваем участников
   useEffect(() => {
@@ -184,92 +130,29 @@ const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
       .catch(() => {});
   }, [groupId]);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const cur = await getTaskLabels(taskId);
+        if (alive) setTaskLabels(cur);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [taskId]);
 
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxOpen(false);
+      if (e.key === 'ArrowRight') setLightboxIndex(i => (i + 1) % Math.max(photos.length, 1));
+      if (e.key === 'ArrowLeft') setLightboxIndex(i => (i - 1 + Math.max(photos.length, 1)) % Math.max(photos.length, 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isLightboxOpen, photos.length]);
 
-useEffect(() => {
-  if (!task?.id) return;
-  getTaskRelations(task.id).then(r => {
-    if (r?.ok) setRelations({ outgoing: r.outgoing || [], incoming: r.incoming || [] });
-  }).catch(() => {});
-}, [task?.id]);
-
-
-
-useEffect(() => {
-  let alive = true;
-  (async () => {
-    try {
-      const cur = await getTaskLabels(taskId);
-      if (alive) setTaskLabels(cur);
-    } catch {}
-  })();
-  return () => { alive = false; };
-}, [taskId]);
-
-
-
-
-
-// + когда известны groupId / taskId — строим индекс степеней из процесса
-useEffect(() => {
-  let alive = true;
-  (async () => {
-    if (!groupId) { setProcDeg(null); return; }
-    try {
-      const r = await fetchProcess(String(groupId));
-      if (!r?.ok) return;
- const nodes = r.nodes || [];
-const edges = r.edges || [];
-const taskIdByNode = new Map<string, string>(); // nodeId -> taskId
-
-   
-for (const n of nodes) {
-  const meta = (() => { try { return JSON.parse(n.metaJson || '{}'); } catch { return {}; } })();
-  const tId = meta?.taskId ? String(meta.taskId) : '';
-  if (tId) taskIdByNode.set(String(n.id), tId);
-}
-
-const degByTask = new Map<string, { in: number; out: number }>();
-
-// edges come from API (ProcessEdgeDTO): use sourceNodeId/targetNodeId
-for (const e of edges as Array<{ sourceNodeId: string | number; targetNodeId: string | number }>) {
-  const sTask = taskIdByNode.get(String(e.sourceNodeId));
-  const tTask = taskIdByNode.get(String(e.targetNodeId));
-  if (sTask) degByTask.set(sTask, { in: (degByTask.get(sTask)?.in || 0), out: (degByTask.get(sTask)?.out || 0) + 1 });
-  if (tTask) degByTask.set(tTask, { in: (degByTask.get(tTask)?.in || 0) + 1, out: (degByTask.get(tTask)?.out || 0) });
-}
-
-      if (!alive) return;
-      setProcDeg(degByTask.get(String(taskId)) || null);
-    } catch {}
-  })();
-  return () => { alive = false; };
-}, [groupId, taskId]);
-
-// ⬇️ замените вычисление hasIncoming/hasOutgoing (или просто дополните):
-const hasIncoming = relations.incoming.length > 0 || (procDeg?.in ?? 0) > 0;
-const hasOutgoing = relations.outgoing.length > 0 || (procDeg?.out ?? 0) > 0;
-
-
-
-
-
-useEffect(() => {
-  if (!isLightboxOpen) return;
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') setLightboxOpen(false);
-    if (e.key === 'ArrowRight') setLightboxIndex(i => (i + 1) % Math.max(photos.length, 1));
-    if (e.key === 'ArrowLeft') setLightboxIndex(i => (i - 1 + Math.max(photos.length, 1)) % Math.max(photos.length, 1));
-  };
-  window.addEventListener('keydown', onKey);
-  return () => window.removeEventListener('keydown', onKey);
-}, [isLightboxOpen, photos.length]);
-
-
-
-const groupLabel = () => groupTitle || 'Моя группа';
-
-
+  const groupLabel = () => groupTitle || 'Моя группа';
 
   /* --- системная кнопка "Назад" --- */
   useEffect(() => {
@@ -305,18 +188,11 @@ const groupLabel = () => groupTitle || 'Моя группа';
         setTask(tResp.task);
         setText(tResp.task.text);
         try {
-
-
-
-const gResp = await getTaskWithGroup(taskId);
-groupIdRef.current = gResp?.groupId ?? null;
-setGroupId(groupIdRef.current);
-setPhase(gResp?.phase);
-setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
-
-
-
-
+          const gResp = await getTaskWithGroup(taskId);
+          groupIdRef.current = gResp?.groupId ?? null;
+          setGroupId(groupIdRef.current);
+          setPhase(gResp?.phase);
+          setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
         } catch {
           const gid = new URLSearchParams(location.search).get('group');
           groupIdRef.current = gid || null;
@@ -346,14 +222,14 @@ setMedia(Array.isArray(gResp?.media) ? gResp.media : []);
       new URLSearchParams(location.search).get('from');
     if (!me) return;
 
-listGroups(String(me))
-  .then((r) => {
-    if (r.ok) {
-      setAllGroups(r.groups || []);
-      const g = r.groups.find((x: any) => x.id === groupId);
-      setGroupTitle(g ? g.title : null);
-    }
-  })
+    listGroups(String(me))
+      .then((r) => {
+        if (r.ok) {
+          setAllGroups(r.groups || []);
+          const g = r.groups.find((x: any) => x.id === groupId);
+          setGroupTitle(g ? g.title : null);
+        }
+      })
       .catch(() => {});
   }, [groupId]);
 
@@ -376,129 +252,93 @@ listGroups(String(me))
     return () => { alive = false; clearTimeout(t); };
   }, [taskId, refreshTick]);
 
-
-
-
-
-// Плавное сворачивание карточки в 👍 и возврат на канбан
-
-const animateCloseWithThumb = (finalGroupId?: string | null) => {
-  // 0) снимаем остатки прошлого прогона
-  setIsClosing(false);
-  setPull({ x: 0, y: 0 });
-  setThumbStage(0);
-
-  // 1) показать 👍 по центру (слегка «впрыгивает»)
-  setThumbStage(1);
-
-  // 2) через небольшой лаг начинаем стягивать карточку в 👍
-  setTimeout(() => {
-    const el = cardRef.current;
-    if (el) {
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const centerX = vw / 2;
-      const centerY = vh / 2;
-
-      setPull({
-        x: centerX - cx,
-        y: centerY - cy,
-      });
-    }
-    setIsClosing(true);
-  }, 120); // карточка «зеленеет», затем старт «всасывания»
-
-  // 3) 👍 делает «бум» — увеличивается и начинает исчезать
-  setTimeout(() => {
-    setThumbStage(2);
-  }, 620);
-
-  // 4) завершение
-  setTimeout(() => {
-    setThumbStage(0);
+  // Плавное сворачивание карточки в 👍 и возврат на канбан
+  const animateCloseWithThumb = (finalGroupId?: string | null) => {
+    // 0) снимаем остатки прошлого прогона
     setIsClosing(false);
     setPull({ x: 0, y: 0 });
-    onClose(finalGroupId ?? groupIdRef.current);
-  }, 920);
-};
+    setThumbStage(0);
 
+    // 1) показать 👍 по центру (слегка «впрыгивает»)
+    setThumbStage(1);
 
+    // 2) через небольшой лаг начинаем стягивать карточку в 👍
+    setTimeout(() => {
+      const el = cardRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
 
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const centerX = vw / 2;
+        const centerY = vh / 2;
 
+        setPull({
+          x: centerX - cx,
+          y: centerY - cy,
+        });
+      }
+      setIsClosing(true);
+    }, 120); // карточка «зеленеет», затем старт «всасывания»
 
+    // 3) 👍 делает «бум» — увеличивается и начинает исчезать
+    setTimeout(() => {
+      setThumbStage(2);
+    }, 620);
 
+    // 4) завершение
+    setTimeout(() => {
+      setThumbStage(0);
+      setIsClosing(false);
+      setPull({ x: 0, y: 0 });
+      onClose(finalGroupId ?? groupIdRef.current);
+    }, 920);
+  };
 
+  // перенос в другую группу: находим Inbox целевой группы, двигаем через /tasks/:id/move
+  const moveToGroup = async (targetGroupId: string | null) => {
+    const by = meChatId;
+    try {
+      // 1) получаем борду целевой группы, чтобы взять колонку Inbox
+      const board = await fetchBoard(by, targetGroupId ?? undefined);
+      const columns = board?.columns || [];
+      // ищем Inbox (на бэке дефолтные колонки формируются; имя 'Inbox')
+      const inbox = columns.find(c => String(c.name).toLowerCase() === 'inbox') || columns[0];
+      if (!inbox) throw new Error('no_inbox');
 
-// перенос в другую группу: находим Inbox целевой группы, двигаем через /tasks/:id/move
-const moveToGroup = async (targetGroupId: string | null) => {
-  const by = meChatId;
-  try {
-    // 1) получаем борду целевой группы, чтобы взять колонку Inbox
-    const board = await fetchBoard(by, targetGroupId ?? undefined);
-    const columns = board?.columns || [];
-    // ищем Inbox (на бэке дефолтные колонки формируются; имя 'Inbox')
-    const inbox = columns.find(c => String(c.name).toLowerCase() === 'inbox') || columns[0];
-    if (!inbox) throw new Error('no_inbox');
+      // 2) двигаем задачу в начало Inbox целевой группы
+      await moveTask(taskId, inbox.id, 0);
 
-    // 2) двигаем задачу в начало Inbox целевой группы
-    await moveTask(taskId, inbox.id, 0);
+      // 3) локально обновим состояние и перерисуем
+      groupIdRef.current = targetGroupId ?? null;
+      setGroupId(groupIdRef.current);
 
-    // 3) локально обновим состояние и перерисуем
-    groupIdRef.current = targetGroupId ?? null;
-    setGroupId(groupIdRef.current);
+      // подтянем название
+      if (targetGroupId) {
+        const g = allGroups.find(x => x.id === targetGroupId);
+        setGroupTitle(g ? g.title : null);
+      } else {
+        setGroupTitle(null);
+      }
 
-// подтянем название
-if (targetGroupId) {
-  const g = allGroups.find(x => x.id === targetGroupId);
-  setGroupTitle(g ? g.title : null);
-} else {
-  setGroupTitle(null);
-}
-
-    // чтобы UI гарантированно обновился
-    setRefreshTick(t => t + 1);
-    WebApp?.HapticFeedback?.impactOccurred?.('light');
-  } catch (e) {
-    console.error('[TaskView] moveToGroup error', e);
-    alert('Не удалось перенести в выбранную группу');
-  } finally {
-
-
-try {
-  await Promise.all(taskLabels.map((l) => removeTaskLabel(taskId, l.id, meChatId)));
-} catch {}
-setTaskLabels([]);
-
-
-
-
-    setGroupPickerOpen(false);
-  }
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+      // чтобы UI гарантированно обновился
+      setRefreshTick(t => t + 1);
+      WebApp?.HapticFeedback?.impactOccurred?.('light');
+    } catch (e) {
+      console.error('[TaskView] moveToGroup error', e);
+      alert('Не удалось перенести в выбранную группу');
+    } finally {
+      try {
+        await Promise.all(taskLabels.map((l) => removeTaskLabel(taskId, l.id, meChatId)));
+      } catch {}
+      setTaskLabels([]);
+      setGroupPickerOpen(false);
+    }
+  };
 
   /* --- действия с задачей --- */
-
-
-
   const save = async () => {
     const val = text.trim();
     if (!val) return;
@@ -514,46 +354,33 @@ setTaskLabels([]);
     }
   };
 
+  const toggleDone = async () => {
+    setSaving(true);
+    try {
+      if (isDone) {
+        await reopenTask(taskId);
+        setPhase('Doing');
+        onChanged?.();
+        WebApp?.HapticFeedback?.impactOccurred?.('medium');
+      } else {
+        await completeTask(taskId);
+        setPhase('Done');
+        onChanged?.();
+        WebApp?.HapticFeedback?.notificationOccurred?.('success');
 
+        // даём карточке «позеленеть» 140–180мс и запускаем эффект
+        setTimeout(() => {
+          animateCloseWithThumb(groupIdRef.current);
+        }, 160);
 
-
-const toggleDone = async () => {
-  setSaving(true);
-  try {
-    if (isDone) {
-      await reopenTask(taskId);
-      setPhase('Doing');
-      onChanged?.();
-      WebApp?.HapticFeedback?.impactOccurred?.('medium');
-    } else {
-await completeTask(taskId);
-setPhase('Done');
-onChanged?.();
-WebApp?.HapticFeedback?.notificationOccurred?.('success');
-
-
-
-
-
-
-// даём карточке "позеленеть" 140–180мс и запускаем эффект
-setTimeout(() => {
-  animateCloseWithThumb(groupIdRef.current);
-}, 160);
-
-return; // не сбрасываем saving до завершения анимации
+        return; // не сбрасываем saving до завершения анимации
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка операции');
+    } finally {
+      setSaving(false);
     }
-  } catch (e: any) {
-    setError(e?.message || 'Ошибка операции');
-  } finally {
-    setSaving(false);
-  }
-};
-
-
-
-
-
+  };
 
   const handleDelete = async () => {
     if (!confirm('Удалить задачу? Действие необратимо.')) return;
@@ -569,9 +396,6 @@ return; // не сбрасываем saving до завершения анима
       WebApp?.HapticFeedback?.notificationOccurred?.('error');
     }
   };
-
-  // === Поделиться → открываем системный шэр с prepared message ===
-
 
   /* --- UI --- */
   if (loading) return <div style={{ padding: 16 }}>Загрузка…</div>;
@@ -592,25 +416,18 @@ return; // не сбрасываем saving до завершения анима
 
   if (!task) {
     return (
-   
-
-<div
-  style={{
-    minHeight: '100vh',
-    background: '#0f1216',
-    color: '#e8eaed',
-    padding: 16,
-    transition: 'opacity 360ms ease, transform 360ms ease, filter 360ms ease',
-    opacity: isClosing ? 0 : 1,
-    transform: isClosing ? 'scale(0.92)' : 'scale(1)',
-    filter: isClosing ? 'blur(2px)' : 'none',
-  }}
->
-
-
-
-
-
+      <div
+        style={{
+          minHeight: '100vh',
+          background: '#0f1216',
+          color: '#e8eaed',
+          padding: 16,
+          transition: 'opacity 360ms ease, transform 360ms ease, filter 360ms ease',
+          opacity: isClosing ? 0 : 1,
+          transform: isClosing ? 'scale(0.92)' : 'scale(1)',
+          filter: isClosing ? 'blur(2px)' : 'none',
+        }}
+      >
         {Header}
 
         <div style={{ background: '#1b2030', border: '1px solid #2a3346', borderRadius: 16, padding: 16 }}>
@@ -643,221 +460,121 @@ return; // не сбрасываем saving до завершения анима
     <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
       {Header}
 
-<div
-  ref={cardRef}
-  style={{
-    background: isDone ? '#15251a' : '#1b2030',
-    border: `1px solid ${isDone ? '#2c4a34' : '#2a3346'}`,
-    borderRadius: 16,
-    padding: 16,
+      <div
+        ref={cardRef}
+        style={{
+          background: isDone ? '#15251a' : '#1b2030',
+          border: `1px solid ${isDone ? '#2c4a34' : '#2a3346'}`,
+          borderRadius: 16,
+          padding: 16,
 
-    // анимация «всасывания»
-    transition:
-      'transform 520ms cubic-bezier(.2,.9,.2,1), opacity 520ms ease, filter 520ms ease',
-    transformOrigin: '50% 50%',
-    transform: isClosing
-      ? `translate(${pull.x}px, ${pull.y}px) scale(0.72)`
-      : 'translate(0,0) scale(1)',
-    opacity: isClosing ? 0 : 1,
-    filter: isClosing ? 'blur(2px)' : 'none',
-  }}
->
+          // анимация «всасывания»
+          transition:
+            'transform 520ms cubic-bezier(.2,.9,.2,1), opacity 520ms ease, filter 520ms ease',
+          transformOrigin: '50% 50%',
+          transform: isClosing
+            ? `translate(${pull.x}px, ${pull.y}px) scale(0.72)`
+            : 'translate(0,0) scale(1)',
+          opacity: isClosing ? 0 : 1,
+          filter: isClosing ? 'blur(2px)' : 'none',
+        }}
+      >
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 8 }}>
+          <div style={{ fontSize: 14, opacity: 0.85 }}>
+            {(() => {
+              const creator = (task as any)?.creatorName;
+              if (task?.type === 'EVENT') {
+                return creator
+                  ? <>Событие от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
+                  : 'Событие';
+              }
+              return creator
+                ? <>Задача от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
+                : 'Задача';
+            })()}
+          </div>
 
-     
-
-
-
-<div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 8 }}>
-  <div style={{ fontSize: 14, opacity: 0.85 }}>
-    {(() => {
-      const creator = (task as any)?.creatorName;
-      if (task?.type === 'EVENT') {
-        return creator
-          ? <>Событие от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
-          : 'Событие';
-      }
-      return creator
-        ? <>Задача от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
-        : 'Задача';
-    })()}
-  </div>
-
-  {task?.id ? (
-    <ShareNewTaskMenu
-      taskId={task.id}
-      isEvent={task?.type === 'EVENT'}
-      onDelete={handleDelete}
-    />
-  ) : null}
-</div>
-
-
-
-
-{/* Группа */}
-<div style={{ margin: '6px 0 10px', fontSize: 13, opacity: .85 }}>
-  Группа:{' '}
-  <button
-    onClick={() => setGroupPickerOpen(true)}
-    title="Выбрать другую группу"
-    style={{
-      background: 'transparent',
-      border: '1px solid #2a3346',
-      borderRadius: 8,
-      padding: '2px 8px',
-      color: '#8aa0ff',
-      cursor: 'pointer'
-    }}
-  >
-    {groupLabel()}
-  </button>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-        <div style={{ position: 'relative', width: '100%' }}>
-        <textarea
-           value={text}
-           onChange={(e) => setText(e.target.value)}
-           rows={6}
-           style={{
-             width: '95%',
-             background: '#121722',
-             color: '#e8eaed',
-             border: '1px solid #2a3346',
-             borderRadius: 12,
-             padding: 10,
-             resize: 'vertical',
-           }}
-         />
-
-          {/* Process dot */}
-
-
-{/* ==== Процесс-точки ==== */}
-{/* Левая точка: показываем только если есть входящая связь */}
-{hasIncoming && (
-  <button
-    aria-label="Связи слева — открыть процесс"
-
-
-
-    onClick={() => {
-
-
-
-      try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
-
-
-
-
-window.dispatchEvent(new CustomEvent('open-process', {
-  detail: {
-    groupId,
-    focusTaskId: task.id,         // сфокусироваться на текущей
-    spawnNextForFocus: true,      // досадить новый узел справа
-    backToTaskId: task.id,
-  },
-}));
-
-
-
-      onClose?.(groupId);
-    }}
-    style={{
-      position: 'absolute',
-      left: -12,
-      bottom: 8,
-      width: 24,
-      height: 24,
-      borderRadius: '50%',
-      border: '1px solid #2a3346',
-      background: '#111', // активная
-      boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-    }}
-    title="Открыть процесс (входящие связи)"
-  />
-)}
-
-{/* Правая точка: активная если есть исходящие, иначе серая = можно продолжить */}
-<button
-  aria-label="Связи справа / продолжить процесс"
-
-
-
-onClick={() => {
-  try { WebApp.HapticFeedback?.impactOccurred?.('soft'); } catch {}
-
- // если есть исходящие — просто открыть процесс и сфокусироваться
- if (hasOutgoing) {
-   window.dispatchEvent(new CustomEvent('open-process', {
-     detail: { groupId, focusTaskId: task.id, backToTaskId: task.id },
-   }));
-   onClose?.(groupId);
-   return;
- }
-
- // исходящих нет → выбираем режим в зависимости от того, есть ли узел в процессе
- const inProcess = procDeg !== null; // procDeg ставится только если нашёлся node в процессе
- window.dispatchEvent(new CustomEvent('open-process', {
-   detail: inProcess
-     ? {
-         groupId,
-         focusTaskId: task.id,
-         spawnNextForFocus: true, // досадить новый узел справа
-         backToTaskId: task.id,
-       }
-     : {
-         groupId,
-         seedTaskId: task.id,      // открыть подграф «Текущая → Новый»
-         seedAssigneeChatId: (task.assigneeChatId || meChatId || null),
-         backToTaskId: task.id,
-       },
- }));
- onClose?.(groupId);
-}}
-
-
-
-
-
-
-  style={{
-    position: 'absolute',
-    right: -12,
-    bottom: 8,
-    width: 24,
-    height: 24,
-    borderRadius: '50%',
-    border: '1px solid #2a3346',
-    background: hasOutgoing ? '#111' : '#9aa0a6', // активная или серая
-    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-  }}
-  title={hasOutgoing ? 'Открыть процесс (есть продолжение)' : 'Продолжить процесс (создать связь)'}
-/>
-
-
-
-
-
-
+          {task?.id ? (
+            <ShareNewTaskMenu
+              taskId={task.id}
+              isEvent={task?.type === 'EVENT'}
+              onDelete={handleDelete}
+            />
+          ) : null}
         </div>
 
-         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div> 
+        {/* Группа */}
+        <div style={{ margin: '6px 0 10px', fontSize: 13, opacity: .85 }}>
+          Группа{' '}
+          <button
+            onClick={() => setGroupPickerOpen(true)}
+            title="Выбрать другую группу"
+            style={{
+              background: 'transparent',
+             border: '1px solid #2a3346',
+              borderRadius: 8,
+              padding: '2px 8px',
+              color: '#8aa0ff',
+              cursor: 'pointer'
+            }}
+          >
+            {groupLabel()}
+          </button>
 
+          {/* 🚩 Дедлайн */}
+          <button
+            onClick={() => setDeadlineOpen(true)}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: '#202840',
+              color: new Date(String(task?.deadlineAt || '')).getTime() < Date.now() ? '#fecaca' : '#e8eaed',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+            aria-label="Установить дедлайн"
+            title="Установить дедлайн"
+          >
+            <span>🚩</span>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>
+              {task?.deadlineAt ? new Date(String(task.deadlineAt)).toLocaleString() : 'Без дедлайна'}
+            </span>
+          </button>
+        </div>
 
+        <div style={{ position: 'relative', width: '100%' }}>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={6}
+            style={{
+              width: '95%',
+              background: '#121722',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              borderRadius: 12,
+              padding: 10,
+              resize: 'vertical',
+            }}
+          />
 
+          {/* Точки и списки связей процесса */}
+          <ProcessLinks
+            taskId={task.id}
+            taskAssigneeChatId={task.assigneeChatId ?? null}
+            groupId={groupId}
+            meChatId={meChatId}
+            onClose={onClose}
+            showLists
+          />
+        </div>
 
+        <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>ID: {task.id}</div>
 
-  <StageScroller
+        <StageScroller
           taskId={task.id}
           type={task.type ?? 'TASK'}
           currentPhase={(phase as StageKey) || 'Inbox'}
@@ -868,7 +585,6 @@ onClick={() => {
             onChanged?.();
           }}
           onRequestComplete={() => {
-            // ваша текущая логика завершения + анимация (как в toggleDone)
             (async () => {
               try {
                 await completeTask(taskId);
@@ -885,13 +601,7 @@ onClick={() => {
           }}
         />
 
-
-
         <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-
-
-       
-
           <button
             onClick={save}
             disabled={saving || !text.trim()}
@@ -922,193 +632,342 @@ onClick={() => {
             {isDone ? 'Возобновить → Doing' : 'Завершить'}
           </button>
 
+          <button
+            onClick={() => setLabelDrawerOpen(true)}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: '#202840',
+              color: '#e8eaed',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+            aria-label="Выбрать ярлык для задачи"
+            title="Выбрать ярлык"
+          >
+            <span>🏷️</span>
 
+            {taskLabels.length ? (
+              <span
+                style={{
+                  padding: '2px 8px',
+                  border: '1px solid #2a3346',
+                  borderRadius: 999,
+                  background: '#12202a',
+                  color: '#d7ffd7',
+                  fontSize: 12,
+                  lineHeight: '16px',
+                  maxWidth: 160,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={taskLabels.map(l => l.title).join(', ')}
+              >
+                {taskLabels[0].title}
+                {taskLabels.length > 1 ? ` +${taskLabels.length - 1}` : ''}
+              </span>
+            ) : (
+              <span style={{ opacity: .7, fontSize: 12 }}>Без ярлыка</span>
+            )}
+          </button>
 
-
-
-<button
-  onClick={() => setLabelDrawerOpen(true)}
-  style={{
-    padding: '10px 14px',
-    borderRadius: 12,
-    border: '1px solid #2a3346',
-    background: '#202840',
-    color: '#e8eaed',
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 8,
-  }}
-  aria-label="Выбрать ярлык для задачи"
-  title="Выбрать ярлык"
->
-  <span>🏷️</span>
-
-  {taskLabels.length ? (
-    <span
-      style={{
-        padding: '2px 8px',
-        border: '1px solid #2a3346',
-        borderRadius: 999,
-        background: '#12202a',
-        color: '#d7ffd7',
-        fontSize: 12,
-        lineHeight: '16px',
-        maxWidth: 160,
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      }}
-      title={taskLabels.map(l => l.title).join(', ')}
-    >
-      {taskLabels[0].title}
-      {taskLabels.length > 1 ? ` +${taskLabels.length - 1}` : ''}
-    </span>
-  ) : (
-    <span style={{ opacity: .7, fontSize: 12 }}>Без ярлыка</span>
-  )}
-</button>
-
-
-
-
-
-
-
-          {/* Постановщик */}
-     {/* Организатор / Постановщик */}
-
-
-
-          {/* Ответственный / действия назначения */}
-    {/* Для событий — ответственного не показываем (есть участники в EventPanel) */}
-
-{task?.type !== 'EVENT' && (
-  task.assigneeChatId ? (
-    <div
-      style={{
-        padding: '10px 14px',
-        borderRadius: 12,
-        border: '1px solid #2a3346',
-        background: '#15251a',
-        color: '#d7ffd7',
-        display: 'inline-flex',
-        gap: 8,
-        alignItems: 'center',
-      }}
-      title="Ответственный по задаче"
-    >
-      <span style={{ opacity: 0.8 }}>Ответственный:</span>
-      <strong>{task.assigneeName || task.assigneeChatId}</strong>
-    </div>
-  ) : (
-    <ResponsibleActions
-      taskId={taskId}
-      taskTitle={text}
-      groupId={groupId || undefined}
-      meChatId={meChatId}
-      currentAssigneeChatId={task?.assigneeChatId ?? null}
-      members={members.map((m) => ({
-        chatId: String(m.chatId),
-        firstName: m.name || undefined,
-      }))}
-      canAssign={true}
-      onAssigned={() => setRefreshTick((t) => t + 1)}
-    />
-  )
-)}
-
-
-
+          {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
+          {task?.type !== 'EVENT' && (
+            task.assigneeChatId ? (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  border: '1px solid #2a3346',
+                  background: '#15251a',
+                  color: '#d7ffd7',
+                  display: 'inline-flex',
+                  gap: 8,
+                  alignItems: 'center',
+                }}
+                title="Ответственный по задаче"
+              >
+                <span style={{ opacity: 0.8 }}>Ответственный:</span>
+                <strong>{task.assigneeName || task.assigneeChatId}</strong>
+              </div>
+            ) : (
+              <ResponsibleActions
+                taskId={taskId}
+                taskTitle={text}
+                groupId={groupId || undefined}
+                meChatId={meChatId}
+                currentAssigneeChatId={task?.assigneeChatId ?? null}
+                members={members.map((m) => ({
+                  chatId: String(m.chatId),
+                  firstName: m.name || undefined,
+                }))}
+                canAssign={true}
+                onAssigned={() => setRefreshTick((t) => t + 1)}
+              />
+            )
+          )}
         </div>
 
+        {media.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 14, opacity: .85, marginBottom: 6 }}>Вложения</div>
 
+            {/* Фото */}
+            {photos.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {photos.map((m, idx) => (
+                  <button
+                    key={m.id}
+                    onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+                    title="Открыть фото"
+                    style={{
+                      display: 'inline-block',
+                      border: '1px solid #2a3346',
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      padding: 0,
+                      background: 'transparent',
+                      cursor: 'zoom-in'
+                    }}
+                  >
+                    <img
+                      src={`${API_BASE}${m.url}`}
+                      alt={m.fileName || 'Фото'}
+                      style={{ maxWidth: 160, maxHeight: 160, display: 'block' }}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
 
+            {/* Аудио/голосовые */}
+            {audioMedias.length > 0 && (
+              <div style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
+                {audioMedias.map((m) => (
+                  <div key={m.id} style={{ padding: 8, border: '1px solid #2a3346', borderRadius: 8 }}>
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={`${API_BASE}${m.url}`}
+                      style={{ width: '100%' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                      <div style={{ fontSize: 12, opacity: .75 }}>
+                        {m.fileName || 'Голосовое сообщение'}
+                      </div>
+                      {!!(m as any).duration && (
+                        <div style={{ fontSize: 12, opacity: .65 }}>
+                          ~{(m as any).duration}s
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-{media.length > 0 && (
-  <div style={{ marginTop: 12 }}>
-    <div style={{ fontSize: 14, opacity: .85, marginBottom: 6 }}>Вложения</div>
+            {/* Прочие документы */}
+            {docMedias.length > 0 && (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {docMedias.map((m) => (
+                  <a
+                    key={m.id}
+                    href={`${API_BASE}${m.url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      padding: 8,
+                      border: '1px solid #2a3346',
+                      borderRadius: 8,
+                      color: '#8aa0ff',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    📎 {m.fileName || 'Документ'}
+                    {m.fileSize ? ` · ${(m.fileSize/1024/1024).toFixed(2)} MB` : ''}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-    {/* Фото */}
-    {photos.length > 0 && (
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        {photos.map((m, idx) => (
-          <button
-            key={m.id}
-            onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
-            title="Открыть фото"
+        {task?.type === 'EVENT' && (
+          <EventPanel
+            eventId={task.id}
+            startAt={String(task.startAt || '')}   // строка
+            endAt={task.endAt ?? null}
+            chatId={meChatId}
+            isOrganizer={Boolean((task as any)?.meIsOrganizer)}
+          />
+        )}
+
+        {/* Комментарии */}
+        <CommentsThread taskId={taskId} meChatId={meChatId} />
+      </div>
+
+      {/* Портал с 👍, вне любых трансформов */}
+      <DeadlinePicker
+        open={deadlineOpen}
+        value={task?.deadlineAt || null}
+        onClose={() => setDeadlineOpen(false)}
+        onChange={async (iso) => {
+          try {
+            const r = await setTaskDeadline(taskId, meChatId, iso);
+            if (r?.ok && r.task) {
+              setTask((prev) => (prev ? { ...prev, deadlineAt: r.task!.deadlineAt || null } : prev));
+              onChanged();
+            }
+          } catch {}
+        }}
+      />
+      {(isClosing || thumbStage !== 0) &&
+        createPortal(
+          <div
             style={{
-              display: 'inline-block',
-              border: '1px solid #2a3346',
-              borderRadius: 8,
-              overflow: 'hidden',
-              padding: 0,
-              background: 'transparent',
-              cursor: 'zoom-in'
+              position: 'fixed',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 99999,
             }}
           >
-            <img
-              src={`${API_BASE}${m.url}`}
-              alt={m.fileName || 'Фото'}
-              style={{ maxWidth: 160, maxHeight: 160, display: 'block' }}
-            />
-          </button>
-        ))}
-      </div>
-    )}
+            <div
+              style={{
+                fontSize: 96,
+                transform:
+                  thumbStage === 1 ? 'scale(1.0)' : thumbStage === 2 ? 'scale(1.22)' : 'scale(0.8)',
+                opacity: thumbStage === 1 ? 1 : 0,
+                transition: 'transform 300ms cubic-bezier(.2,.9,.2,1), opacity 300ms ease',
+                filter: 'drop-shadow(0 10px 32px rgba(0,0,0,.45))',
+                willChange: 'transform, opacity',
+              }}
+            >
+              👍
+            </div>
+          </div>,
+          document.body
+        )
+      }
 
-    {/* Аудио/голосовые */}
-    {audioMedias.length > 0 && (
-      <div style={{ display: 'grid', gap: 8, marginBottom: 8 }}>
-        {audioMedias.map((m) => (
-          <div key={m.id} style={{ padding: 8, border: '1px solid #2a3346', borderRadius: 8 }}>
-            <audio
-              controls
-              preload="metadata"
-              src={`${API_BASE}${m.url}`}
-              style={{ width: '100%' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-              <div style={{ fontSize: 12, opacity: .75 }}>
-                {m.fileName || 'Голосовое сообщение'}
-              </div>
-              {!!(m as any).duration && (
-                <div style={{ fontSize: 12, opacity: .65 }}>
-                  ~{(m as any).duration}s
-                </div>
+      {groupPickerOpen && (
+        <div
+          onClick={() => setGroupPickerOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.45)',
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1b2030',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              borderRadius: 12,
+              padding: 12,
+              width: 'min(460px, 92vw)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontWeight: 700 }}>Перенести в группу</div>
+              <button
+                onClick={() => setGroupPickerOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* табы */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <button
+                onClick={() => setGroupTab('own')}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #2a3346',
+                  background: groupTab === 'own' ? '#1b2030' : '#121722',
+                  color: groupTab === 'own' ? '#8aa0ff' : '#e8eaed',
+                  cursor: 'pointer',
+                }}
+              >
+                Мои проекты ({ownGroups.length})
+              </button>
+              <button
+                onClick={() => setGroupTab('member')}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  border: '1px solid #2a3346',
+                  background: groupTab === 'member' ? '#1b2030' : '#121722',
+                  color: groupTab === 'member' ? '#8aa0ff' : '#e8eaed',
+                  cursor: 'pointer',
+                }}
+              >
+                Проекты со мной ({memberGroups.length})
+              </button>
+            </div>
+
+            {/* список */}
+            <div style={{ display: 'grid', gap: 8, maxHeight: '50vh', overflow: 'auto' }}>
+              {groupTab === 'own' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="mv_group"
+                    checked={!groupId}
+                    onChange={() => moveToGroup(null)}
+                  />
+                  <span>Моя группа (личная доска)</span>
+                </label>
               )}
+
+              {groupTab === 'own'
+                ? ownGroups.map((g) => (
+                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="mv_group"
+                        checked={groupId === g.id}
+                        onChange={() => moveToGroup(g.id)}
+                      />
+                      <span>{g.title}</span>
+                    </label>
+                  ))
+                : memberGroups.map((g) => (
+                    <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="mv_group"
+                        checked={groupId === g.id}
+                        onChange={() => moveToGroup(g.id)}
+                      />
+                      <span>
+                        {g.title}
+                        {g.ownerName && (
+                          <span style={{ opacity: 0.7, marginLeft: 6 }}>
+                            👑 {g.ownerName}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  ))}
             </div>
           </div>
-        ))}
-      </div>
-    )}
-
-    {/* Прочие документы */}
-    {docMedias.length > 0 && (
-      <div style={{ display: 'grid', gap: 6 }}>
-        {docMedias.map((m) => (
-          <a
-            key={m.id}
-            href={`${API_BASE}${m.url}`}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              padding: 8,
-              border: '1px solid #2a3346',
-              borderRadius: 8,
-              color: '#8aa0ff',
-              textDecoration: 'none'
-            }}
-          >
-            📎 {m.fileName || 'Документ'}
-            {m.fileSize ? ` · ${(m.fileSize/1024/1024).toFixed(2)} MB` : ''}
-          </a>
-        ))}
-      </div>
-    )}
-  </div>
-)}
-
+        </div>
+      )}
 
 
 
@@ -1127,12 +986,10 @@ onClick={() => {
       padding: 16
     }}
   >
-    {/* контейнер картинки: клики по фону закрывают, по содержимому — нет */}
     <div
       onClick={(e) => e.stopPropagation()}
       style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}
     >
-      {/* изображение */}
       <img
         src={`${API_BASE}${photos[lightboxIndex].url}`}
         alt={photos[lightboxIndex].fileName || 'Фото'}
@@ -1144,18 +1001,6 @@ onClick={() => {
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
         }}
       />
-
-
-
-
-
-
-
-
-
-
-
-      {/* Крестик */}
       <button
         onClick={() => setLightboxOpen(false)}
         aria-label="Закрыть"
@@ -1173,8 +1018,6 @@ onClick={() => {
       >
         ✕
       </button>
-
-      {/* Навигация (если несколько фото) */}
       {photos.length > 1 && (
         <>
           <button
@@ -1220,268 +1063,19 @@ onClick={() => {
 
 
 
-{task?.type === 'EVENT' && (
-  <EventPanel
-    eventId={task.id}
-    startAt={String(task.startAt || '')}   // строка
-    endAt={task.endAt ?? null}
-    chatId={meChatId}
-    isOrganizer={Boolean((task as any)?.meIsOrganizer)}
-  />
-)}
 
-      
-{/* Связи */}
-{(relations.incoming.length > 0 || relations.outgoing.length > 0) && (
-  <div style={{ marginTop: 16, borderTop: '1px solid #2a3346', paddingTop: 12 }}>
-    <div style={{ display: 'grid', gap: 8 }}>
-      {relations.outgoing.length > 0 && (
-        <div>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>→ Связанные</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {relations.outgoing.map(t => (
-              <button
-                key={t.id}
-                onClick={() => {
-                  // откроем другую задачу: сообщим App и закроем текущую
-                  window.dispatchEvent(new CustomEvent('open-task', { detail: { taskId: t.id }}));
-                  onClose?.(groupId);
-                }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #2a3346',
-                  borderRadius: 8,
-                  padding: '6px 8px',
-                  color: '#8aa0ff',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                }}
-                title={t.text}
-              >
-                {t.text}
-              </button>
-            ))}
-          </div>
-        </div>
+
+
+      {labelDrawerOpen && (
+        <TaskLabelDrawer
+          open={labelDrawerOpen}
+          onClose={() => setLabelDrawerOpen(false)}
+          taskId={taskId}
+          groupId={groupId}
+          chatId={meChatId}
+          onSelectionChange={(ls) => setTaskLabels(ls)}
+        />
       )}
-
-      {relations.incoming.length > 0 && (
-        <div>
-          <div style={{ fontWeight: 600, marginTop: 8, marginBottom: 6 }}>← Связаны с этой</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {relations.incoming.map(t => (
-              <button
-                key={t.id}
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('open-task', { detail: { taskId: t.id }}));
-                  onClose?.(groupId);
-                }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #2a3346',
-                  borderRadius: 8,
-                  padding: '6px 8px',
-                  color: '#8aa0ff',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                }}
-                title={t.text}
-              >
-                {t.text}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
-)}
-
-
-
-
-
-
-<CommentsThread taskId={taskId} meChatId={meChatId} />
-
-
-
-      </div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-{/* Портал с 👍, вне любых трансформов */}
-{(isClosing || thumbStage !== 0) &&
-  createPortal(
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        pointerEvents: 'none',
-        zIndex: 99999,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 96,
-          transform:
-            thumbStage === 1 ? 'scale(1.0)' : thumbStage === 2 ? 'scale(1.22)' : 'scale(0.8)',
-          opacity: thumbStage === 1 ? 1 : 0,
-          transition: 'transform 300ms cubic-bezier(.2,.9,.2,1), opacity 300ms ease',
-          filter: 'drop-shadow(0 10px 32px rgba(0,0,0,.45))',
-          willChange: 'transform, opacity',
-        }}
-      >
-        👍
-      </div>
-    </div>,
-    document.body
-  )
-}
-
-
-
-
-
-
-{groupPickerOpen && (
-  <div
-    onClick={() => setGroupPickerOpen(false)}
-    style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,.45)',
-      zIndex: 2000,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}
-  >
-    <div
-      onClick={(e) => e.stopPropagation()}
-      style={{
-        background: '#1b2030',
-        color: '#e8eaed',
-        border: '1px solid #2a3346',
-        borderRadius: 12,
-        padding: 12,
-        width: 'min(460px, 92vw)'
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ fontWeight: 700 }}>Перенести в группу</div>
-        <button
-          onClick={() => setGroupPickerOpen(false)}
-          style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* табы */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-        <button
-          onClick={() => setGroupTab('own')}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 999,
-            border: '1px solid #2a3346',
-            background: groupTab === 'own' ? '#1b2030' : '#121722',
-            color: groupTab === 'own' ? '#8aa0ff' : '#e8eaed',
-            cursor: 'pointer',
-          }}
-        >
-          Мои проекты ({ownGroups.length})
-        </button>
-        <button
-          onClick={() => setGroupTab('member')}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 999,
-            border: '1px solid #2a3346',
-            background: groupTab === 'member' ? '#1b2030' : '#121722',
-            color: groupTab === 'member' ? '#8aa0ff' : '#e8eaed',
-            cursor: 'pointer',
-          }}
-        >
-          Проекты со мной ({memberGroups.length})
-        </button>
-      </div>
-
-      {/* список */}
-      <div style={{ display: 'grid', gap: 8, maxHeight: '50vh', overflow: 'auto' }}>
-        {groupTab === 'own' && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input
-              type="radio"
-              name="mv_group"
-              checked={!groupId}
-              onChange={() => moveToGroup(null)}
-            />
-            <span>Моя группа (личная доска)</span>
-          </label>
-        )}
-
-        {groupTab === 'own'
-          ? ownGroups.map((g) => (
-              <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="mv_group"
-                  checked={groupId === g.id}
-                  onChange={() => moveToGroup(g.id)}
-                />
-                <span>{g.title}</span>
-              </label>
-            ))
-          : memberGroups.map((g) => (
-              <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="radio"
-                  name="mv_group"
-                  checked={groupId === g.id}
-                  onChange={() => moveToGroup(g.id)}
-                />
-                <span>
-                  {g.title}
-                  {g.ownerName && (
-                    <span style={{ opacity: 0.7, marginLeft: 6 }}>
-                      👑 {g.ownerName}
-                    </span>
-                  )}
-                </span>
-              </label>
-            ))}
-      </div>
-    </div>
-  </div>
-)}
-
-
-{labelDrawerOpen && (
-  <TaskLabelDrawer
-    open={labelDrawerOpen}
-    onClose={() => setLabelDrawerOpen(false)}
-    taskId={taskId}
-    groupId={groupId}
-    chatId={meChatId}
-    onSelectionChange={(ls) => setTaskLabels(ls)}
-  />
-)}
     </div>
   );
 }
-

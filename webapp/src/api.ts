@@ -11,6 +11,7 @@ export type Task = {
   columnId: string;
   createdAt: string;
   updatedAt: string;
+  deadlineAt?: string | null;
 
     fromProcess?: boolean; // 🔀
 
@@ -627,6 +628,7 @@ export type TaskFeedItem = {
   text: string;
   updatedAt: string;
   createdAt: string;
+  deadlineAt?: string | null;
   status: string;
   groupId: string | null;
   groupTitle: string;
@@ -806,12 +808,22 @@ export async function getTaskLabels(taskId: string): Promise<GroupLabel[]> {
   return j.labels as GroupLabel[];
 }
 
+// ==== Deadline API ====
+export async function setTaskDeadline(taskId: string, chatId: string, deadlineAt: string | null) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/deadline`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, deadlineAt }),
+  });
+  const j = await r.json().catch(() => ({}));
+  return j as { ok: boolean; task?: Task; error?: string };
+}
+
 
 
 export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; outgoing: Array<{id:string;text:string}>; incoming: Array<{id:string;text:string}>; }> {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/relations`);
   return r.json();
 }
-
 
 

@@ -18,6 +18,7 @@ import CalendarView from './CalendarView';
 import TaskView from './TaskView';
 
 import HomePage from './pages/Home/HomePage';
+import DeadlinePicker from './components/DeadlinePicker';
 
 import {
   fetchBoard,
@@ -27,6 +28,7 @@ import {
   type Group,
   listGroups,
   upsertMe,
+  setTaskDeadline,
 } from './api';
 
 import {
@@ -111,6 +113,8 @@ function parseStartParam(sp: string) {
 function TaskCard({
   text, order, assigneeName, active, dragging, onClick,
   isEvent, startAt, endAt, fromProcess,
+  deadlineAt,
+  onEditDeadline,
 }: {
   text: string;
   order: number;
@@ -122,11 +126,24 @@ function TaskCard({
   startAt?: string | null;
   endAt?: string | null;
   fromProcess?: boolean;
+  deadlineAt?: string | null;
+  onEditDeadline?: () => void;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
   const dateLine = isEvent && startAt
     ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}`
     : null;
+  const leftText = (() => {
+    if (!deadlineAt) return null;
+    const ms = new Date(deadlineAt).getTime() - Date.now();
+    const signOverdue = ms < 0;
+    const abs = Math.abs(ms);
+    const d = Math.floor(abs / 86400000);
+    const h = Math.floor((abs % 86400000) / 3600000);
+    const m = Math.floor((abs % 3600000) / 60000);
+    const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+    return (signOverdue ? `просрочено: ${short}` : `осталось: ${short}`);
+  })();
 
   return (
     <div onClick={onClick} style={{
@@ -150,6 +167,15 @@ function TaskCard({
       {dateLine && (
         <div style={{ fontSize: 12, opacity: .75, marginBottom: 6 }}>{dateLine}</div>
       )}
+      {deadlineAt && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onEditDeadline && onEditDeadline(); }}
+          title="Изменить дедлайн"
+          style={{ fontSize: 12, marginBottom: 6, color: new Date(deadlineAt).getTime() < Date.now() ? '#fecaca' : '#93c5fd', background: 'transparent', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}
+        >
+          🚩 {fmtShort(deadlineAt)} • {leftText}
+        </button>
+      )}
       {assigneeName && !isEvent ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>👤</span><span>{assigneeName}</span>
@@ -170,7 +196,8 @@ function fmtShort(iso: string) {
 }
 
 function SortableTask({
-  taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess,
+  taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess, deadlineAt,
+  onEditDeadline,
 }: {
   taskId: string;
   text: string;
@@ -182,6 +209,8 @@ function SortableTask({
   startAt?: string | null;
   endAt?: string | null;
   fromProcess?: boolean;
+  deadlineAt?: string | null;
+  onEditDeadline?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: taskId });
@@ -205,6 +234,8 @@ function SortableTask({
         startAt={startAt}
         endAt={endAt}
         fromProcess={fromProcess}
+        deadlineAt={deadlineAt}
+        onEditDeadline={onEditDeadline}
       />
     </div>
   );
@@ -251,6 +282,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [deadlineEdit, setDeadlineEdit] = useState<{ taskId: string; value: string | null } | null>(null);
 
 
 
@@ -1238,6 +1270,26 @@ setPersistSeedSession(false);
               }}
             />
           ) : null}
+
+          {/* 🚩 Редактор дедлайна для задач на доске */}
+          <DeadlinePicker
+            open={!!deadlineEdit}
+            value={deadlineEdit?.value ?? null}
+            onClose={() => setDeadlineEdit(null)}
+            onChange={async (iso) => {
+              const id = deadlineEdit?.taskId;
+              if (!id) return;
+              try {
+                const r = await setTaskDeadline(id, chatId, iso);
+                if (r?.ok && r.task) {
+                  setColumns((prev) => prev.map((c) => ({
+                    ...c,
+                    tasks: c.tasks.map((t) => (t.id === id ? ({ ...t, deadlineAt: r.task!.deadlineAt || null } as any) : t)),
+                  })));
+                }
+              } catch {}
+            }}
+          />
         </div>
       )}
     </>
@@ -1369,6 +1421,7 @@ function ColumnView({
               startAt={t.startAt}
               endAt={t.endAt}
               fromProcess={!!t.fromProcess}
+              deadlineAt={(t as any).deadlineAt || null}
             />
           ))}
 

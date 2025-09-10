@@ -9,6 +9,7 @@ import Busboy from 'busboy'; // ⬅️ NEW
 
 
 import { tasksRouter } from './routes/tasks.js';
+import { deadlineRouter } from './routes/deadline.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { assignRouter } from './routes/assign.js';  
 import { eventsRouter } from './routes/events.js';
@@ -369,6 +370,8 @@ app.use('/sharenewtask', shareNewTaskRouter({ prisma })); // ⬅️ новый
 
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
+// дедлайны (отдельный роутер, но в пространстве /tasks)
+app.use(deadlineRouter);
 
 /* ---------- Мероприятия ---------- */
 

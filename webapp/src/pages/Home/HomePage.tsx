@@ -10,6 +10,7 @@ import {
   API_BASE,
 } from '../../api';
 import StageQuickBar from '../../components/StageQuickBar';
+import DeadlinePicker from '../../components/DeadlinePicker';
 import type { StageKey } from '../../components/StageScroller';
 import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
@@ -142,6 +143,7 @@ export default function HomePage({
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
 
   const meChatId = String(
     WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || ''
@@ -569,6 +571,18 @@ export default function HomePage({
                       | string
                       | undefined;
                     const dateLine = isEvent && startAt ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}` : null;
+                    const deadlineAt = (t as any).deadlineAt as string | undefined;
+                    const leftText = (() => {
+                      if (!deadlineAt) return null;
+                      const ms = new Date(deadlineAt).getTime() - Date.now();
+                      const signOverdue = ms < 0;
+                      const abs = Math.abs(ms);
+                      const d = Math.floor(abs / 86400000);
+                      const h = Math.floor((abs % 86400000) / 3600000);
+                      const m = Math.floor((abs % 3600000) / 60000);
+                      const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+                      return (signOverdue ? `просрочено: ${short}` : `осталось: ${short}`);
+                    })();
                     const opened = openQBarId === t.id;
                     const currentPhase = ph;
                     const groupId = (t as any)?.groupId ?? null;
@@ -659,6 +673,15 @@ export default function HomePage({
 
                           {dateLine && (
                             <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
+                          )}
+                          {deadlineAt && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeadlineEdit({ id: t.id, value: deadlineAt }); }}
+                              title="Изменить дедлайн"
+                              style={{ fontSize: 12, marginBottom: 6, color: new Date(deadlineAt).getTime() < Date.now() ? '#b91c1c' : '#1f2937', background:'transparent', border:'none', padding:0, textAlign:'left', cursor:'pointer' }}
+                            >
+                              🚩 {fmtShort(deadlineAt)} • {leftText}
+                            </button>
                           )}
 
                           <div
@@ -861,7 +884,27 @@ export default function HomePage({
    // topOffset={88}
   />
 )}
-
+      {/* 🚩 Пикер дедлайна для карточек в ленте */}
+      <DeadlinePicker
+        open={!!deadlineEdit}
+        value={deadlineEdit?.value ?? null}
+        onClose={() => setDeadlineEdit(null)}
+        onChange={async (iso) => {
+          const id = deadlineEdit?.id;
+          if (!id) return;
+          try {
+            const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(id)}/deadline`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chatId, deadlineAt: iso }),
+            });
+            const j = await res.json();
+            if ((j as any)?.ok) {
+              patchItem(id, { deadlineAt: (j as any).task?.deadlineAt || null } as any);
+            }
+          } catch {}
+        }}
+      />
 
     </div>
   );

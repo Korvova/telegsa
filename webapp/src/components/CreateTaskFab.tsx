@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import CameraCaptureModal from './CameraCaptureModal';
 import PostCreateActionsLauncher from './PostCreateActionsLauncher';
 import VoiceRecorder from './VoiceRecorder';
+import DeadlinePicker from './DeadlinePicker';
 
 import WebApp from '@twa-dev/sdk';
 import {
@@ -16,6 +17,7 @@ import {
   getGroupLabels,
   attachTaskLabels,
   type GroupLabel,
+  setTaskDeadline,
 } from '../api';
 
 type Props = {
@@ -89,6 +91,8 @@ export default function CreateTaskFab({
   const fileAnyRef = useRef<HTMLInputElement | null>(null);
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
+  const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
 
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
@@ -215,6 +219,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
     setPendingFiles([]);
     setSelectedLabelId(null);
     setGroupLabels([]);
+    setDeadlineAt(null);
   };
   const back = () => {
     if (isSimpleMode) { closeModal(); return; }
@@ -544,21 +549,36 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         }}
                       >📸</button>
 
-                      {pendingFiles.length ? (
-                        <div
-                          style={{
-                            marginLeft: 4,
-                            fontSize: 12,
-                            opacity: 0.85,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
-                        </div>
-                      ) : null}
-                    </div>
+                      <button
+                        type="button"
+                        onClick={() => setDeadlineOpen(true)}
+                        title="Установить дедлайн"
+                        style={{
+                          width: 36, height: 36, borderRadius: 10,
+                          border: '1px solid #2a3346', background: '#202840',
+                          color: '#e8eaed', cursor: 'pointer',
+                        }}
+                      >🚩</button>
+
+                    {deadlineAt ? (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
+                    ) : null}
+
+                    {pendingFiles.length ? (
+                      <div
+                        style={{
+                          marginLeft: 4,
+                          fontSize: 12,
+                          opacity: 0.85,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
+                      </div>
+                    ) : null}
+                  </div>
                   </div>
 
                   {/* скрытые инпуты */}
@@ -627,9 +647,22 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         📸
                       </button>
 
+                      <button
+                        type="button"
+                        onClick={() => setDeadlineOpen(true)}
+                        title="Установить дедлайн"
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                      >
+                        🚩
+                      </button>
+
                       <input ref={fileAnyRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
                       <input ref={filePhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
                     </div>
+
+                    {deadlineAt ? (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
+                    ) : null}
 
                     {pendingFiles.length ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>
@@ -707,6 +740,11 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       // Привязать выбранный ярлык к задаче
                       if (groupId && selectedLabelId) {
                         try { await attachTaskLabels(newTaskId, chatId, [selectedLabelId]); } catch {}
+                      }
+
+                      // Привязать дедлайн
+                      if (deadlineAt) {
+                        try { await setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {}
                       }
 
                       if (pendingFiles.length) {
@@ -842,6 +880,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
         onCapture={(file) => setPendingFiles((prev) => [...prev, file])}
+      />
+
+      {/* модалка дедлайна */}
+      <DeadlinePicker
+        open={deadlineOpen}
+        value={deadlineAt}
+        onChange={(v) => setDeadlineAt(v)}
+        onClose={() => setDeadlineOpen(false)}
       />
     </>
   );
