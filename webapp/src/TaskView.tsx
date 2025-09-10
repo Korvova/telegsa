@@ -843,7 +843,17 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                   firstName: m.name || undefined,
                 }))}
                 canAssign={true}
-                onAssigned={() => setRefreshTick((t) => t + 1)}
+                onAssigned={(newAssigneeChatId) => {
+                  // Оптимистично обновляем локально, не ждём поллинга
+                  setTask((prev) => {
+                    if (!prev) return prev;
+                    const found = members.find((m) => String(m.chatId) === String(newAssigneeChatId));
+                    const name = (found as any)?.name || prev.assigneeName || null;
+                    return { ...prev, assigneeChatId: String(newAssigneeChatId), assigneeName: name } as any;
+                  });
+                  try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+                  setRefreshTick((t) => t + 1);
+                }}
               />
             )
           )}
