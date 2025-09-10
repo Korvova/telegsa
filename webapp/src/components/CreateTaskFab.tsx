@@ -13,6 +13,9 @@ import {
   type GroupMember,
   uploadTaskMedia,
   transcribeVoice,
+  getGroupLabels,
+  attachTaskLabels,
+  type GroupLabel,
 } from '../api';
 
 type Props = {
@@ -72,6 +75,11 @@ export default function CreateTaskFab({
 
   const [sttBusy, setSttBusy] = useState(false);
 
+  // Ярлыки группы и выбранный ярлык
+  const [groupLabels, setGroupLabels] = useState<GroupLabel[]>([]);
+  const [labelsLoading, setLabelsLoading] = useState(false);
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+
   // можно отправлять если есть текст ИЛИ есть вложения (в т.ч. аудио)
   const canSend = text.trim().length > 0 || pendingFiles.length > 0;
 
@@ -114,6 +122,26 @@ export default function CreateTaskFab({
     if (!chatId) return;
     listGroups(chatId).then(r => { if (r.ok) setGroups(r.groups); }).catch(() => {});
   }, [chatId, groupsProp]);
+
+  // Загружаем ярлыки при выборе группы
+  useEffect(() => {
+    setSelectedLabelId(null);
+    setGroupLabels([]);
+    if (!groupId) return; // для личной группы ярлыков нет
+    let cancelled = false;
+    (async () => {
+      setLabelsLoading(true);
+      try {
+        const labels = await getGroupLabels(groupId);
+        if (!cancelled) setGroupLabels(labels || []);
+      } catch {
+        if (!cancelled) setGroupLabels([]);
+      } finally {
+        if (!cancelled) setLabelsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [groupId]);
 
   // транскрибация
 async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
@@ -185,6 +213,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
     setText('');
     setGroupId(defaultGroupId ?? null);
     setPendingFiles([]);
+    setSelectedLabelId(null);
+    setGroupLabels([]);
   };
   const back = () => {
     if (isSimpleMode) { closeModal(); return; }
@@ -276,10 +306,36 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                   </button>
                 )}
 
-                <div style={{ fontWeight: 700 }}>
-                  {isSimpleMode ? ' ➥ Задача' : step === 0 ? 'Текст задачи' : 'Выбор группы'}
-                </div>
-
+                {isSimpleMode ? (
+                  groupId ? (
+                    <select
+                      value={selectedLabelId ?? ''}
+                      onChange={(e) => setSelectedLabelId(e.target.value || null)}
+                      title="Выбрать ярлык"
+                      style={{
+                        background: '#0b1220',
+                        color: '#e5e7eb',
+                        border: '1px solid #1f2937',
+                        borderRadius: 999,
+                        padding: '4px 10px',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <option value="">{labelsLoading ? '🏷️ Загрузка…' : '🏷️ Без ярлыка'}</option>
+                      {groupLabels.map((l) => (
+                        <option key={l.id} value={l.id}>🏷️ {l.title}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>Моя группа</div>
+                  )
+                ) : (
+                  <div style={{ fontWeight: 700 }}>
+                    {step === 0 ? 'Текст задачи' : 'Выбор группы'}
+                  </div>
+                )}
+              
 
               </div>
               <button
@@ -637,6 +693,11 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       const r = await createTask(chatId, val, groupId ?? undefined);
                       if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
                       const newTaskId = r.task.id;
+
+                      // Привязать выбранный ярлык к задаче
+                      if (groupId && selectedLabelId) {
+                        try { await attachTaskLabels(newTaskId, chatId, [selectedLabelId]); } catch {}
+                      }
 
                       if (pendingFiles.length) {
                         for (const f of pendingFiles) {
