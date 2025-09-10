@@ -79,7 +79,12 @@ export function watchersRouter({ prisma }) {
       let groupId = task.column ? parseGroupIdFromColumnName(task.column.name) : null;
       if (!groupId) {
         const my = await prisma.group.findFirst({ where: { ownerChatId: String(task.chatId), title: 'Моя группа' }, select: { id: true } });
-        groupId = my?.id || null;
+        if (my?.id) {
+          groupId = my.id;
+        } else {
+          const created = await prisma.group.create({ data: { ownerChatId: String(task.chatId), title: 'Моя группа' } });
+          groupId = created.id;
+        }
       }
 
       const token = (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 22).replace(/[^A-Za-z0-9_\-]/g, '_');
@@ -88,7 +93,7 @@ export function watchersRouter({ prisma }) {
           token,
           type: 'WATCH',
           status: 'ACTIVE',
-          groupId: groupId!,
+          groupId: groupId,
           taskId: String(taskId),
           invitedByChatId: String(task.sourceChatId || task.chatId || ''),
         },
