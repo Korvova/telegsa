@@ -44,41 +44,6 @@ app.use(express.json());
 
 
 
-
-
-
-
-
-// 2) PATCH с try/catch
-eventsRouter.patch('/:id', async (req, res) => {
-  try {
-    const eventId = String(req.params.id);
-    const before = await prisma.task.findUnique({ where: { id: eventId } });
-    if (!before) return res.status(404).json({ ok: false, error: 'not_found' });
-
-    const updated = await prisma.task.update({ where: { id: eventId }, data: req.body });
-
-    if (
-      req.body.startAt &&
-      (!before.startAt ||
-       new Date(req.body.startAt).getTime() !== new Date(before.startAt).getTime())
-    ) {
-      await recomputeAndRescheduleEventReminders(prisma, tg, eventId, req.body.startAt);
-    }
-
-    return res.json({ ok: true, event: updated });
-  } catch (e) {
-    console.error('PATCH /events/:id error', e);
-    return res.status(500).json({ ok: false, error: 'internal' });
-  }
-});
-
-
-
-
-
-
-
 /* ---------- Telegram helper ---------- */
 async function tg(method, payload) {
   const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
