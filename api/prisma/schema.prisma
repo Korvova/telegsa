@@ -37,6 +37,7 @@ enum TaskType {
 enum AcceptCondition {
   NONE
   PHOTO
+  APPROVAL
 }
 
 enum EventRole {
@@ -112,6 +113,10 @@ model Task {
   relTo   TaskRelation[] @relation("RelTo")
 
   ProcessNode ProcessNode[]
+
+  // relation back to StarLedger
+  ledgers StarLedger[]
+  likes   TaskLike[]
 
   @@index([chatId])
   @@index([columnId, order])
@@ -199,6 +204,7 @@ model Comment {
   authorChatId String
   text         String
   createdAt    DateTime @default(now())
+  likes        CommentLike[]
 }
 
 /**
@@ -461,6 +467,30 @@ model TaskRelation {
 
   @@index([fromTaskId])
   @@index([toTaskId])
+}
+
+model TaskLike {
+  id        String   @id @default(cuid())
+  taskId    String
+  chatId    String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, chatId])
+  @@index([chatId])
+}
+
+model CommentLike {
+  id         String   @id @default(cuid())
+  commentId  String
+  chatId     String
+  createdAt  DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, chatId])
+  @@index([chatId])
 }
 
 /// Ledger of star operations

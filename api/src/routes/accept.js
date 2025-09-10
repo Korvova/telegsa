@@ -19,14 +19,14 @@ async function userIsGroupMemberOrOwner(chatId, groupId) {
   return Boolean(m);
 }
 
-// PATCH /tasks/:id/accept-condition { chatId, condition: 'NONE' | 'PHOTO' }
+// PATCH /tasks/:id/accept-condition { chatId, condition: 'NONE' | 'PHOTO' | 'APPROVAL' }
 router.patch('/tasks/:id/accept-condition', async (req, res) => {
   try {
     const id = String(req.params.id);
     const chatId = String(req.body?.chatId || '');
     const cond = String(req.body?.condition || '').toUpperCase();
     if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
-    if (!['NONE', 'PHOTO'].includes(cond)) return res.status(400).json({ ok: false, error: 'invalid_condition' });
+    if (!['NONE', 'PHOTO', 'APPROVAL'].includes(cond)) return res.status(400).json({ ok: false, error: 'invalid_condition' });
 
     const task = await prisma.task.findUnique({ where: { id }, include: { column: true } });
     if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
@@ -50,4 +50,3 @@ router.patch('/tasks/:id/accept-condition', async (req, res) => {
 });
 
 export { router as acceptRouter };
-
