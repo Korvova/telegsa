@@ -79,7 +79,17 @@ export default function CommentsThread({
                   <div style={{ fontSize: 12, opacity: .6 }}>{new Date(c.createdAt).toLocaleString()}</div>
                 </div>
               </div>
-              <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              {String(c.text || '').startsWith('/files/') || String(c.text || '').includes('/files/') ? (
+                <div style={{ marginTop: 6 }}>
+                  <img
+                    src={`${(import.meta as any).env.VITE_API_BASE}${String(c.text)}`}
+                    alt="Фото"
+                    style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
+                  />
+                </div>
+              ) : (
+                <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+              )}
               {mine ? (
                 <div style={{ marginTop: 6 }}>
                   <button style={delBtn} onClick={() => remove(c.id)}>Удалить</button>

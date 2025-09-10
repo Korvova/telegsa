@@ -93,6 +93,8 @@ export default function CreateTaskFab({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
+  const [acceptOpen, setAcceptOpen] = useState(false);
+  const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO'>('NONE');
 
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
@@ -220,6 +222,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
     setSelectedLabelId(null);
     setGroupLabels([]);
     setDeadlineAt(null);
+    setAcceptConditionState('NONE');
   };
   const back = () => {
     if (isSimpleMode) { closeModal(); return; }
@@ -560,8 +563,23 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         }}
                       >🚩</button>
 
+                      <button
+                        type="button"
+                        onClick={() => setAcceptOpen(true)}
+                        title="Условия приёма"
+                        style={{
+                          width: 36, height: 36, borderRadius: 10,
+                          border: '1px solid #2a3346', background: '#202840',
+                          color: '#e8eaed', cursor: 'pointer',
+                        }}
+                      >☝️</button>
+
                     {deadlineAt ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
+                    ) : null}
+
+                    {acceptCondition === 'PHOTO' ? (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>☝️ Требуется фото 📸</div>
                     ) : null}
 
                     {pendingFiles.length ? (
@@ -747,6 +765,11 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         try { await setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {}
                       }
 
+                      // Привязать условия приёма
+                      if (acceptCondition === 'PHOTO') {
+                        try { const mod = await import('../api'); await mod.setAcceptCondition(newTaskId, chatId, 'PHOTO'); } catch {}
+                      }
+
                       if (pendingFiles.length) {
                         for (const f of pendingFiles) {
                           try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
@@ -889,6 +912,30 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
         onChange={(v) => setDeadlineAt(v)}
         onClose={() => setDeadlineOpen(false)}
       />
+
+      {acceptOpen && (
+        <div
+          onClick={() => setAcceptOpen(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex: 2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(420px, 92vw)' }}>
+            <div style={{ fontWeight:700, marginBottom:8 }}>☝️ Условия приёма</div>
+            <div style={{ display:'grid', gap:8 }}>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={acceptCondition==='NONE'} onChange={()=>setAcceptConditionState('NONE')} />
+                <span>Без условий</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={acceptCondition==='PHOTO'} onChange={()=>setAcceptConditionState('PHOTO')} />
+                <span>Нужно фото 📸</span>
+              </label>
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>
+              <button onClick={()=>setAcceptOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Готово</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

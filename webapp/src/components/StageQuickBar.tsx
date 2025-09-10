@@ -16,6 +16,7 @@ type Props = {
   onPicked?: (next: StageKey) => void;
   onRequestClose?: () => void;
   edgeInset?: number;
+  onComplete?: () => Promise<boolean | void>; // если вернёт true — считаем завершено
 };
 
 const COLORS: Record<StageKey, { bg: string; brd: string; fg: string }> = {
@@ -41,7 +42,7 @@ function labelOf(s: StageKey): string {
 
 export default function StageQuickBar({
   anchorId, taskId, groupId, meChatId, currentPhase,
-  onPicked, onRequestClose, edgeInset = 12,
+  onPicked, onRequestClose, edgeInset = 12, onComplete,
 }: Props) {
   const [colMap, setColMap] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -137,6 +138,18 @@ const recompute = () => {
     try {
       setBusy(true);
       if (next === 'Done') {
+        if (typeof onComplete === 'function') {
+          const ok = await onComplete();
+          if (ok) {
+            try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+            onPicked?.(next);
+            onRequestClose?.();
+            return;
+          }
+          // если кастом не завершил — просто закрываем и выходим
+          onRequestClose?.();
+          return;
+        }
         await completeTask(taskId);
         try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
         onPicked?.(next);

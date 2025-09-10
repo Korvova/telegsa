@@ -8,6 +8,9 @@ import {
   type GroupLabel,
   listGroups,
   API_BASE,
+  uploadTaskMedia,
+  addComment,
+  completeTask,
 } from '../../api';
 import StageQuickBar from '../../components/StageQuickBar';
 import DeadlinePicker from '../../components/DeadlinePicker';
@@ -139,6 +142,8 @@ export default function HomePage({
 
   // колесо выбора ярлыка
   const [isLabelWheelOpen, setLabelWheelOpen] = useState(false);
+  const [completePrompt, setCompletePrompt] = useState<{ id: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
@@ -586,7 +591,8 @@ export default function HomePage({
                     const opened = openQBarId === t.id;
                     const currentPhase = ph;
                     const groupId = (t as any)?.groupId ?? null;
-                    const badge = badgeForPhase(currentPhase);
+                  const badge = badgeForPhase(currentPhase);
+                    const needsPhoto = (t as any).acceptCondition === 'PHOTO';
                     const activeRing = opened
                       ? '0 0 0 2px rgba(138,160,255,.45) inset, 0 8px 20px rgba(0,0,0,.20)'
                       : '0 2px 8px rgba(0,0,0,.06)';
@@ -604,6 +610,13 @@ export default function HomePage({
                             edgeInset={12}
                             onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
                             onRequestClose={closeQBar}
+                            onComplete={async () => {
+                              if ((t as any).acceptCondition === 'PHOTO') {
+                                setOpenQBarId(null);
+                                setCompletePrompt({ id: t.id });
+                                return false;
+                              }
+                            }}
                           />
                         )}
 
@@ -752,6 +765,7 @@ export default function HomePage({
                           <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', gap: 10 }}>
                             <span>👤 {(t as any).creatorName}</span>
                             {(t as any).assigneeName ? <span>→ {(t as any).assigneeName}</span> : null}
+                            {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
                             <span style={{ marginLeft: 'auto' }}>
                               {new Date((t as any).updatedAt).toLocaleString()}
                             </span>
@@ -884,6 +898,40 @@ export default function HomePage({
    // topOffset={88}
   />
 )}
+      {/* Завершение с фото */}
+      {completePrompt && (
+        <div
+          onClick={() => setCompletePrompt(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
+            <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+              >🖼️ Выбрать / 📸 Камера</button>
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file || !completePrompt) return;
+                try {
+                  const up = await uploadTaskMedia(completePrompt.id, chatId, file);
+                  if ((up as any)?.ok && (up as any)?.media?.url) {
+                    await addComment(completePrompt.id, chatId, (up as any).media.url);
+                  }
+                  await completeTask(completePrompt.id);
+                  patchItem(completePrompt.id, { status: 'Готово', phase: 'Done' } as any);
+                  setCompletePrompt(null);
+                } catch {}
+              }} />
+              <button
+                onClick={() => setCompletePrompt(null)}
+                style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}
+              >Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 🚩 Пикер дедлайна для карточек в ленте */}
       <DeadlinePicker
         open={!!deadlineEdit}

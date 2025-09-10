@@ -12,6 +12,7 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
   deadlineAt?: string | null;
+  acceptCondition?: 'NONE' | 'PHOTO';
 
     fromProcess?: boolean; // 🔀
 
@@ -629,6 +630,7 @@ export type TaskFeedItem = {
   updatedAt: string;
   createdAt: string;
   deadlineAt?: string | null;
+  acceptCondition?: 'NONE' | 'PHOTO';
   status: string;
   groupId: string | null;
   groupTitle: string;
@@ -819,11 +821,25 @@ export async function setTaskDeadline(taskId: string, chatId: string, deadlineAt
   return j as { ok: boolean; task?: Task; error?: string };
 }
 
+// ==== Accept condition API ====
+export async function setAcceptCondition(
+  taskId: string,
+  chatId: string,
+  condition: 'NONE' | 'PHOTO'
+) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/accept-condition`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, condition }),
+  });
+  const j = await r.json().catch(() => ({}));
+  return j as { ok: boolean; task?: Task; error?: string };
+}
+
 
 
 export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; outgoing: Array<{id:string;text:string}>; incoming: Array<{id:string;text:string}>; }> {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/relations`);
   return r.json();
 }
-
 

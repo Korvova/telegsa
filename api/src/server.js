@@ -9,6 +9,7 @@ import Busboy from 'busboy'; // ⬅️ NEW
 
 
 import { tasksRouter } from './routes/tasks.js';
+import { acceptRouter } from './routes/accept.js';
 import { deadlineRouter } from './routes/deadline.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { assignRouter } from './routes/assign.js';  
@@ -370,6 +371,8 @@ app.use('/sharenewtask', shareNewTaskRouter({ prisma })); // ⬅️ новый
 
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
+// условия приёмки задач
+app.use(acceptRouter);
 // дедлайны (отдельный роутер, но в пространстве /tasks)
 app.use(deadlineRouter);
 
@@ -1554,6 +1557,18 @@ app.post('/tasks/:id/complete', async (req, res) => {
     const id = String(req.params.id);
     const task = await prisma.task.findUnique({ where: { id } });
     if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
+
+    // Если требуется фото, проверим наличие прикреплённых фото
+    if (String(task.acceptCondition || 'NONE') === 'PHOTO') {
+      const photos = await prisma.task.findUnique({
+        where: { id },
+        select: { media: { where: { kind: 'photo' }, select: { id: true } } },
+      });
+      const hasPhoto = !!(photos && photos.media && photos.media.length);
+      if (!hasPhoto) {
+        return res.status(412).json({ ok: false, error: 'photo_required' });
+      }
+    }
 
     const curCol = await prisma.column.findUnique({ where: { id: task.columnId } });
     if (!curCol) return res.status(500).json({ ok: false, error: 'column_not_found' });

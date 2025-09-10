@@ -414,6 +414,7 @@ const items = tasks.map(t => {
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     deadlineAt: t.deadlineAt,
+    acceptCondition: t.acceptCondition,
     status,
     groupId,
     groupTitle: groupId ? (gmap.get(groupId) || 'Без группы') : 'Моя группа',

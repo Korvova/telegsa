@@ -114,6 +114,7 @@ function TaskCard({
   text, order, assigneeName, active, dragging, onClick,
   isEvent, startAt, endAt, fromProcess,
   deadlineAt,
+  acceptCondition,
   onEditDeadline,
 }: {
   text: string;
@@ -127,6 +128,7 @@ function TaskCard({
   endAt?: string | null;
   fromProcess?: boolean;
   deadlineAt?: string | null;
+  acceptCondition?: 'NONE' | 'PHOTO';
   onEditDeadline?: () => void;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
@@ -176,6 +178,11 @@ function TaskCard({
           🚩 {fmtShort(deadlineAt)} • {leftText}
         </button>
       )}
+      {acceptCondition === 'PHOTO' && (
+        <div style={{ fontSize: 12, marginBottom: 6 }} title="Требуется фото">
+          ☝️📸 Требуется фото
+        </div>
+      )}
       {assigneeName && !isEvent ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>👤</span><span>{assigneeName}</span>
@@ -198,6 +205,7 @@ function fmtShort(iso: string) {
 function SortableTask({
   taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess, deadlineAt,
   onEditDeadline,
+  acceptCondition,
 }: {
   taskId: string;
   text: string;
@@ -211,6 +219,7 @@ function SortableTask({
   fromProcess?: boolean;
   deadlineAt?: string | null;
   onEditDeadline?: () => void;
+  acceptCondition?: 'NONE' | 'PHOTO';
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: taskId });
@@ -236,6 +245,7 @@ function SortableTask({
         fromProcess={fromProcess}
         deadlineAt={deadlineAt}
         onEditDeadline={onEditDeadline}
+        acceptCondition={acceptCondition}
       />
     </div>
   );
@@ -1422,6 +1432,7 @@ function ColumnView({
               endAt={t.endAt}
               fromProcess={!!t.fromProcess}
               deadlineAt={(t as any).deadlineAt || null}
+              acceptCondition={(t as any).acceptCondition || 'NONE'}
             />
           ))}
 

@@ -33,6 +33,12 @@ enum TaskType {
   EVENT
 }
 
+// Приёмка задачи
+enum AcceptCondition {
+  NONE
+  PHOTO
+}
+
 enum EventRole {
   ORGANIZER
   PARTICIPANT
@@ -68,6 +74,9 @@ model Task {
   type    TaskType  @default(TASK)
   startAt DateTime?
   endAt   DateTime?
+
+  // Условия приёмки
+  acceptCondition AcceptCondition @default(NONE)
 
   // Инвайты на TASK (как было)
   inviteTickets      InviteTicket[] @relation("TaskInviteTickets")

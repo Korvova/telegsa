@@ -53,6 +53,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
   const [labelDrawerOpen, setLabelDrawerOpen] = useState(false);
   const [taskLabels, setTaskLabels] = useState<GroupLabel[]>([]);
+  const [acceptPickerOpen, setAcceptPickerOpen] = useState(false);
 
   // список всех групп для селектора
   const [allGroups, setAllGroups] = useState<Group[]>([]);
@@ -85,6 +86,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   );
 
   const [media, setMedia] = useState<TaskMedia[]>([]);
+  const [completeNeedPhotoOpen, setCompleteNeedPhotoOpen] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Считаем вложение аудио, если kind = voice|audio, либо MIME начинается с audio/,
   // либо расширение .ogg/.opus/.mp3/.m4a/.wav/.webm
@@ -587,13 +590,14 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           onRequestComplete={() => {
             (async () => {
               try {
+                const needPhoto = String((task as any)?.acceptCondition || 'NONE') === 'PHOTO';
+                const hasPhoto = media.some(m => m.kind === 'photo');
+                if (needPhoto && !hasPhoto) { setCompleteNeedPhotoOpen(true); return; }
                 await completeTask(taskId);
                 setPhase('Done');
                 onChanged?.();
                 WebApp?.HapticFeedback?.notificationOccurred?.('success');
-                setTimeout(() => {
-                  animateCloseWithThumb(groupIdRef.current);
-                }, 160);
+                setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
               } catch (e) {
                 setError((e as any)?.message || 'Ошибка операции');
               }
@@ -675,6 +679,26 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
             )}
           </button>
 
+          {/* ☝️ Условия приёма (меняет только постановщик) */}
+          <button
+            onClick={() => setAcceptPickerOpen(true)}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: '#202840',
+              color: '#e8eaed',
+              cursor: 'pointer',
+              display: 'inline-flex', alignItems:'center', gap: 8,
+            }}
+            title="Условия приёма"
+          >
+            <span>☝️</span>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>
+              {String((task as any)?.acceptCondition || 'NONE') === 'PHOTO' ? 'Нужно фото 📸' : 'Без условий'}
+            </span>
+          </button>
+
           {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
           {task?.type !== 'EVENT' && (
             task.assigneeChatId ? (
@@ -714,7 +738,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
         {media.length > 0 && (
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 14, opacity: .85, marginBottom: 6 }}>Вложения</div>
+          <div style={{ fontSize: 14, opacity: .85, marginBottom: 6 }}>Вложения</div>
 
             {/* Фото */}
             {photos.length > 0 && (
@@ -806,9 +830,71 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           />
         )}
 
-        {/* Комментарии */}
-        <CommentsThread taskId={taskId} meChatId={meChatId} />
+      {/* Комментарии */}
+      <CommentsThread taskId={taskId} meChatId={meChatId} />
+      {/* Пикер условий приёма */}
+      {acceptPickerOpen && (
+        <div
+          onClick={() => setAcceptPickerOpen(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(420px, 92vw)' }}>
+            <div style={{ fontWeight:700, marginBottom:8 }}>☝️ Условия приёма</div>
+            <div style={{ display:'grid', gap:8 }}>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='NONE'} onChange={async ()=>{
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'NONE'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'NONE' } as any) : prev); } catch {}
+                }} />
+                <span>Без условий</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='PHOTO'} onChange={async ()=>{
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'PHOTO'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'PHOTO' } as any) : prev); } catch {}
+                }} />
+                <span>Нужно фото 📸</span>
+              </label>
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>
+              <button onClick={()=> setAcceptPickerOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Готово</button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
+
+      {/* Диалог завершения: нужно фото */}
+      {completeNeedPhotoOpen && (
+        <div
+          onClick={() => setCompleteNeedPhotoOpen(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
+            <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button onClick={()=> photoInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>🖼️ Выбрать / 📸 Камера</button>
+              <input ref={photoInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                try {
+                  const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
+                  if ((up as any)?.ok && (up as any)?.media?.url) {
+                    await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
+                  }
+                  await completeTask(taskId);
+                  setPhase('Done');
+                  onChanged?.();
+                  setCompleteNeedPhotoOpen(false);
+                  WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                  setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+                } catch (err) {
+                  setError('Не удалось прикрепить фото');
+                }
+              }} />
+              <button onClick={()=> setCompleteNeedPhotoOpen(false)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Портал с 👍, вне любых трансформов */}
       <DeadlinePicker
