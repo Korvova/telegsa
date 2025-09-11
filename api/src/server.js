@@ -1580,7 +1580,13 @@ app.post('/tasks/:id/complete', async (req, res) => {
     const groupId = i > 0 ? curCol.name.slice(0, i) : null;
 
     await ensureDefaultColumns(task.chatId, groupId);
-    const requiresApproval = cond === 'APPROVAL' || cond === 'PHOTO_AND_APPROVAL' || cond === 'DOC_AND_APPROVAL';
+    // Если уже на стадии «Согласование», то следующий complete переводит в Done
+    const approvalFullName = nameWithGroup(groupId, 'Approval');
+    const inApproval = (curCol?.name === approvalFullName);
+
+    let requiresApproval = (cond === 'APPROVAL' || cond === 'PHOTO_AND_APPROVAL' || cond === 'DOC_AND_APPROVAL');
+    if (inApproval) requiresApproval = false;
+
     const targetName = requiresApproval ? 'Approval' : 'Done';
     const targetFullName = nameWithGroup(groupId, targetName);
     const targetCol = await prisma.column.findFirst({ where: { chatId: task.chatId, name: targetFullName } });
