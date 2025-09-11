@@ -51,6 +51,7 @@ export default function GroupList({
               title={g.title}
               ownerName={g.ownerName || '—'}
               kind="own"
+              isTelegramGroup={(g as any).isTelegramGroup === true}
               onClick={() => onOpen(g.id, false)} // показываем ВСЕ задачи
             />
           ))
@@ -72,6 +73,7 @@ export default function GroupList({
                 title={displayTitle}
                 ownerName={g.ownerName || '—'}
                 kind="member"
+                isTelegramGroup={(g as any).isTelegramGroup === true}
                 onClick={() => onOpen(g.id, false)} // ⬅️ ВАЖНО: по умолчанию показываем ВСЕ задачи проекта
               />
             );
@@ -115,14 +117,18 @@ function GroupCard({
   title,
   ownerName,
   kind,
+  isTelegramGroup = false,
   onClick,
 }: {
   title: string;
   ownerName: string;
   kind: 'own' | 'member';
+  isTelegramGroup?: boolean;
   onClick: () => void;
 }) {
   const bg = kind === 'own' ? 'linear-gradient(180deg,#1b2030,#121722)' : 'linear-gradient(180deg,#182227,#10151d)';
+  const icon = isTelegramGroup ? '➡️📁' : (kind === 'own' ? '📁' : '🤝');
+  const titleColor = isTelegramGroup ? '#42aaff' : '#e8eaed';
   return (
     <button
       onClick={onClick}
@@ -137,8 +143,8 @@ function GroupCard({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <span aria-hidden style={{ fontSize: 18 }}>{kind === 'own' ? '📁' : '🤝'}</span>
-        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.2 }}>{title}</div>
+        <span aria-hidden style={{ fontSize: 18 }}>{icon}</span>
+        <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.2, color: titleColor }}>{title}</div>
       </div>
       <div style={{ fontSize: 12, opacity: 0.8 }}>Владелец: {ownerName}</div>
     </button>
