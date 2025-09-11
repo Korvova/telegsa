@@ -583,6 +583,7 @@ export default function HomePage({
                       | undefined;
                     const dateLine = isEvent && startAt ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}` : null;
                     const deadlineAt = (t as any).deadlineAt as string | undefined;
+                    const nextReminderAt = (t as any).nextReminderAt as string | undefined;
                     const leftText = (() => {
                       if (!deadlineAt) return null;
                       const ms = new Date(deadlineAt).getTime() - Date.now();
@@ -720,6 +721,11 @@ export default function HomePage({
                             >
                               🚩 {fmtShort(deadlineAt)} • {leftText}
                             </button>
+                          )}
+                          {nextReminderAt && (
+                            <div style={{ fontSize: 12, marginBottom: 6, color: '#374151' }}>
+                              ⏰ {fmtShort(nextReminderAt)}
+                            </div>
                           )}
                           {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
                             <span style={{ fontSize: 11, background:'#7f1d1d', color:'#fee2e2', border:'1px solid #dc2626', borderRadius:999, padding:'2px 6px', marginBottom:6 }}>

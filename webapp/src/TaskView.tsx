@@ -35,6 +35,8 @@ import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 import TaskLabelDrawer from './components/TaskLabelDrawer';
 import ProcessLinks from './components/ProcessLinks';
+import RemindersModal from './components/RemindersModal';
+import { listTaskReminders, createTaskReminder, deleteTaskReminder, type TaskReminder as TReminder } from './api/reminders';
 
 type Props = {
   taskId: string;
@@ -133,6 +135,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   // участники текущей группы (для «Выбрать из группы»)
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [reminders, setReminders] = useState<TReminder[]>([]);
+  const [remBusy, setRemBusy] = useState(false);
 
   // когда узнали groupId — подтягиваем участников
   useEffect(() => {
@@ -143,6 +148,18 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       })
       .catch(() => {});
   }, [groupId]);
+
+  // загрузка напоминаний
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await listTaskReminders(taskId);
+        if (alive && r?.ok) setReminders((r as any).reminders || []);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [taskId, refreshTick]);
 
   useEffect(() => {
     let alive = true;
@@ -565,6 +582,28 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               ⚠️ Просрочен
             </span>
           )}
+
+          {/* ⏰ Напоминание */}
+          <button
+            onClick={() => setRemindersOpen(true)}
+            style={{
+              marginLeft: 8,
+              padding: '10px 14px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: '#202840',
+              color: '#e8eaed',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+            aria-label="Создать напоминание"
+            title="Создать напоминание"
+          >
+            <span>⏰</span>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>Добавить</span>
+          </button>
         </div>
 
         <div style={{ position: 'relative', width: '100%' }}>
@@ -596,6 +635,46 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
             showLists
           />
         </div>
+
+        {/* Список напоминаний */}
+        {reminders.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Напоминания</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {reminders
+                .slice()
+                .sort((a, b) => new Date(a.fireAt).getTime() - new Date(b.fireAt).getTime())
+                .map((r) => {
+                  const label = r.target === 'ME' ? 'Себе' : r.target === 'RESPONSIBLE' ? 'Ответственному' : 'Всем';
+                  const d = new Date(r.fireAt);
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  const when = `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} (${pad(d.getHours())}:${pad(d.getMinutes())})`;
+                  const strike = r.sentAt ? 'line-through' as const : 'none';
+                  return (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ textDecoration: strike }}>{label} {when}</div>
+                      <button
+                        disabled={remBusy}
+                        onClick={async () => {
+                          if (remBusy) return;
+                          setRemBusy(true);
+                          try {
+                            await deleteTaskReminder(taskId, r.id);
+                            setReminders((prev) => prev.filter(x => x.id !== r.id));
+                          } catch {}
+                          finally { setRemBusy(false); }
+                        }}
+                        title="Удалить"
+                        style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
+                      >
+                        (x)
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
 
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display:'flex', alignItems:'center', gap:6 }}>
           {typeof (task as any).bountyStars === 'number' && (task as any).bountyStars > 0 ? (
@@ -1087,6 +1166,18 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               onChanged();
             }
           } catch {}
+        }}
+      />
+
+      <RemindersModal
+        open={remindersOpen}
+        onClose={() => setRemindersOpen(false)}
+        onPick={async ({ target, fireAtIso }) => {
+          try {
+            const r = await createTaskReminder(taskId, { createdBy: meChatId, target, fireAt: fireAtIso });
+            if ((r as any)?.ok && (r as any).reminder) setReminders((prev) => [...prev, (r as any).reminder]);
+          } catch {}
+          finally { setRemindersOpen(false); }
         }}
       />
       {(isClosing || thumbStage !== 0) &&
