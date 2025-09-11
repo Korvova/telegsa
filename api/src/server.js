@@ -1561,14 +1561,14 @@ app.post('/tasks/:id/complete', async (req, res) => {
       }
     }
 
-    // Если требуется документ (DOC_AND_APPROVAL), проверим наличие документа
+    // Если требуется «документ» (DOC_AND_APPROVAL) — принимаем ЛЮБОЕ вложение (в т.ч. фото)
     if (cond === 'DOC_AND_APPROVAL') {
-      const docs = await prisma.task.findUnique({
+      const media = await prisma.task.findUnique({
         where: { id },
-        select: { media: { where: { kind: 'document' }, select: { id: true } } },
+        select: { media: { select: { id: true } } },
       });
-      const hasDoc = !!(docs && docs.media && docs.media.length);
-      if (!hasDoc) {
+      const hasAny = !!(media && media.media && media.media.length);
+      if (!hasAny) {
         return res.status(412).json({ ok: false, error: 'document_required' });
       }
     }
