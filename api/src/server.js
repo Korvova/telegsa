@@ -648,14 +648,23 @@ app.post('/webhook', async (req, res) => {
               const admins = await tg('getChatAdministrators', { chat_id: chatId });
               const list = Array.isArray(admins?.result) ? admins.result : [];
               const adminIds = list.map((x) => String(x?.user?.id || '')).filter(Boolean);
-              // очистим предыдущие админки и создадим актуальные
+              // очистим предыдущие админки и создадим актуальные + upsert users
               await prisma.$transaction(async (tx) => {
                 await tx.groupMember.deleteMany({ where: { groupId: g.id, role: 'admin' } });
-                for (const id of adminIds) {
+                for (const a of list) {
+                  const id = String(a?.user?.id || '');
+                  if (!id) continue;
                   await tx.groupMember.upsert({
                     where: { groupId_chatId: { groupId: g.id, chatId: id } },
                     update: { role: 'admin' },
                     create: { groupId: g.id, chatId: id, role: 'admin' },
+                  });
+                  // upsert user profile for admins to enable @username resolution
+                  const u = a.user || {};
+                  await tx.user.upsert({
+                    where: { chatId: id },
+                    update: { username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
+                    create: { chatId: id, username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
                   });
                 }
               });
@@ -768,15 +777,56 @@ app.post('/webhook', async (req, res) => {
 
     const caption = String(msg.caption || '').trim();
     const fileName = msg?.document?.file_name ? String(msg.document.file_name) : '';
-    const textForTask = String(
+    const baseText = String(
       msg.text ||
       caption ||
-      fileName ||
-      (media[0]?.kind === 'photo' ? 'Фото'
-        : media[0]?.kind === 'voice' ? 'Голосовое'
-        : media[0]?.kind === 'document' ? 'Файл'
-        : 'Задача')
+      ''
     ).slice(0, 4096);
+
+    // очистим @бот из текста даже если entities не пришли
+    let cleaned = baseText;
+    try {
+      const botName = String(BOT || '').replace(/^@/, '');
+      if (botName) {
+        const esc = botName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`@${esc}`, 'ig');
+        cleaned = cleaned.replace(re, '');
+      }
+    } catch {}
+
+    // Удалим trailing упоминание ответственного из текста
+    if (entitiesAll.length && cleaned) {
+      let assigneeSpan = null;
+      for (let i = entitiesAll.length - 1; i >= 0; i--) {
+        const e = entitiesAll[i];
+        if (!e || (e.type !== 'mention' && e.type !== 'text_mention')) continue;
+        const seg = txtRaw.slice(e.offset, e.offset + e.length);
+        if (e.type === 'mention') {
+          if (seg.replace(/^@/, '').toLowerCase() === String(process.env.BOT_USERNAME || '').toLowerCase()) continue;
+        }
+        const after = txtRaw.slice(e.offset + e.length).trim();
+        if (after.length === 0) { assigneeSpan = { offset: e.offset, length: e.length }; break; }
+      }
+      if (assigneeSpan) {
+        const seg = txtRaw.slice(assigneeSpan.offset, assigneeSpan.offset + assigneeSpan.length);
+        cleaned = cleaned.replace(seg, '');
+      }
+    }
+    // Если entities не помогли: удалим последний токен вида @xxx в конце (кроме @бот)
+    try {
+      const tail = cleaned.trim().split(/\s+/).pop() || '';
+      if (/^@/.test(tail)) {
+        const cand = tail.replace(/^@/, '');
+        const botName = String(process.env.BOT_USERNAME || '').replace(/^@/, '').toLowerCase();
+        if (cand.toLowerCase() !== botName) {
+          const esc = cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const re = new RegExp(`\\s*@${esc}\\s*$`, 'i');
+          cleaned = cleaned.replace(re, '').trim();
+        }
+      }
+    } catch {}
+    cleaned = cleaned.trim();
+    const textForTask = cleaned || fileName || (media[0]?.kind === 'photo' ? 'Фото' : media[0]?.kind === 'voice' ? 'Голосовое' : media[0]?.kind === 'document' ? 'Файл' : 'Задача');
 
     // если ни текста, ни медиа — просто выходим
     if (!textForTask && !media.length) return res.sendStatus(200);
@@ -797,17 +847,24 @@ app.post('/webhook', async (req, res) => {
           update: { title, isTelegramGroup: true },
           create: { ownerChatId: String(msg.from?.id || tgChatId), title, isTelegramGroup: true, tgChatId },
         });
-        // админы (best-effort)
+        // админы (best-effort) + upsert user profiles
         try {
           const admins = await tg('getChatAdministrators', { chat_id: tgChatId });
           const list = Array.isArray(admins?.result) ? admins.result : [];
-          const adminIds = list.map((x) => String(x?.user?.id || '')).filter(Boolean);
           await prisma.$transaction(async (tx) => {
-            for (const id of adminIds) {
+            for (const a of list) {
+              const id = String(a?.user?.id || '');
+              if (!id) continue;
               await tx.groupMember.upsert({
                 where: { groupId_chatId: { groupId: g.id, chatId: id } },
                 update: { role: 'admin' },
                 create: { groupId: g.id, chatId: id, role: 'admin' },
+              });
+              const u = a.user || {};
+              await tx.user.upsert({
+                where: { chatId: id },
+                update: { username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
+                create: { chatId: id, username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
               });
             }
           });
@@ -858,6 +915,43 @@ app.post('/webhook', async (req, res) => {
           break;
         }
       }
+      // Фоллбек: если в тексте последний токен @xxx, попробуем найти по username/ФИО среди участников группы
+      if (!assigneeChatId) {
+        const tail = txtRaw.trim().split(/\s+/).pop() || '';
+        if (/^@/.test(tail)) {
+          const cand = tail.replace(/^@/, '');
+          const botName = String(process.env.BOT_USERNAME || '').replace(/^@/, '').toLowerCase();
+          if (cand.toLowerCase() !== botName) {
+            let matched = null;
+            if (msg?.chat?.type === 'group' || msg?.chat?.type === 'supergroup') {
+              const tgChatId = String(msg.chat.id);
+              const g = await prisma.group.findFirst({ where: { tgChatId }, select: { id: true } });
+              if (g?.id) {
+                const links = await prisma.groupMember.findMany({ where: { groupId: g.id }, select: { chatId: true } });
+                const ids = links.map(l => String(l.chatId));
+                if (ids.length) {
+                  const users = await prisma.user.findMany({ where: { chatId: { in: ids } } });
+                  const norm = (s) => (s || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+                  const normNs = (s) => (s || '').toString().toLowerCase().replace(/\s+/g, '').trim();
+                  const c1 = norm(cand);
+                  const c2 = normNs(cand);
+                  const pool = users.map(u => ({
+                    chatId: String(u.chatId),
+                    username: (u.username || '').toLowerCase(),
+                    full: norm(`${u.firstName || ''} ${u.lastName || ''}`),
+                    fullNs: normNs(`${u.firstName || ''}${u.lastName || ''}`),
+                  }));
+                  const byUname = pool.filter(p => p.username === c1 || p.username === c2);
+                  const byName = pool.filter(p => p.full === c1 || p.fullNs === c2);
+                  const pick = byUname[0] || (byUname.length === 0 && byName.length === 1 ? byName[0] : null);
+                  if (pick) matched = pick.chatId;
+                }
+              }
+            }
+            if (matched) assigneeChatId = matched;
+          }
+        }
+      }
       if (assigneeChatId) { await prisma.task.update({ where: { id: created.id }, data: { assigneeChatId } }); }
     } catch {}
 
@@ -879,7 +973,7 @@ app.post('/webhook', async (req, res) => {
       if (sent?.ok && sent.result?.message_id) {
         await prisma.task.update({
           where: { id: created.id },
-          data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
+          data: { sourceChatId: String(msg.from?.id || ''), sourceMessageId: sent.result.message_id }
         });
       }
     } catch (e) { console.warn('store source msg failed', e); }
