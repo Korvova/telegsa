@@ -131,6 +131,8 @@ export default function CommentsThread({
     }
   };
 
+  const [badImg, setBadImg] = useState<Record<string, boolean>>({});
+
   return (
     <div style={wrap}>
       <div style={title}>Комментарии</div>
@@ -147,18 +149,30 @@ export default function CommentsThread({
                   <div style={{ fontSize: 12, opacity: .6 }}>{new Date(c.createdAt).toLocaleString()}</div>
                 </div>
               </div>
-              {String(c.text || '').startsWith('/files/') || String(c.text || '').includes('/files/') ? (
-                <div style={{ marginTop: 6 }}>
-                  <img
-                    src={`${(import.meta as any).env.VITE_API_BASE}${String(c.text)}`}
-                    alt="Фото"
-                    style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
-                    onLoad={() => { try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {} }}
-                  />
-                </div>
-              ) : (
-                <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>
-              )}
+              {(() => {
+                const txt = String(c.text || '');
+                const hasFile = txt.startsWith('/files/') || txt.includes('/files/');
+                if (!hasFile) return (<div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>);
+                const src = `${(import.meta as any).env.VITE_API_BASE}${txt}`;
+                if (badImg[src]) {
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      <a href={src} target="_blank" rel="noreferrer" style={{ color: '#8aa0ff' }}>📎 Открыть файл</a>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ marginTop: 6 }}>
+                    <img
+                      src={src}
+                      alt="Вложение"
+                      style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
+                      onLoad={() => { try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {} }}
+                      onError={() => setBadImg((prev) => ({ ...prev, [src]: true }))}
+                    />
+                  </div>
+                );
+              })()}
               <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   style={{ ...likeBtn, opacity: likeBusy[c.id] ? 0.6 : 1 }}

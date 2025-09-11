@@ -1127,13 +1127,24 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                   const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
                   if ((up as any)?.ok && (up as any)?.media?.url) {
                     await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
+                    // локально добавить media
+                    try { const m = (up as any).media; setMedia((prev)=>[...prev, { id: m.id, kind: m.kind, url: m.url, fileName: m.fileName, mimeType: m.mimeType } as any]); } catch {}
                   }
+                  // после загрузки сразу завершаем по логике условий
+                  const condNow = String((task as any)?.acceptCondition || 'NONE');
+                  const needApprovalNow = condNow === 'APPROVAL' || condNow === 'PHOTO_AND_APPROVAL' || condNow === 'DOC_AND_APPROVAL';
                   await completeTask(taskId);
-                  setPhase('Done');
-                  onChanged?.();
                   setCompleteNeedPhotoOpen(false);
-                  WebApp?.HapticFeedback?.notificationOccurred?.('success');
-                  setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+                  if (needApprovalNow) {
+                    setPhase('Approval');
+                    onChanged?.();
+                    WebApp?.HapticFeedback?.impactOccurred?.('light');
+                  } else {
+                    setPhase('Done');
+                    onChanged?.();
+                    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                    setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+                  }
                 } catch (err) {
                   setError('Не удалось прикрепить фото');
                 } finally {
@@ -1165,8 +1176,22 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                   const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
                   if ((up as any)?.ok && (up as any)?.media?.url) {
                     await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
-                    setCompleteNeedDocOpen(false);
-                    setRefreshTick(t => t + 1);
+                    try { const m = (up as any).media; setMedia((prev)=>[...prev, { id: m.id, kind: m.kind, url: m.url, fileName: m.fileName, mimeType: m.mimeType } as any]); } catch {}
+                  }
+                  // завершение согласно условиям
+                  const condNow = String((task as any)?.acceptCondition || 'NONE');
+                  const needApprovalNow = condNow === 'APPROVAL' || condNow === 'PHOTO_AND_APPROVAL' || condNow === 'DOC_AND_APPROVAL';
+                  await completeTask(taskId);
+                  setCompleteNeedDocOpen(false);
+                  if (needApprovalNow) {
+                    setPhase('Approval');
+                    onChanged?.();
+                    WebApp?.HapticFeedback?.impactOccurred?.('light');
+                  } else {
+                    setPhase('Done');
+                    onChanged?.();
+                    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                    setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
                   }
                 } catch {}
                 finally { setUploadBusy(false); }
