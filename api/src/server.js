@@ -963,6 +963,11 @@ app.post('/webhook', async (req, res) => {
       reply_markup: { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }]] }
     });
 
+    // попытаться удалить исходное сообщение пользователя в группе, чтобы не дублировать
+    try {
+      await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
+    } catch (e) { /* игнорируем ошибки прав/доступа */ }
+
 
 
 
