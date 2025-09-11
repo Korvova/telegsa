@@ -371,6 +371,22 @@ router.get('/feed', async (req, res) => {
       take: limit,
     });
 
+    const taskIds = tasks.map(t => t.id);
+    const now = new Date();
+    let nextByTask = new Map();
+    if (taskIds.length) {
+      try {
+        const groups = await prisma.taskReminder.groupBy({
+          by: ['taskId'],
+          where: { taskId: { in: taskIds }, sentAt: null, fireAt: { gt: now } },
+          _min: { fireAt: true },
+        });
+        nextByTask = new Map(groups.map(g => [g.taskId, g._min.fireAt]));
+      } catch (e) {
+        console.error('feed: groupBy task reminders failed:', e?.message || e);
+      }
+    }
+
     // подтянем заголовки групп по префиксу до "::"
     const groupIds = Array.from(new Set(
       tasks.map(t => {
@@ -419,6 +435,7 @@ const items = tasks.map(t => {
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     deadlineAt: t.deadlineAt,
+    nextReminderAt: nextByTask.get(t.id) || null,
     bountyStars: t.bountyStars,
     bountyStatus: t.bountyStatus,
     acceptCondition: t.acceptCondition,

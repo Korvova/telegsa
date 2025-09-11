@@ -12,6 +12,7 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
   deadlineAt?: string | null;
+  nextReminderAt?: string | null;
   acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
