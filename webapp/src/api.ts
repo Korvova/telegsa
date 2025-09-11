@@ -13,7 +13,7 @@ export type Task = {
   updatedAt: string;
   deadlineAt?: string | null;
   nextReminderAt?: string | null;
-  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
 
@@ -897,7 +897,7 @@ export async function unlikeComment(taskId: string, commentId: string, chatId: s
 export async function setAcceptCondition(
   taskId: string,
   chatId: string,
-  condition: 'NONE' | 'PHOTO' | 'APPROVAL'
+  condition: 'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL'
 ) {
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/accept-condition`, {
     method: 'PATCH',

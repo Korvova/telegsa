@@ -93,7 +93,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
   const [media, setMedia] = useState<TaskMedia[]>([]);
   const [completeNeedPhotoOpen, setCompleteNeedPhotoOpen] = useState(false);
+  const [completeNeedDocOpen, setCompleteNeedDocOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const docInputRef = useRef<HTMLInputElement | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const autosaveTimer = useRef<any>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -700,10 +702,13 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
             (async () => {
               try {
                 const cond = String((task as any)?.acceptCondition || 'NONE');
-                const needPhoto = cond === 'PHOTO';
-                const needApproval = cond === 'APPROVAL';
+                const needPhoto = cond === 'PHOTO' || cond === 'PHOTO_AND_APPROVAL';
+                const needDoc = cond === 'DOC_AND_APPROVAL';
+                const needApproval = cond === 'APPROVAL' || cond === 'PHOTO_AND_APPROVAL' || cond === 'DOC_AND_APPROVAL';
                 const hasPhoto = media.some(m => m.kind === 'photo');
+                const hasDoc = docMedias.length > 0;
                 if (needPhoto && !hasPhoto) { setCompleteNeedPhotoOpen(true); return; }
+                if (needDoc && !hasDoc) { setCompleteNeedDocOpen(true); return; }
                 if (needApproval) {
                   try {
                     const board = await fetchBoard(meChatId, groupId || undefined);
@@ -768,7 +773,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
             {approvalAction && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12, opacity: .9, marginBottom: 6 }}>
+              <div style={{ fontSize: 12, opacity: .9, marginBottom: 6 }}>
                   {approvalAction === 'RETURN' ? 'Причина возврата:' : 'Причина отмены:'}
                 </div>
                 <textarea
@@ -879,6 +884,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                 const cond = String((task as any)?.acceptCondition || 'NONE');
                 if (cond === 'PHOTO') return 'Нужно фото 📸';
                 if (cond === 'APPROVAL') return 'Нужно согласование 🤝';
+                if (cond === 'PHOTO_AND_APPROVAL') return 'Фото + согласование 📸🤝';
+                if (cond === 'DOC_AND_APPROVAL') return 'Документ + согласование 📎🤝';
                 return 'Без условий';
               })()}
             </span>
@@ -1080,6 +1087,18 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                 }} />
                 <span>Нужно согласование 🤝</span>
               </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='PHOTO_AND_APPROVAL'} onChange={async ()=>{
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'PHOTO_AND_APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'PHOTO_AND_APPROVAL' } as any) : prev); } catch {}
+                }} />
+                <span>Фото + согласование 📸🤝</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='DOC_AND_APPROVAL'} onChange={async ()=>{
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'DOC_AND_APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'DOC_AND_APPROVAL' } as any) : prev); } catch {}
+                }} />
+                <span>Документ + согласование 📎🤝</span>
+              </label>
             </div>
             <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>
               <button onClick={()=> setAcceptPickerOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Готово</button>
@@ -1123,6 +1142,35 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               }} />
               <div style={{ fontSize: 12, opacity: 0.85 }}>{uploadBusy ? 'Загружаю фото…' : ''}</div>
               <button disabled={uploadBusy} onClick={()=> setCompleteNeedPhotoOpen(false)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Диалог завершения: нужен документ */}
+      {completeNeedDocOpen && (
+        <div
+          onClick={() => setCompleteNeedDocOpen(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
+            <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите документ</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button disabled={uploadBusy} onClick={()=> docInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1, cursor: uploadBusy ? 'default' : 'pointer' }}>📎 Выбрать файл</button>
+              <input ref={docInputRef} type="file" style={{ display:'none' }} onChange={async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                try {
+                  setUploadBusy(true);
+                  const up = await (await import('./api')).uploadTaskMedia(taskId, meChatId, file);
+                  if ((up as any)?.ok && (up as any)?.media?.url) {
+                    await (await import('./api')).addComment(taskId, meChatId, (up as any).media.url);
+                    setCompleteNeedDocOpen(false);
+                    setRefreshTick(t => t + 1);
+                  }
+                } catch {}
+                finally { setUploadBusy(false); }
+              }} />
             </div>
           </div>
         </div>

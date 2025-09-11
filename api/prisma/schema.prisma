@@ -38,6 +38,8 @@ enum AcceptCondition {
   NONE
   PHOTO
   APPROVAL
+  PHOTO_AND_APPROVAL
+  DOC_AND_APPROVAL
 }
 
 enum EventRole {

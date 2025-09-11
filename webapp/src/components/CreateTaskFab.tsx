@@ -101,7 +101,7 @@ export default function CreateTaskFab({
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [remindersDraft, setRemindersDraft] = useState<{ target: ReminderTarget; fireAtIso: string }[]>([]);
   const [acceptOpen, setAcceptOpen] = useState(false);
-  const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO' | 'APPROVAL'>('NONE');
+  const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL'>('NONE');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [bountyOpen, setBountyOpen] = useState(false);
   const [bountyAmount, setBountyAmount] = useState<number>(0);
@@ -561,8 +561,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 }
 
                                 // Привязать условия приёма
-                                if (acceptCondition === 'PHOTO' || acceptCondition === 'APPROVAL') {
-                                  try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition); } catch {}
+                                if (acceptCondition !== 'NONE') {
+                                  try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
                                 }
 
                                 // Привязать вознаграждение (и симулировать депозит)
@@ -958,8 +958,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       }
 
                       // Привязать условия приёма
-                      if (acceptCondition === 'PHOTO') {
-                        try { const mod = await import('../api'); await mod.setAcceptCondition(newTaskId, chatId, 'PHOTO'); } catch {}
+                      if (acceptCondition !== 'NONE') {
+                        try { const mod = await import('../api'); await mod.setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
                       }
 
                       if (pendingFiles.length) {
@@ -1141,6 +1141,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={acceptCondition==='APPROVAL'} onChange={()=>setAcceptConditionState('APPROVAL')} />
                 <span>Нужно согласование 🤝</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={acceptCondition==='PHOTO_AND_APPROVAL'} onChange={()=>setAcceptConditionState('PHOTO_AND_APPROVAL')} />
+                <span>Фото + согласование 📸🤝</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <input type="radio" checked={acceptCondition==='DOC_AND_APPROVAL'} onChange={()=>setAcceptConditionState('DOC_AND_APPROVAL')} />
+                <span>Документ + согласование 📎🤝</span>
               </label>
             </div>
             <div style={{ display:'flex', justifyContent:'flex-end', marginTop:10 }}>

@@ -1549,7 +1549,8 @@ app.post('/tasks/:id/complete', async (req, res) => {
     if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
 
     // Если требуется фото, проверим наличие прикреплённых фото
-    if (String(task.acceptCondition || 'NONE') === 'PHOTO') {
+    const cond = String(task.acceptCondition || 'NONE');
+    if (cond === 'PHOTO' || cond === 'PHOTO_AND_APPROVAL') {
       const photos = await prisma.task.findUnique({
         where: { id },
         select: { media: { where: { kind: 'photo' }, select: { id: true } } },
@@ -1557,6 +1558,18 @@ app.post('/tasks/:id/complete', async (req, res) => {
       const hasPhoto = !!(photos && photos.media && photos.media.length);
       if (!hasPhoto) {
         return res.status(412).json({ ok: false, error: 'photo_required' });
+      }
+    }
+
+    // Если требуется документ (DOC_AND_APPROVAL), проверим наличие документа
+    if (cond === 'DOC_AND_APPROVAL') {
+      const docs = await prisma.task.findUnique({
+        where: { id },
+        select: { media: { where: { kind: 'document' }, select: { id: true } } },
+      });
+      const hasDoc = !!(docs && docs.media && docs.media.length);
+      if (!hasDoc) {
+        return res.status(412).json({ ok: false, error: 'document_required' });
       }
     }
 
