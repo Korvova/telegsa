@@ -26,7 +26,9 @@
     "react": "^19.1.1",
     "react-big-calendar": "^1.19.4",
     "react-dom": "^19.1.1",
-    "reactflow": "^11.11.4"
+    "reactflow": "^11.11.4",
+    "@tonconnect/ui": "^2.0.0",
+    "@tonconnect/sdk": "^3.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

@@ -5,6 +5,7 @@ import PostCreateActionsLauncher from './PostCreateActionsLauncher';
 import VoiceRecorder from './VoiceRecorder';
 import DeadlinePicker from './DeadlinePicker';
 import BountyPicker from './BountyPicker';
+import TonWalletConnect from './TonWalletConnect';
 import RemindersModal from './RemindersModal';
 import { createTaskReminder, type ReminderTarget } from '../api/reminders';
 
@@ -719,7 +720,12 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                     )}
 
                     {bountyAmount > 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.9 }}>🪙 Вознаграждение: {bountyAmount}</div>
+                      <div style={{ fontSize: 12, opacity: 0.9 }}>
+                        🪙 Вознаграждение: {bountyAmount}
+                        <div style={{ marginTop: 6 }}>
+                          <TonWalletConnect chatId={chatId} />
+                        </div>
+                      </div>
                     ) : null}
 
                     {pendingFiles.length ? (

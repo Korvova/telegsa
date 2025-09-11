@@ -160,6 +160,11 @@ model User {
   username  String?
   firstName String?
   lastName  String?
+  tonAddress    String?
+  tonNetwork    String?
+  tonWalletApp  String?
+  tonVerifiedAt DateTime?
+  tonVerifyNonce String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
