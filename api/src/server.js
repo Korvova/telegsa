@@ -803,7 +803,7 @@ const sent = await sendTaskCreated(tg, {
     const BOT = String(process.env.BOT_USERNAME || '').toLowerCase();
     const entitiesAll = Array.isArray(msg?.entities) ? msg.entities : Array.isArray(msg?.caption_entities) ? msg.caption_entities : [];
     const txtRaw = String(msg.text || msg.caption || '');
-    const hasBotMention = (() => {
+    let hasBotMention = (() => {
       if (!BOT) return false;
       for (const e of entitiesAll) {
         if (e?.type === 'mention') {
@@ -817,6 +817,10 @@ const sent = await sendTaskCreated(tg, {
       }
       return false;
     })();
+    if (!hasBotMention) {
+      const needle = `@${String(BOT).replace(/^@/, '')}`;
+      if (txtRaw.toLowerCase().includes(needle)) hasBotMention = true;
+    }
     if (!hasBotMention) return res.sendStatus(200);
 
     // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (текст/фото/док/голос) -> Задача в default-группе + ensure TG group =====
