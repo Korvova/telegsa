@@ -1070,7 +1070,7 @@ app.post('/webhook', async (req, res) => {
       if (sent?.ok && sent.result?.message_id) {
         await prisma.task.update({
           where: { id: created.id },
-          data: { sourceChatId: String(msg.from?.id || ''), sourceMessageId: sent.result.message_id }
+          data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
         });
       }
     } catch (e) { console.warn('store source msg failed', e); }
@@ -1906,9 +1906,10 @@ app.post('/tasks/:id/complete', async (req, res) => {
 
     // Групповое уведомление о результате
     try {
-      const title = String(updated?.text || '').slice(0, 100) || 'Задача';
-      const msg = requiresApproval ? `⏳ Отправлена на согласование: ${title}` : `✅ Завершена: ${title}`;
-      await sendTaskNoticeServer(updated || task, msg);
+      const current = updated || task;
+      // Всегда короткий текст без названия (даже если не reply)
+      const msg = requiresApproval ? '⏳ Отправлена на согласование' : '✅ Завершено';
+      await sendTaskNoticeServer(current, msg);
     } catch {}
 
     // 🔔 Уведомляем ПОСТАНОВЩИКА (sourceChatId), если включено receiveTaskCompletedMine (только при Done)
