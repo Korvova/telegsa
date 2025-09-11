@@ -725,81 +725,8 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // ===== 2) /g_* команда (создание в конкретной группе из ТЕКСТА) =====
-    if (msg.text) {
-      const text = String(msg.text).trim();
-
-      // /g — обновить список команд
-      if (['/g', '/group', '/groups', '/refresh'].includes(text)) {
-        await updateChatCommands(chatId);
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text: 'Команды обновлены. Наберите "/" и выберите группу. Можно долго удерживать команду, чтобы вставить её в поле ввода.',
-        });
-        return res.sendStatus(200);
-      }
-
-      const m = text.match(/^\/g_([a-z0-9]+)\s*(.*)$/i);
-      if (m) {
-        const short = m[1];
-        const rest = (m[2] || '').trim();
-        if (!rest) {
-          await tg('sendMessage', { chat_id: chatId, text: `Добавьте текст после команды. Пример: /g_${short} Купить молоко` });
-          return res.sendStatus(200);
-        }
-
-        // вычисляем groupId по short
-        let groupId = null; // default
-        if (short !== 'default') {
-          const all = await getUserGroups(chatId);
-          const nonDefault = all.filter(g => g.title !== 'Моя группа');
-          const shortById = buildShortCodes(nonDefault.map(g => g.id));
-          const hit = Object.entries(shortById).find(([, s]) => s === short);
-          if (!hit) {
-            await tg('sendMessage', { chat_id: chatId, text: 'Неизвестный код группы. Наберите /g чтобы обновить список.' });
-            return res.sendStatus(200);
-          }
-          groupId = hit[0];
-        }
-
-        try {
-          // создаём задачу ТОЛЬКО из текста rest (как и раньше для /g)
-          const task = await createTaskInGroup({ chatId, groupId, text: rest });
-
-          // сервиска с корректной ссылкой на мини-апп
-const sent = await sendTaskCreated(tg, {
-  chatId,
-  media,
-  taskId: task.id,
-  title: task.text
-});
-
-
-
-
-
-
-
-
-          try {
-            if (sent?.ok && sent.result?.message_id) {
-              await prisma.task.update({
-                where: { id: task.id },
-                data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id }
-              });
-            }
-          } catch (e) { console.warn('store source msg failed', e); }
-        } catch (e) {
-          console.error('create by /g_<short> error:', e);
-          await tg('sendMessage', { chat_id: chatId, text: 'Не удалось создать задачу.' });
-        }
-
-        return res.sendStatus(200);
-      }
-      // если это просто текст без /g_* — продолжим обработку ниже как «любое сообщение»
-    }
-
-    // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (создание задачи только при упоминании бота) =====
+        // ===== 2) /g_* команды отключены =====
+// ===== 3) ЛЮБОЕ СООБЩЕНИЕ (создание задачи только при упоминании бота) =====
     const BOT = String(process.env.BOT_USERNAME || '').toLowerCase();
     const entitiesAll = Array.isArray(msg?.entities) ? msg.entities : Array.isArray(msg?.caption_entities) ? msg.caption_entities : [];
     const txtRaw = String(msg.text || msg.caption || '');
