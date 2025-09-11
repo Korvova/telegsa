@@ -1,7 +1,8 @@
 // api/src/routes/reminders.js
 import express from 'express';
+import { scheduleTaskReminder, cancelTaskReminder } from '../scheduler.js';
 
-export function remindersRouter({ prisma }) {
+export function remindersRouter({ prisma, tg }) {
   const router = express.Router();
 
   async function getTask(taskId) {
@@ -50,6 +51,7 @@ export function remindersRouter({ prisma }) {
         },
       });
 
+      try { await scheduleTaskReminder(prisma, tg, created.id); } catch {}
       res.json({ ok: true, reminder: created });
     } catch (e) {
       console.error('[reminders] create error', e);
@@ -70,6 +72,7 @@ export function remindersRouter({ prisma }) {
         const ex = await prisma.taskReminder.findUnique({ where: { id: rid } });
         if (!ex) return; else throw new Error('delete_failed');
       });
+      try { cancelTaskReminder(rid); } catch {}
 
       res.json({ ok: true });
     } catch (e) {
@@ -82,4 +85,3 @@ export function remindersRouter({ prisma }) {
 }
 
 export default remindersRouter;
-

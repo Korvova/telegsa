@@ -348,7 +348,7 @@ app.use(payoutMethodRouter);
 app.use(starsRouter);
 app.use(likesRouter);
 app.use(watchersRouter({ prisma }));
-app.use(remindersRouter({ prisma }));
+app.use(remindersRouter({ prisma, tg }));
 // условия приёмки задач
 app.use(acceptRouter);
 // дедлайны (отдельный роутер, но в пространстве /tasks)
