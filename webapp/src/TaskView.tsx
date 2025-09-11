@@ -703,12 +703,12 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               try {
                 const cond = String((task as any)?.acceptCondition || 'NONE');
                 const needPhoto = cond === 'PHOTO' || cond === 'PHOTO_AND_APPROVAL';
-                const needDoc = cond === 'DOC_AND_APPROVAL';
+                const needAnyAttach = cond === 'DOC_AND_APPROVAL';
                 const needApproval = cond === 'APPROVAL' || cond === 'PHOTO_AND_APPROVAL' || cond === 'DOC_AND_APPROVAL';
                 const hasPhoto = media.some(m => m.kind === 'photo');
-                const hasDoc = docMedias.length > 0;
+                const hasAny = media.length > 0;
                 if (needPhoto && !hasPhoto) { setCompleteNeedPhotoOpen(true); return; }
-                if (needDoc && !hasDoc) { setCompleteNeedDocOpen(true); return; }
+                if (needAnyAttach && !hasAny) { setCompleteNeedDocOpen(true); return; }
                 if (needApproval) {
                   try {
                     const board = await fetchBoard(meChatId, groupId || undefined);
@@ -1147,14 +1147,14 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         </div>
       )}
 
-      {/* Диалог завершения: нужен документ */}
+      {/* Диалог завершения: нужен файл (любой) */}
       {completeNeedDocOpen && (
         <div
           onClick={() => setCompleteNeedDocOpen(false)}
           style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
         >
           <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
-            <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите документ</div>
+            <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите файл</div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
               <button disabled={uploadBusy} onClick={()=> docInputRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1, cursor: uploadBusy ? 'default' : 'pointer' }}>📎 Выбрать файл</button>
               <input ref={docInputRef} type="file" style={{ display:'none' }} onChange={async (e) => {
