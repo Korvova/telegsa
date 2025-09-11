@@ -406,6 +406,7 @@ router.get('/feed', async (req, res) => {
       ...tasks.map(t => String(t.chatId)),
       ...tasks.map(t => (t.assigneeChatId ? String(t.assigneeChatId) : '')).filter(Boolean),
       ...tasks.map(t => (t.sourceChatId ? String(t.sourceChatId) : '')).filter(Boolean),
+      ...tasks.map(t => (t.createdByChatId ? String(t.createdByChatId) : '')).filter(Boolean),
     ]));
     const users = ids.length
       ? await prisma.user.findMany({
@@ -430,8 +431,8 @@ const items = tasks.map(t => {
   const groupId = i >= 0 ? cname.slice(0, i) : null;
 
   // определим корректного "постановщика": если sourceChatId есть и это известный user, берём его; иначе — task.chatId
-  const preferSource = t.sourceChatId && userSet.has(String(t.sourceChatId));
-  const creatorCid = preferSource ? String(t.sourceChatId) : String(t.chatId);
+  const creatorCid = t.createdByChatId ? String(t.createdByChatId)
+    : (t.sourceChatId && userSet.has(String(t.sourceChatId)) ? String(t.sourceChatId) : String(t.chatId));
 
   return {
     id: t.id,

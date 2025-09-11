@@ -68,6 +68,9 @@ model Task {
   // Опциональный дедлайн задачи
   deadlineAt DateTime?
 
+  // Кто создал задачу (chatId автора; может отличаться от chatId доски/владельца)
+  createdByChatId String?
+
   columnId String
   column   Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
 
@@ -126,6 +129,7 @@ model Task {
 
   @@index([chatId])
   @@index([columnId, order])
+  @@index([createdByChatId])
 }
 
 /**

@@ -876,7 +876,7 @@ app.post('/webhook', async (req, res) => {
         const inbox = await prisma.column.findFirst({ where: { chatId: boardChatId, name: inboxName } });
         const last = await prisma.task.findFirst({ where: { columnId: inbox.id }, orderBy: { order: 'desc' }, select: { order: true } });
         const nextOrder = (last?.order ?? -1) + 1;
-        created = await prisma.task.create({ data: { chatId: boardChatId, text: textForTask, order: nextOrder, columnId: inbox.id } });
+        created = await prisma.task.create({ data: { chatId: boardChatId, text: textForTask, order: nextOrder, columnId: inbox.id, createdByChatId: String(msg.from?.id || '') } });
       }
     } catch (e) { console.warn('[ensure tg group/create] failed', e?.message || e); }
 
@@ -1089,7 +1089,7 @@ app.get('/tasks/:id', async (req, res) => {
 
     let creatorName = null;
     try {
-      const creatorId = task.sourceChatId ? String(task.sourceChatId) : null;
+      const creatorId = task.createdByChatId ? String(task.createdByChatId) : (task.sourceChatId ? String(task.sourceChatId) : null);
       if (creatorId) {
         const u = await prisma.user.findUnique({ where: { chatId: creatorId } });
         if (u) {
@@ -2190,7 +2190,7 @@ app.post('/tasks', async (req, res) => {
     const nextOrder = (last?.order ?? -1) + 1;
 
     const task = await prisma.task.create({
-      data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id },
+      data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id, createdByChatId: caller },
     });
 
     try {
