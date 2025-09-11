@@ -744,7 +744,7 @@ export default function HomePage({
                               marginBottom: 6,
                             }}
                           >
-                            {(t as any).groupTitle}
+                            {((t as any).isTelegramGroup ? '➡️ ' : '')}{(t as any).groupTitle}
                           </div>
 
                           {/* ярлыки карточки */}

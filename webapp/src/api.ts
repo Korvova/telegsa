@@ -47,6 +47,7 @@ export type Group = {
   id: string;
   title: string;
   kind: 'own' | 'member';
+  isTelegramGroup?: boolean;
   ownerName?: string | null;
 };
 
@@ -639,6 +640,7 @@ export type TaskFeedItem = {
   status: string;
   groupId: string | null;
   groupTitle: string;
+  isTelegramGroup?: boolean;
   creatorChatId: string;
   creatorName: string;
   assigneeChatId: string | null;

@@ -114,7 +114,9 @@ export default function CreateTaskFab({
   const groupLabel = () => {
     if (!groupId) return 'Моя группа';
     const g = groups.find(g => g.id === groupId);
-    return g ? g.title : 'Группа';
+    if (!g) return 'Группа';
+    const isTg = (g as any).isTelegramGroup === true;
+    return (isTg ? '➡️📁 ' : '📁 ') + g.title;
   };
 
   const onPickFiles = (files: FileList | null) => {
@@ -508,7 +510,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🧷
+                        📎
                       </button>
 
                       {/* Кнопка справа (➤ / 🎙️) */}

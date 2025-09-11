@@ -136,6 +136,8 @@ model Group {
   id          String   @id @default(cuid())
   ownerChatId String
   title       String
+  isTelegramGroup Boolean @default(false)
+  tgChatId    String?  @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

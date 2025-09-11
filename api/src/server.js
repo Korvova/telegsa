@@ -595,6 +595,79 @@ app.post('/webhook', async (req, res) => {
     if (!secret || secret !== process.env.WEBHOOK_SECRET) return res.sendStatus(403);
 
     const update = req.body;
+    // --- обработка добавления/удаления бота в группе (my_chat_member)
+    if (update?.my_chat_member && update.my_chat_member.chat && update.my_chat_member.new_chat_member) {
+      try {
+        const chat = update.my_chat_member.chat; // { id, type, title, ... }
+        const chatId = String(chat.id || '');
+        const isGroup = chat?.type === 'group' || chat?.type === 'supergroup';
+        const newStatus = String(update.my_chat_member.new_chat_member?.status || '');
+        const oldStatus = String(update.my_chat_member.old_chat_member?.status || '');
+
+        if (!isGroup) return res.sendStatus(200);
+
+        // Удалили/вышел бот → удалить группу и связанные данные
+        if (['left', 'kicked'].includes(newStatus)) {
+          try {
+            const g = await prisma.group.findFirst({ where: { tgChatId: chatId } });
+            if (g) {
+              const id = g.id;
+              const cols = await prisma.column.findMany({ where: { name: { startsWith: `${id}${GROUP_SEP}` } }, select: { id: true } });
+              const colIds = cols.map(c => c.id);
+              await prisma.$transaction(async (tx) => {
+                if (colIds.length) {
+                  await tx.task.deleteMany({ where: { columnId: { in: colIds } } });
+                  await tx.column.deleteMany({ where: { id: { in: colIds } } });
+                }
+                await tx.groupMember.deleteMany({ where: { groupId: id } });
+                await tx.inviteTicket.deleteMany({ where: { groupId: id } });
+                await tx.group.delete({ where: { id } });
+              });
+            }
+          } catch (e) { console.error('[tg-group delete] error', e); }
+          return res.sendStatus(200);
+        }
+
+        // Добавили/стал активным → upsert TG-группу и синхронизировать админов
+        if (['member', 'administrator'].includes(newStatus) && oldStatus !== 'administrator') {
+          try {
+            // getChat — на случай отсутствия title в апдейте
+            let title = String(chat.title || '').trim();
+            if (!title) {
+              const info = await tg('getChat', { chat_id: chatId });
+              title = String(info?.result?.title || 'Группа');
+            }
+            // создадим/обновим группу
+            const g = await prisma.group.upsert({
+              where: { tgChatId: chatId },
+              update: { title, isTelegramGroup: true },
+              create: { ownerChatId: String(update.my_chat_member?.from?.id || chatId), title, isTelegramGroup: true, tgChatId: chatId },
+            });
+            // админы
+            try {
+              const admins = await tg('getChatAdministrators', { chat_id: chatId });
+              const list = Array.isArray(admins?.result) ? admins.result : [];
+              const adminIds = list.map((x) => String(x?.user?.id || '')).filter(Boolean);
+              // очистим предыдущие админки и создадим актуальные
+              await prisma.$transaction(async (tx) => {
+                await tx.groupMember.deleteMany({ where: { groupId: g.id, role: 'admin' } });
+                for (const id of adminIds) {
+                  await tx.groupMember.upsert({
+                    where: { groupId_chatId: { groupId: g.id, chatId: id } },
+                    update: { role: 'admin' },
+                    create: { groupId: g.id, chatId: id, role: 'admin' },
+                  });
+                }
+              });
+            } catch (e) { console.warn('[admins sync] failed', e?.message || e); }
+          } catch (e) { console.error('[tg-group upsert] error', e); }
+          return res.sendStatus(200);
+        }
+      } catch (e) {
+        console.error('[my_chat_member handler] error', e);
+      }
+      return res.sendStatus(200);
+    }
     const msg = update?.message;
     if (!msg) return res.sendStatus(200);
 
@@ -726,7 +799,7 @@ const sent = await sendTaskCreated(tg, {
       // если это просто текст без /g_* — продолжим обработку ниже как «любое сообщение»
     }
 
-    // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (текст/фото/док/голос) -> Задача в default-группе =====
+    // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (текст/фото/док/голос) -> Задача в default-группе + ensure TG group =====
     // Собираем медиа
     const media = [];
     if (Array.isArray(msg?.photo) && msg.photo.length) {
@@ -761,6 +834,34 @@ const sent = await sendTaskCreated(tg, {
     if (msg?.chat?.type === 'private') {
       try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
     }
+
+    // если это группа/supergroup — убедимся, что TG-группа существует и админы отмечены
+    try {
+      if (msg?.chat?.type === 'group' || msg?.chat?.type === 'supergroup') {
+        const tgChatId = String(msg.chat.id);
+        const title = String(msg.chat.title || 'Группа');
+        const g = await prisma.group.upsert({
+          where: { tgChatId },
+          update: { title, isTelegramGroup: true },
+          create: { ownerChatId: String(msg.from?.id || tgChatId), title, isTelegramGroup: true, tgChatId },
+        });
+        // админы (best-effort)
+        try {
+          const admins = await tg('getChatAdministrators', { chat_id: tgChatId });
+          const list = Array.isArray(admins?.result) ? admins.result : [];
+          const adminIds = list.map((x) => String(x?.user?.id || '')).filter(Boolean);
+          await prisma.$transaction(async (tx) => {
+            for (const id of adminIds) {
+              await tx.groupMember.upsert({
+                where: { groupId_chatId: { groupId: g.id, chatId: id } },
+                update: { role: 'admin' },
+                create: { groupId: g.id, chatId: id, role: 'admin' },
+              });
+            }
+          });
+        } catch {}
+      }
+    } catch (e) { console.warn('[ensure tg group] failed', e?.message || e); }
 
     // создаём задачу
     const created = await createTaskInGroup({ chatId, groupId: null, text: textForTask });
@@ -2058,15 +2159,20 @@ app.get('/groups', async (req, res) => {
       myGroups = [created];
     }
 
-    const memberLinks = await prisma.groupMember.findMany({
-      where: { chatId },
-      include: { group: true },
-    });
+    const memberLinks = await prisma.groupMember.findMany({ where: { chatId }, include: { group: true } });
 
-    const raw = [
-      ...myGroups.map(g => ({ id: g.id, title: g.title, ownerChatId: g.ownerChatId, kind: 'own' })),
-      ...memberLinks.map(m => ({ id: m.group.id, title: m.group.title, ownerChatId: m.group.ownerChatId, kind: 'member' })),
-    ];
+    // Соберём все группы, где я владелец, и где я участник/админ
+    const rawBase = new Map();
+    for (const g of myGroups) rawBase.set(g.id, { ...g, kind: 'own' });
+    for (const link of memberLinks) {
+      const g = link.group;
+      // Админам TG-группы отображаем как "own"
+      const kind = (g.isTelegramGroup && String(link.role || 'member') === 'admin') ? 'own' : 'member';
+      const prev = rawBase.get(g.id);
+      // Если уже own — не понижаем; иначе записываем
+      if (!prev || prev.kind !== 'own') rawBase.set(g.id, { ...g, kind });
+    }
+    const raw = Array.from(rawBase.values());
 
     const ownerIds = Array.from(new Set(raw.map(g => g.ownerChatId)));
     const owners = await prisma.user.findMany({ where: { chatId: { in: ownerIds } } });
@@ -2078,7 +2184,12 @@ app.get('/groups', async (req, res) => {
     );
 
     const groups = raw.map(g => ({
-      ...g,
+      id: g.id,
+      title: g.title,
+      ownerChatId: g.ownerChatId,
+      isTelegramGroup: !!g.isTelegramGroup,
+      tgChatId: g.tgChatId || null,
+      kind: g.kind,
       ownerName: nameByChat.get(g.ownerChatId) || null,
     }));
 
@@ -2120,6 +2231,9 @@ app.patch('/groups/:id', async (req, res) => {
     }
     const grp = await prisma.group.findUnique({ where: { id } });
     if (!grp) return res.status(404).json({ ok: false, error: 'not found' });
+    if (grp.isTelegramGroup) {
+      return res.status(403).json({ ok: false, error: 'tg_group_readonly' });
+    }
     if (grp.ownerChatId !== String(chatId)) {
       return res.status(403).json({ ok: false, error: 'forbidden' });
     }

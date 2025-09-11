@@ -185,7 +185,11 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [isLightboxOpen, photos.length]);
 
-  const groupLabel = () => groupTitle || 'Моя группа';
+  const [groupIsTg, setGroupIsTg] = useState<boolean>(false);
+  const groupLabel = () => {
+    if (!groupTitle) return 'Моя группа';
+    return (groupIsTg ? '➡️📁 ' : '📁 ') + groupTitle;
+  };
 
   /* --- системная кнопка "Назад" --- */
   useEffect(() => {
@@ -261,6 +265,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           setAllGroups(r.groups || []);
           const g = r.groups.find((x: any) => x.id === groupId);
           setGroupTitle(g ? g.title : null);
+          setGroupIsTg(Boolean((g as any)?.isTelegramGroup));
         }
       })
       .catch(() => {});
