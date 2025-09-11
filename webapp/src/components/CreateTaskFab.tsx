@@ -684,16 +684,28 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                     ) : null}
 
                     {remindersDraft.length > 0 && (
-                      <div style={{ fontSize: 12, opacity: 0.85 }}>
-                        ⏰ Напоминания: {remindersDraft
-                          .map((r) => {
-                            const d = new Date(r.fireAtIso);
-                            const pad = (n: number) => String(n).padStart(2, '0');
-                            const when = `${pad(d.getDate())}.${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                            const label = r.target === 'ME' ? 'Себе' : r.target === 'RESPONSIBLE' ? 'Ответственному' : 'Всем';
-                            return `${label} ${when}`;
-                          })
-                          .join('; ')}
+                      <div style={{ fontSize: 12, opacity: 0.85, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span>⏰ Напоминания:</span>
+                        {remindersDraft.map((r, idx) => {
+                          const d = new Date(r.fireAtIso);
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          const when = `${pad(d.getDate())}.${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                          const label = r.target === 'ME' ? 'Себе' : r.target === 'RESPONSIBLE' ? 'Ответственному' : 'Всем';
+                          return (
+                            <span key={`${idx}-${r.fireAtIso}-${r.target}`}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#1b2030', border: '1px solid #2a3346', borderRadius: 999, padding: '2px 8px' }}
+                            >
+                              <span>{label} {when}</span>
+                              <button
+                                onClick={() => setRemindersDraft(prev => prev.filter((_, i) => i !== idx))}
+                                title="Удалить"
+                                style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}
+                              >
+                                (x)
+                              </button>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 
