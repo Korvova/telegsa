@@ -1580,51 +1580,51 @@ app.post('/tasks/:id/complete', async (req, res) => {
     const groupId = i > 0 ? curCol.name.slice(0, i) : null;
 
     await ensureDefaultColumns(task.chatId, groupId);
-    const doneName = nameWithGroup(groupId, 'Done');
-    const done = await prisma.column.findFirst({ where: { chatId: task.chatId, name: doneName } });
-    if (!done) return res.status(500).json({ ok: false, error: 'Done column not found' });
+    const requiresApproval = cond === 'APPROVAL' || cond === 'PHOTO_AND_APPROVAL' || cond === 'DOC_AND_APPROVAL';
+    const targetName = requiresApproval ? 'Approval' : 'Done';
+    const targetFullName = nameWithGroup(groupId, targetName);
+    const targetCol = await prisma.column.findFirst({ where: { chatId: task.chatId, name: targetFullName } });
+    if (!targetCol) return res.status(500).json({ ok: false, error: `${targetName} column not found` });
 
-    // Уже в Done → только переупорядочивание
-    if (task.columnId === done.id) {
-      const count = await prisma.task.count({ where: { columnId: done.id } });
+    // Если уже в целевой колонке — только переупорядочивание в конец
+    if (task.columnId === targetCol.id) {
+      const count = await prisma.task.count({ where: { columnId: targetCol.id } });
       const lastIndex = count - 1;
       if (task.order === lastIndex) return res.json({ ok: true, task });
 
       const updated = await prisma.$transaction(async (tx) => {
-        await tx.task.updateMany({
-          where: { columnId: done.id, order: { gt: task.order } },
-          data: { order: { decrement: 1 } },
-        });
+        await tx.task.updateMany({ where: { columnId: targetCol.id, order: { gt: task.order } }, data: { order: { decrement: 1 } } });
         return tx.task.update({ where: { id }, data: { order: lastIndex } });
       });
 
       return res.json({ ok: true, task: updated });
     }
 
-    // Перенос в Done
-    const toIndex = await prisma.task.count({ where: { columnId: done.id } });
+    // Перенос в целевую колонку
+    const toIndex = await prisma.task.count({ where: { columnId: targetCol.id } });
     const fromColumnId = task.columnId;
 
     const updated = await prisma.$transaction(async (tx) => {
-      await tx.task.updateMany({
-        where: { columnId: fromColumnId, order: { gt: task.order } },
-        data: { order: { decrement: 1 } },
-      });
-      const moved = await tx.task.update({ where: { id }, data: { columnId: done.id, order: toIndex } });
-      // === Bounty handling (virtual) ===
-      if (Number(moved.bountyStars || 0) > 0 && String(moved.bountyStatus || 'NONE') !== 'PAID') {
-        if (moved.assigneeChatId) {
-          await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: String(moved.assigneeChatId), amount: Number(moved.bountyStars), kind: 'PAYOUT' } });
-          await tx.task.update({ where: { id }, data: { bountyStatus: 'PAID' } });
-        } else {
-          await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: null, amount: Number(moved.bountyStars), kind: 'REFUND' } });
-          await tx.task.update({ where: { id }, data: { bountyStatus: 'REFUNDED', bountyStars: 0 } });
+      await tx.task.updateMany({ where: { columnId: fromColumnId, order: { gt: task.order } }, data: { order: { decrement: 1 } } });
+      const moved = await tx.task.update({ where: { id }, data: { columnId: targetCol.id, order: toIndex } });
+
+      // === Bounty handling (virtual) — только при переходе в Done ===
+      if (!requiresApproval) {
+        if (Number(moved.bountyStars || 0) > 0 && String(moved.bountyStatus || 'NONE') !== 'PAID') {
+          if (moved.assigneeChatId) {
+            await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: String(moved.assigneeChatId), amount: Number(moved.bountyStars), kind: 'PAYOUT' } });
+            await tx.task.update({ where: { id }, data: { bountyStatus: 'PAID' } });
+          } else {
+            await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: null, amount: Number(moved.bountyStars), kind: 'REFUND' } });
+            await tx.task.update({ where: { id }, data: { bountyStatus: 'REFUNDED', bountyStars: 0 } });
+          }
         }
       }
+
       return await tx.task.findUnique({ where: { id } });
     });
 
-    // 🔔 Уведомляем ПОСТАНОВЩИКА (sourceChatId), если включено receiveTaskCompletedMine
+    // 🔔 Уведомляем ПОСТАНОВЩИКА (sourceChatId), если включено receiveTaskCompletedMine (только при Done)
     (async () => {
       try {
         const creatorId = task?.sourceChatId ? String(task.sourceChatId) : null;
