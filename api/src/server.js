@@ -58,6 +58,48 @@ async function tg(method, payload) {
   return data;
 }
 
+// ---- TG group aware notification helpers (server scope) ----
+async function resolveTaskGroupForServer(task) {
+  try {
+    const col = await prisma.column.findUnique({ where: { id: task.columnId } });
+    if (!col) return { groupId: null, tgChatId: null };
+    const name = String(col.name || '');
+    const i = name.indexOf(GROUP_SEP);
+    const groupId = i > 0 ? name.slice(0, i) : null;
+    if (!groupId) return { groupId: null, tgChatId: null };
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g || !g.isTelegramGroup || !g.tgChatId) return { groupId, tgChatId: null };
+    return { groupId, tgChatId: String(g.tgChatId) };
+  } catch { return { groupId: null, tgChatId: null }; }
+}
+
+async function dmWriteAllowed(chatId) {
+  try {
+    const st = await prisma.notificationSetting.findUnique({ where: { telegramId: String(chatId) }, select: { writeAccessGranted: true } });
+    return !!(st && st.writeAccessGranted);
+  } catch { return false; }
+}
+
+async function sendTaskNoticeServer(task, text) {
+  const { tgChatId } = await resolveTaskGroupForServer(task);
+  const markup = { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }]] };
+  if (tgChatId) {
+    try {
+      const payload = { chat_id: tgChatId, text, disable_web_page_preview: true, reply_markup: markup };
+      if (String(task.sourceChatId || '') === String(tgChatId) && Number.isInteger(task.sourceMessageId)) {
+        payload.reply_to_message_id = Number(task.sourceMessageId);
+        payload.allow_sending_without_reply = true;
+      }
+      const sent = await tg('sendMessage', payload);
+      if (sent?.ok) return true;
+    } catch {}
+  }
+  // Fallback: DM creator
+  const to = String(task.createdByChatId || task.chatId);
+  if (!(await dmWriteAllowed(to))) return false;
+  try { await tg('sendMessage', { chat_id: to, text, disable_web_page_preview: true, reply_markup: markup }); return true; } catch { return false; }
+}
+
 
 
 initReminderScheduler({ prisma, tg }).catch(console.error);
@@ -682,55 +724,105 @@ app.post('/webhook', async (req, res) => {
 
     const chatId = String(msg.chat?.id || '');
 
-    // ===== 1) РЕПЛАЙ на карточку задачи -> КОММЕНТАРИЙ (оставляем как у тебя) =====
+    // ===== 1) РЕПЛАЙ =====
     if (msg?.reply_to_message && (msg.text || msg.caption)) {
+      const authorChatId = String(msg.from?.id || '');
+      const text = String(msg.text || msg.caption || '').trim();
+      const repliedId = Number(msg.reply_to_message.message_id);
+      // 1a) если это реплай на наше сообщение о задаче — добавим комментарий
       try {
-        const repliedId = Number(msg.reply_to_message.message_id);
-        const authorChatId = String(msg.from?.id || '');
-        const text = String(msg.text || msg.caption || '').trim();
-        if (text) {
-          const task = await prisma.task.findFirst({
-            where: { sourceChatId: chatId, sourceMessageId: repliedId },
-          });
-          if (task) {
-            // комментарий
-            await prisma.comment.create({ data: { taskId: task.id, authorChatId, text } });
+        const task = await prisma.task.findFirst({ where: { sourceChatId: chatId, sourceMessageId: repliedId } });
+        if (task && text) {
+          await prisma.comment.create({ data: { taskId: task.id, authorChatId, text } });
+          // уведомления
+          const posterId = task.sourceChatId ? String(task.sourceChatId) : String(task.chatId);
+          const recipients = [task.assigneeChatId ? String(task.assigneeChatId) : null, posterId].filter(Boolean);
+          if (recipients.length) {
+            const authorUser = await prisma.user.findUnique({ where: { chatId: authorChatId } });
+            const authorName = [authorUser?.firstName, authorUser?.lastName].filter(Boolean).join(' ') || (authorUser?.username ? `@${authorUser.username}` : authorChatId);
+            const st = await prisma.notificationSetting.findMany({ where: { telegramId: { in: recipients } }, select: { telegramId: true, receiveTaskComment: true, writeAccessGranted: true } });
+            const allowed = new Set(st.filter(s => (s.receiveTaskComment ?? true) && s.writeAccessGranted).map(s => String(s.telegramId)));
+            const dmText = `👤 ${authorName}\n✐ᝰ\n${text}`;
+            const markup = { inline_keyboard: [[{ text: 'Ответить', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }]] };
+            await Promise.all(recipients.filter(id => allowed.has(id)).map(cid => tg('sendMessage', { chat_id: cid, text: dmText, disable_web_page_preview: true, reply_markup: markup })));
+          }
+          return res.sendStatus(200);
+        }
+      } catch (e) { console.error('[webhook reply->comment] check error:', e); }
 
-            // уведомления (как было)
-            const posterId = task.sourceChatId ? String(task.sourceChatId) : String(task.chatId);
-            const recipients = [task.assigneeChatId ? String(task.assigneeChatId) : null, posterId].filter(Boolean);
-
-            if (recipients.length) {
-              const authorUser = await prisma.user.findUnique({ where: { chatId: authorChatId } });
-              const authorName = [authorUser?.firstName, authorUser?.lastName].filter(Boolean).join(' ')
-                || (authorUser?.username ? `@${authorUser.username}` : authorChatId);
-
-              const st = await prisma.notificationSetting.findMany({
-                where: { telegramId: { in: recipients } },
-                select: { telegramId: true, receiveTaskComment: true, writeAccessGranted: true },
-              });
-              const allowed = new Set(
-                st.filter(s => (s.receiveTaskComment ?? true) && s.writeAccessGranted).map(s => String(s.telegramId))
-              );
-              const dmText = `👤 ${authorName}\n✐ᝰ\n${text}`;
-              const markup = { inline_keyboard: [[{ text: 'Ответить', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }]] };
-
-              await Promise.all(
-                recipients
-                  .filter(id => allowed.has(id))
-                  .map(cid => tg('sendMessage', {
-                    chat_id: cid,
-                    text: dmText,
-                    disable_web_page_preview: true,
-                    reply_markup: markup,
-                  }))
-              );
-            }
+      // 1b) иначе, если в реплае есть упоминание бота — создадим задачу из ЦИТИРУЕМОГО сообщения
+      try {
+        const BOT = String(process.env.BOT_USERNAME || '').toLowerCase();
+        const entitiesAll = Array.isArray(msg?.entities) ? msg.entities : Array.isArray(msg?.caption_entities) ? msg.caption_entities : [];
+        const txtRaw = String(msg.text || msg.caption || '');
+        let hasBotMention = false;
+        for (const e of entitiesAll) {
+          if (e?.type === 'mention') {
+            const seg = txtRaw.slice(e.offset, e.offset + e.length).toLowerCase();
+            if (seg === `@${BOT}` || seg === `@${BOT.replace(/^@/, '')}`) { hasBotMention = true; break; }
+          }
+          if (e?.type === 'bot_command') {
+            const seg = txtRaw.slice(e.offset, e.offset + e.length).toLowerCase();
+            if (seg.includes(`@${BOT}`)) { hasBotMention = true; break; }
           }
         }
-      } catch (e) {
-        console.error('[webhook reply->comment] error:', e);
-      }
+        if (!hasBotMention && BOT) {
+          const needle = `@${String(BOT).replace(/^@/, '')}`;
+          if (txtRaw.toLowerCase().includes(needle)) hasBotMention = true;
+        }
+        if (hasBotMention) {
+          // собрать текст и медиа из цитируемого
+          const ref = msg.reply_to_message;
+          const media = [];
+          if (Array.isArray(ref?.photo) && ref.photo.length) {
+            const p = ref.photo[ref.photo.length - 1];
+            media.push({ kind: 'photo', tgFileId: p.file_id, tgUniqueId: p.file_unique_id, width: p.width, height: p.height, fileSize: p.file_size });
+          }
+          if (ref?.document) {
+            const d = ref.document;
+            media.push({ kind: 'document', tgFileId: d.file_id, tgUniqueId: d.file_unique_id, mimeType: d.mime_type, fileName: d.file_name, fileSize: d.file_size });
+          }
+          if (ref?.voice) {
+            const v = ref.voice;
+            media.push({ kind: 'voice', tgFileId: v.file_id, tgUniqueId: v.file_unique_id, mimeType: 'audio/ogg', duration: v.duration, fileSize: v.file_size });
+          }
+          const refCaption = String(ref?.caption || '').trim();
+          const refFileName = ref?.document?.file_name ? String(ref.document.file_name) : '';
+          let textForTask = String(ref?.text || refCaption || refFileName || (media[0]?.kind === 'photo' ? 'Фото' : media[0]?.kind === 'voice' ? 'Голосовое' : media[0]?.kind === 'document' ? 'Файл' : 'Задача')).slice(0, 4096);
+
+          // создать в TG-проекте, если это group/supergroup
+          let created = null;
+          try {
+            if (msg?.chat?.type === 'group' || msg?.chat?.type === 'supergroup') {
+              const tgChatId = String(msg.chat.id);
+              const title = String(msg.chat.title || 'Группа');
+              const g = await prisma.group.upsert({ where: { tgChatId }, update: { title, isTelegramGroup: true }, create: { ownerChatId: String(msg.from?.id || tgChatId), title, isTelegramGroup: true, tgChatId } });
+              const boardChatId = g.ownerChatId;
+              await ensureDefaultColumns(boardChatId, g.id);
+              const inboxName = nameWithGroup(g.id, 'Inbox');
+              const inbox = await prisma.column.findFirst({ where: { chatId: boardChatId, name: inboxName } });
+              const last = await prisma.task.findFirst({ where: { columnId: inbox.id }, orderBy: { order: 'desc' }, select: { order: true } });
+              const nextOrder = (last?.order ?? -1) + 1;
+              created = await prisma.task.create({ data: { chatId: boardChatId, text: textForTask, order: nextOrder, columnId: inbox.id, createdByChatId: String(msg.from?.id || '') } });
+            }
+          } catch (e) { console.warn('[reply create task tg-group]', e?.message || e); }
+          if (!created) {
+            created = await createTaskInGroup({ chatId, groupId: null, text: textForTask });
+          }
+          if (media.length) {
+            try { await prisma.$transaction(media.map(m => prisma.taskMedia.create({ data: { taskId: created.id, ...m } }))); } catch (e) { console.warn('[reply taskMedia:create] failed', e); }
+          }
+          // отправим сервиску и удалим триггер-сообщение
+          const sent = await tg('sendMessage', { chat_id: chatId, text: `${created.text}`, disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }]] } });
+          try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
+          try {
+            if (sent?.ok && sent.result?.message_id) {
+              await prisma.task.update({ where: { id: created.id }, data: { sourceChatId: chatId, sourceMessageId: sent.result.message_id } });
+            }
+          } catch (e) { console.warn('store source msg failed', e); }
+          return res.sendStatus(200);
+        }
+      } catch (e) { console.error('[webhook reply->create task] error', e); }
       return res.sendStatus(200);
     }
 
@@ -1811,6 +1903,13 @@ app.post('/tasks/:id/complete', async (req, res) => {
 
       return await tx.task.findUnique({ where: { id } });
     });
+
+    // Групповое уведомление о результате
+    try {
+      const title = String(updated?.text || '').slice(0, 100) || 'Задача';
+      const msg = requiresApproval ? `⏳ Отправлена на согласование: ${title}` : `✅ Завершена: ${title}`;
+      await sendTaskNoticeServer(updated || task, msg);
+    } catch {}
 
     // 🔔 Уведомляем ПОСТАНОВЩИКА (sourceChatId), если включено receiveTaskCompletedMine (только при Done)
     (async () => {
