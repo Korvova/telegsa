@@ -24,6 +24,7 @@ import { payoutMethodRouter } from './routes/payoutMethod.js';
 import { starsRouter } from './routes/stars.js';
 import { likesRouter } from './routes/likes.js';
 import { watchersRouter } from './routes/watchers.js';
+import { remindersRouter } from './routes/reminders.js';
 
 
 import { execa } from 'execa';
@@ -347,6 +348,7 @@ app.use(payoutMethodRouter);
 app.use(starsRouter);
 app.use(likesRouter);
 app.use(watchersRouter({ prisma }));
+app.use(remindersRouter({ prisma }));
 // условия приёмки задач
 app.use(acceptRouter);
 // дедлайны (отдельный роутер, но в пространстве /tasks)
