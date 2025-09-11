@@ -405,6 +405,7 @@ router.get('/feed', async (req, res) => {
     const ids = Array.from(new Set([
       ...tasks.map(t => String(t.chatId)),
       ...tasks.map(t => (t.assigneeChatId ? String(t.assigneeChatId) : '')).filter(Boolean),
+      ...tasks.map(t => (t.sourceChatId ? String(t.sourceChatId) : '')).filter(Boolean),
     ]));
     const users = ids.length
       ? await prisma.user.findMany({
@@ -441,8 +442,8 @@ const items = tasks.map(t => {
     groupId,
     groupTitle: groupId ? (gTitle.get(groupId) || 'Без группы') : 'Моя группа',
     isTelegramGroup: groupId ? (gIsTg.get(groupId) || false) : false,
-    creatorChatId: String(t.chatId),
-    creatorName: fullName(t.chatId),
+    creatorChatId: t.sourceChatId ? String(t.sourceChatId) : String(t.chatId),
+    creatorName: t.sourceChatId ? fullName(t.sourceChatId) : fullName(t.chatId),
     assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
     assigneeName: t.assigneeChatId ? fullName(t.assigneeChatId) : null,
 

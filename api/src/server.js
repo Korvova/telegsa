@@ -864,7 +864,7 @@ app.post('/webhook', async (req, res) => {
     // сервиска с кнопкой (минимум)
     const sent = await tg('sendMessage', {
       chat_id: chatId,
-      text: `Создана задача: ${created.text}`,
+      text: `${created.text}`,
       disable_web_page_preview: true,
       reply_markup: { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }]] }
     });
