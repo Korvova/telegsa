@@ -5,6 +5,8 @@ import PostCreateActionsLauncher from './PostCreateActionsLauncher';
 import VoiceRecorder from './VoiceRecorder';
 import DeadlinePicker from './DeadlinePicker';
 import BountyPicker from './BountyPicker';
+import RemindersModal from './RemindersModal';
+import { createTaskReminder, type ReminderTarget } from '../api/reminders';
 
 import WebApp from '@twa-dev/sdk';
 import {
@@ -96,6 +98,8 @@ export default function CreateTaskFab({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [remindersDraft, setRemindersDraft] = useState<{ target: ReminderTarget; fireAtIso: string }[]>([]);
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO' | 'APPROVAL'>('NONE');
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -230,6 +234,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
     setGroupLabels([]);
     setDeadlineAt(null);
     setAcceptConditionState('NONE');
+    setRemindersDraft([]);
   };
   const back = () => {
     if (isSimpleMode) { closeModal(); return; }
@@ -575,6 +580,13 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                   }
                                 }
 
+                                // Создать запланированные напоминания
+                                if (remindersDraft.length) {
+                                  for (const rm of remindersDraft) {
+                                    try { await createTaskReminder(newTaskId, { createdBy: chatId, target: rm.target, fireAt: rm.fireAtIso }); } catch {}
+                                  }
+                                }
+
                                 WebApp?.HapticFeedback?.notificationOccurred?.('success');
                                 onCreated?.();
                                 closeModal();
@@ -653,12 +665,37 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         }}
                       >☝️</button>
 
+                      <button
+                        type="button"
+                        onClick={() => setRemindersOpen(true)}
+                        title="Добавить напоминание"
+                        style={{
+                          width: 36, height: 36, borderRadius: 10,
+                          border: '1px solid #2a3346', background: '#202840',
+                          color: '#e8eaed', cursor: 'pointer',
+                        }}
+                      >⏰</button>
+
                   </div>
                   )}
 
                     {deadlineAt ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
                     ) : null}
+
+                    {remindersDraft.length > 0 && (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>
+                        ⏰ Напоминания: {remindersDraft
+                          .map((r) => {
+                            const d = new Date(r.fireAtIso);
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            const when = `${pad(d.getDate())}.${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                            const label = r.target === 'ME' ? 'Себе' : r.target === 'RESPONSIBLE' ? 'Ответственному' : 'Всем';
+                            return `${label} ${when}`;
+                          })
+                          .join('; ')}
+                      </div>
+                    )}
 
                     {acceptCondition === 'PHOTO' && (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>☝️ Требуется фото 📸</div>
@@ -919,6 +956,13 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         }
                       }
 
+                      // Создать запланированные напоминания
+                      if (remindersDraft.length) {
+                        for (const rm of remindersDraft) {
+                          try { await createTaskReminder(newTaskId, { createdBy: chatId, target: rm.target, fireAt: rm.fireAtIso }); } catch {}
+                        }
+                      }
+
                       WebApp?.HapticFeedback?.notificationOccurred?.('success');
                       onCreated?.();
                       closeModal();
@@ -1040,6 +1084,16 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
           </div>
         </div>
       )}
+
+      {/* Модалка напоминания при создании */}
+      <RemindersModal
+        open={remindersOpen}
+        onClose={() => setRemindersOpen(false)}
+        onPick={({ target, fireAtIso }) => {
+          setRemindersDraft(prev => [...prev, { target, fireAtIso }]);
+          setRemindersOpen(false);
+        }}
+      />
 
       {/* модалка камеры */}
       <CameraCaptureModal
