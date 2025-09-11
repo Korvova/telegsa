@@ -799,6 +799,26 @@ const sent = await sendTaskCreated(tg, {
       // если это просто текст без /g_* — продолжим обработку ниже как «любое сообщение»
     }
 
+    // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (создание задачи только при упоминании бота) =====
+    const BOT = String(process.env.BOT_USERNAME || '').toLowerCase();
+    const entitiesAll = Array.isArray(msg?.entities) ? msg.entities : Array.isArray(msg?.caption_entities) ? msg.caption_entities : [];
+    const txtRaw = String(msg.text || msg.caption || '');
+    const hasBotMention = (() => {
+      if (!BOT) return false;
+      for (const e of entitiesAll) {
+        if (e?.type === 'mention') {
+          const seg = txtRaw.slice(e.offset, e.offset + e.length).toLowerCase();
+          if (seg === `@${BOT}` || seg === `@${BOT.replace(/^@/, '')}`) return true;
+        }
+        if (e?.type === 'bot_command') {
+          const seg = txtRaw.slice(e.offset, e.offset + e.length).toLowerCase();
+          if (seg.includes(`@${BOT}`)) return true;
+        }
+      }
+      return false;
+    })();
+    if (!hasBotMention) return res.sendStatus(200);
+
     // ===== 3) ЛЮБОЕ СООБЩЕНИЕ (текст/фото/док/голос) -> Задача в default-группе + ensure TG group =====
     // Собираем медиа
     const media = [];
@@ -835,7 +855,8 @@ const sent = await sendTaskCreated(tg, {
       try { await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }); } catch {}
     }
 
-    // если это группа/supergroup — убедимся, что TG-группа существует и админы отмечены
+    // если это группа/supergroup — убедимся, что TG-группа существует, и создадим задачу в её проекте
+    let created = null;
     try {
       if (msg?.chat?.type === 'group' || msg?.chat?.type === 'supergroup') {
         const tgChatId = String(msg.chat.id);
@@ -860,11 +881,21 @@ const sent = await sendTaskCreated(tg, {
             }
           });
         } catch {}
-      }
-    } catch (e) { console.warn('[ensure tg group] failed', e?.message || e); }
 
-    // создаём задачу
-    const created = await createTaskInGroup({ chatId, groupId: null, text: textForTask });
+        const boardChatId = g.ownerChatId;
+        await ensureDefaultColumns(boardChatId, g.id);
+        const inboxName = nameWithGroup(g.id, 'Inbox');
+        const inbox = await prisma.column.findFirst({ where: { chatId: boardChatId, name: inboxName } });
+        const last = await prisma.task.findFirst({ where: { columnId: inbox.id }, orderBy: { order: 'desc' }, select: { order: true } });
+        const nextOrder = (last?.order ?? -1) + 1;
+        created = await prisma.task.create({ data: { chatId: boardChatId, text: textForTask, order: nextOrder, columnId: inbox.id } });
+      }
+    } catch (e) { console.warn('[ensure tg group/create] failed', e?.message || e); }
+
+    // если не группа — личная
+    if (!created) {
+      created = await createTaskInGroup({ chatId, groupId: null, text: textForTask });
+    }
 
     // сохраняем вложения
     if (media.length) {
@@ -875,17 +906,37 @@ const sent = await sendTaskCreated(tg, {
       }
     }
 
-    // сервиска с кнопкой
+    // trailing-assign: последнее упоминание пользователя в конце текста
+    try {
+      let assigneeChatId = null;
+      for (let i = entitiesAll.length - 1; i >= 0; i--) {
+        const e = entitiesAll[i];
+        if (!e || (e.type !== 'mention' && e.type !== 'text_mention')) continue;
+        const seg = txtRaw.slice(e.offset, e.offset + e.length);
+        if (e.type === 'mention') {
+          if (seg.replace(/^@/, '').toLowerCase() === String(process.env.BOT_USERNAME || '').toLowerCase()) continue;
+        }
+        const after = txtRaw.slice(e.offset + e.length).trim();
+        if (after.length === 0) {
+          if (e.type === 'text_mention' && e.user?.id) assigneeChatId = String(e.user.id);
+          else if (e.type === 'mention') {
+            const uname = seg.replace(/^@/, '');
+            const u = await prisma.user.findFirst({ where: { username: { equals: uname, mode: 'insensitive' } }, select: { chatId: true } });
+            if (u?.chatId) assigneeChatId = String(u.chatId);
+          }
+          break;
+        }
+      }
+      if (assigneeChatId) { await prisma.task.update({ where: { id: created.id }, data: { assigneeChatId } }); }
+    } catch {}
 
-
-
-
-const sent = await sendTaskCreated(tg, {
-  chatId,
-  media,
-  taskId: created.id,
-  title: created.text
-});
+    // сервиска с кнопкой (минимум)
+    const sent = await tg('sendMessage', {
+      chat_id: chatId,
+      text: `Создана задача: ${created.text}`,
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${created.id}` }]] }
+    });
 
 
 
