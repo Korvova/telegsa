@@ -413,6 +413,7 @@ router.get('/feed', async (req, res) => {
           select: { chatId: true, firstName: true, lastName: true, username: true },
         })
       : [];
+    const userSet = new Set(users.map(u => String(u.chatId)));
     const fullName = (cid) => {
       const u = users.find(u => String(u.chatId) === String(cid));
       if (!u) return String(cid);
@@ -428,6 +429,10 @@ const items = tasks.map(t => {
   const status  = i >= 0 ? cname.slice(i + GROUP_SEP.length) : cname;
   const groupId = i >= 0 ? cname.slice(0, i) : null;
 
+  // определим корректного "постановщика": если sourceChatId есть и это известный user, берём его; иначе — task.chatId
+  const preferSource = t.sourceChatId && userSet.has(String(t.sourceChatId));
+  const creatorCid = preferSource ? String(t.sourceChatId) : String(t.chatId);
+
   return {
     id: t.id,
     text: t.text,
@@ -442,8 +447,8 @@ const items = tasks.map(t => {
     groupId,
     groupTitle: groupId ? (gTitle.get(groupId) || 'Без группы') : 'Моя группа',
     isTelegramGroup: groupId ? (gIsTg.get(groupId) || false) : false,
-    creatorChatId: t.sourceChatId ? String(t.sourceChatId) : String(t.chatId),
-    creatorName: t.sourceChatId ? fullName(t.sourceChatId) : fullName(t.chatId),
+    creatorChatId: creatorCid,
+    creatorName: fullName(creatorCid),
     assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
     assigneeName: t.assigneeChatId ? fullName(t.assigneeChatId) : null,
 

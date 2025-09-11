@@ -2164,6 +2164,7 @@ app.post('/tasks', async (req, res) => {
     const groupId = resolveGroupId(rawGroupId);
 
     let boardChatId = caller;
+    let targetGroup = null;
 
     if (groupId) {
       const allowed = await userIsGroupMemberOrOwner(caller, groupId);
@@ -2172,6 +2173,7 @@ app.post('/tasks', async (req, res) => {
       const g = await prisma.group.findUnique({ where: { id: groupId } });
       if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
       boardChatId = g.ownerChatId; // все групповые задачи у владельца
+      targetGroup = g;
     }
 
     await ensureDefaultColumns(boardChatId, groupId);
@@ -2192,26 +2194,39 @@ app.post('/tasks', async (req, res) => {
     });
 
     try {
-      const sent = await tg('sendMessage', {
-        chat_id: caller,
-        text: `Новая задача: ${task.text}`,
-        disable_notification: true,
-        reply_markup: {
-          inline_keyboard: [[
-            { text: 'Открыть задачу',
-              url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }
-          ]]
-        }
-      });
-
-      try {
-        if (sent?.ok && sent.result?.message_id) {
-          await prisma.task.update({
-            where: { id: task.id },
-            data: { sourceChatId: caller, sourceMessageId: sent.result.message_id }
-          });
-        }
-      } catch (e2) { console.warn('store source msg failed', e2); }
+      // Если это Telegram-группа — публикуем в саму группу
+      if (targetGroup && targetGroup.isTelegramGroup && targetGroup.tgChatId) {
+        const sent = await tg('sendMessage', {
+          chat_id: targetGroup.tgChatId,
+          text: `${task.text}`,
+          disable_web_page_preview: true,
+          reply_markup: { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }]] }
+        });
+        try {
+          if (sent?.ok && sent.result?.message_id) {
+            await prisma.task.update({
+              where: { id: task.id },
+              data: { sourceChatId: String(targetGroup.tgChatId), sourceMessageId: sent.result.message_id }
+            });
+          }
+        } catch (e2) { console.warn('store source msg failed', e2); }
+      } else {
+        // иначе — DM создателю
+        const sent = await tg('sendMessage', {
+          chat_id: caller,
+          text: `${task.text}`,
+          disable_web_page_preview: true,
+          reply_markup: { inline_keyboard: [[{ text: 'Открыть задачу', url: `https://t.me/${process.env.BOT_USERNAME}?startapp=task_${task.id}` }]] }
+        });
+        try {
+          if (sent?.ok && sent.result?.message_id) {
+            await prisma.task.update({
+              where: { id: task.id },
+              data: { sourceChatId: caller, sourceMessageId: sent.result.message_id }
+            });
+          }
+        } catch (e2) { console.warn('store source msg failed', e2); }
+      }
     } catch (e) {
       console.warn('sendMessage failed:', e?.description || e);
     }
