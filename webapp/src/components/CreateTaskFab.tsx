@@ -226,7 +226,11 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
     return () => { cancelled = true; };
   }, [groupId, chatId]);
 
-  const openModal = () => { setOpen(true); setStep(0); };
+  const openModal = () => {
+    setOpen(true);
+    setStep(0);
+    try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: true })); } catch {}
+  };
   const closeModal = () => {
     setOpen(false);
     setBusy(false);
