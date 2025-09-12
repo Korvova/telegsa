@@ -144,6 +144,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
 
   // Выплата исполнителю: фиксированная модалка до подтверждения
   const [payoutOpen, setPayoutOpen] = useState(false);
+  const payoutOpenRef = useRef(false);
+  useEffect(() => { payoutOpenRef.current = payoutOpen; }, [payoutOpen]);
 
   // Следим за условиями показа модалки: Done + есть вознаграждение + не выплачено + я = ответственный
   useEffect(() => {
@@ -211,6 +213,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
     const onceRef = { done: false, t: 0 as any };
 
     const handle = () => {
+      // блокируем закрытие, если требуется подтверждение выплаты
+      if (payoutOpenRef.current) return;
       if (onceRef.done) return;
       onceRef.done = true;
       clearTimeout(onceRef.t);
@@ -748,7 +752,20 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
                 setPhase('Done');
                 onChanged?.();
                 WebApp?.HapticFeedback?.notificationOccurred?.('success');
-                setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+                // Если есть невыплаченный bounty и я ответственный — показываем модалку и НЕ закрываем карточку
+                try {
+                  const rub = Number((task as any)?.bountyStars || 0);
+                  const status = String((task as any)?.bountyStatus || 'NONE');
+                  const assignee = String((task as any)?.assigneeChatId || '');
+                  const shouldPayout = rub > 0 && status !== 'PAID' && !!assignee && assignee === meChatId;
+                  if (shouldPayout) {
+                    setPayoutOpen(true);
+                  } else {
+                    setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+                  }
+                } catch {
+                  setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
+                }
               } catch (e) {
                 setError((e as any)?.message || 'Ошибка операции');
               }
@@ -1138,6 +1155,8 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           onPaid={() => {
             setTask((prev) => (prev ? ({ ...prev, bountyStatus: 'PAID' } as any) : prev));
             setPayoutOpen(false);
+            // после подтверждения выплаты — эффект 👍 и сворачивание
+            setTimeout(() => { animateCloseWithThumb(groupIdRef.current); }, 160);
           }}
         />
       )}
