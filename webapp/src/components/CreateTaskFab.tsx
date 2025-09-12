@@ -633,6 +633,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 }
 
                                 WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                                // после отправки — снимаем фиксацию и сбрасываем драфт
+                                try { setBountyLocked(false); localStorage.removeItem(`draftBounty:${chatId}`); } catch {}
                                 onCreated?.();
                                 closeModal();
 
