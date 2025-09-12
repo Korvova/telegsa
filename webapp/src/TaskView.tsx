@@ -1231,7 +1231,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         }}
       />
 
-      {/* Портал с анимацией завершения: 👍 либо 🪙→💫 при наличии вознаграждения */}
+      {/* Портал с анимацией завершения: 👍 либо 🥮→💫 при наличии вознаграждения */}
       <DeadlinePicker
         open={deadlineOpen}
         value={task?.deadlineAt || null}
@@ -1276,7 +1276,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
               const hasBounty = bounty > 0;
               const scale = (thumbStage === 1) ? 'scale(1.0)' : (thumbStage === 2) ? 'scale(1.22)' : 'scale(0.8)';
               const rot = hasBounty ? ((thumbStage === 1) ? 'rotate(360deg)' : (thumbStage === 2) ? 'rotate(720deg)' : 'rotate(0deg)') : 'rotate(0deg)';
-              const icon = hasBounty ? ((String((task as any)?.bountyStatus || 'PLEDGED') === 'PAID' || thumbStage === 2) ? '💫' : '🪙') : '👍';
+              const icon = hasBounty ? ((String((task as any)?.bountyStatus || 'PLEDGED') === 'PAID' || thumbStage === 2) ? '💫' : '🥮') : '👍';
               return (
             <div
               style={{

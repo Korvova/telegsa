@@ -17,6 +17,7 @@
     "@prisma/client": "^6.14.0",
     "@ton/core": "^0.61.0",
     "@ton/crypto": "^3.3.0",
+    "@ton/ton": "^15.3.1",
     "busboy": "^1.6.0",
     "dotenv": "^16.4.5",
     "execa": "^9.6.0",

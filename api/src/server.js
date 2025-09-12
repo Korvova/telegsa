@@ -386,7 +386,8 @@ app.use('/sharenewtask', shareNewTaskRouter({ prisma })); // ⬅️ новый
 /* ---------- DELETE /tasks/:id из отдельного роутера ---------- */
 app.use('/tasks', tasksRouter);
 // Bounty (virtual stars) + payout method + summary
-app.use(bountyRouter);
+// Bounty (USDT/TonConnect) API
+app.use(bountyRouter());
 app.use(payoutMethodRouter);
 app.use(starsRouter);
 app.use(likesRouter);

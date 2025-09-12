@@ -15,9 +15,12 @@ export function bountyRouter() {
   const TON_PROVIDER = (process.env.TON_PROVIDER || 'tonapi').toLowerCase();
   const TONAPI_BASE_URL = process.env.TONAPI_BASE_URL || 'https://tonapi.io';
   const TONAPI_KEY = process.env.TONAPI_KEY || '';
+  const TONCENTER_BASE_URL = process.env.TONCENTER_MAINNET_URL || process.env.TONCENTER_URL || '';
+  const TONCENTER_API_KEY = process.env.TONCENTER_MAINNET_KEY || process.env.TONCENTER_API_KEY || '';
   const ESCROW_WALLET_ADDRESS = process.env.ESCROW_WALLET_ADDRESS || '';
   // simple runtime cache for rates
   let RATES_CACHE = { ts: 0, tonRub: null };
+  const DRAFTS = new Map(); // chatId -> { amountTon, amountRub, ts }
 
   // POST /bounty/quote { amount: number }
   router.post('/bounty/quote', async (req, res) => {
@@ -79,6 +82,37 @@ export function bountyRouter() {
     }
   });
 
+  // ---- Draft endpoints (server-side lock instead of localStorage) ----
+  router.get('/bounty/draft/get', async (req, res) => {
+    try {
+      const chatId = String(req.query?.chatId || '').trim();
+      if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+      const d = DRAFTS.get(chatId) || null;
+      res.json({ ok: true, draft: d });
+    } catch (e) { res.status(500).json({ ok: false, error: 'internal' }); }
+  });
+
+  router.post('/bounty/draft/set', async (req, res) => {
+    try {
+      const chatId = String(req.body?.chatId || '').trim();
+      const amountTon = Number(req.body?.amountTon || 0);
+      const amountRub = req.body?.amountRub != null ? Number(req.body.amountRub) : null;
+      if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+      if (!Number.isFinite(amountTon) || amountTon <= 0) return res.status(422).json({ ok: false, error: 'bad_amount' });
+      DRAFTS.set(chatId, { amountTon, amountRub, ts: Date.now() });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: 'internal' }); }
+  });
+
+  router.post('/bounty/draft/clear', async (req, res) => {
+    try {
+      const chatId = String(req.body?.chatId || '').trim();
+      if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+      DRAFTS.delete(chatId);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ ok: false, error: 'internal' }); }
+  });
+
   // helper: fetch JSON with TonAPI key
   async function tonapi(path, params) {
     const qs = params ? ('?' + new URLSearchParams(params).toString()) : '';
@@ -107,6 +141,45 @@ export function bountyRouter() {
     return r.json();
   }
 
+  async function tonapiPostTry(paths, body) {
+    let lastErr = null;
+    for (const p of paths) {
+      try { return await tonapiPost(p, body); } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('tonapi_failed');
+  }
+
+  // ---- Toncenter helpers (fallback when TonAPI doesn't expose blockchain methods) ----
+  function isAscii(s) {
+    try { return /^[\x00-\x7F]*$/.test(String(s || '')); } catch { return false; }
+  }
+  async function toncenterGet(method, params) {
+    if (!TONCENTER_BASE_URL) throw new Error('toncenter_not_configured');
+    const qs = new URLSearchParams({ ...(params || {}) });
+    if (TONCENTER_API_KEY && isAscii(TONCENTER_API_KEY)) qs.set('api_key', TONCENTER_API_KEY);
+    const url = `${TONCENTER_BASE_URL.replace(/\/$/, '')}/${method}?${qs.toString()}`;
+    const headers = (TONCENTER_API_KEY && isAscii(TONCENTER_API_KEY)) ? { 'X-API-Key': TONCENTER_API_KEY } : {};
+    const r = await fetch(url, { headers });
+    if (!r.ok) {
+      const txt = await r.text().catch(()=> '');
+      console.error('[toncenter]', r.status, url, txt?.slice?.(0, 300));
+      throw new Error(`toncenter_failed_${r.status}`);
+    }
+    return r.json();
+  }
+  async function toncenterPost(method, body) {
+    if (!TONCENTER_BASE_URL) throw new Error('toncenter_not_configured');
+    const url = `${TONCENTER_BASE_URL.replace(/\/$/, '')}/${method}`;
+    const headers = { 'Content-Type': 'application/json', ...((TONCENTER_API_KEY && isAscii(TONCENTER_API_KEY)) ? { 'X-API-Key': TONCENTER_API_KEY } : {}) };
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!r.ok) {
+      const txt = await r.text().catch(()=> '');
+      console.error('[toncenter-post]', r.status, url, txt?.slice?.(0, 300));
+      throw new Error(`toncenter_failed_${r.status}`);
+    }
+    return r.json();
+  }
+
   // --- Escrow wallet helpers ---
   let ESCROW_CACHE = { init: false, publicKey: null, secretKey: null, wallet: null, address: null };
   async function getEscrow() {
@@ -121,18 +194,41 @@ export function bountyRouter() {
   }
 
   async function getWalletSeqno(addrFriendly) {
-    try {
-      const res = await tonapiPost('/v2/blockchain/runGetMethod', { address: addrFriendly, method: 'seqno', stack: [] });
-      // try decoded or stack[0]
+    // Prefer Toncenter when configured, otherwise try TonAPI first
+    const preferToncenter = TON_PROVIDER === 'toncenter';
+    const tryToncenter = async () => {
+      const j = await toncenterGet('getWalletInformation', { address: addrFriendly });
+      const seq = j?.result?.seqno ?? j?.seqno ?? j?.result?.wallet?.seqno;
+      if (seq !== undefined) return Number(seq);
+      const r2 = await toncenterGet('runGetMethod', { address: addrFriendly, method: 'seqno' });
+      const st = r2?.result?.stack || r2?.stack || [];
+      const v = Array.isArray(st) && st[0] ? (Array.isArray(st[0]) ? st[0][1] : st[0].number) : 0;
+      if (typeof v === 'string') return parseInt(Buffer.from(v, 'base64').toString('hex'), 16) || 0;
+      if (v !== undefined) return Number(v);
+      return 0;
+    };
+    const tryTonapi = async () => {
+      const res = await tonapiPostTry([
+        '/v2/blockchain/run-get-method',
+        '/v2/blockchain/runGetMethod',
+      ], { address: addrFriendly, method: 'seqno', stack: [] });
       const dec = res?.decoded?.result ?? res?.decoded?.value ?? res?.decoded?.number;
       if (dec !== undefined) return Number(dec);
       const s0 = res?.stack?.[0];
       if (Array.isArray(s0) && typeof s0[1] === 'string') return parseInt(Buffer.from(s0[1], 'base64').toString('hex'), 16) || 0;
       if (s0?.number !== undefined) return Number(s0.number);
+      return 0;
+    };
+    try {
+      return preferToncenter ? await tryToncenter() : await tryTonapi();
     } catch (e) {
-      console.warn('[escrow] seqno failed', e);
+      try {
+        return preferToncenter ? await tryTonapi() : await tryToncenter();
+      } catch (e2) {
+        console.warn('[escrow] seqno failed (both providers)', e, e2);
+        return 0;
+      }
     }
-    return 0;
   }
 
   async function sendFromEscrow({ to, amountNano, comment }) {
@@ -142,8 +238,15 @@ export function bountyRouter() {
     const body = wallet.createTransfer({ seqno, secretKey, messages: [msg] });
     const ext = external({ to: wallet.address, body });
     const boc = beginCell().store(storeMessage(ext)).endCell().toBoc({ idx: false }).toString('base64');
-    const r = await tonapiPost('/v2/blockchain/send', { boc });
-    return r;
+    const preferToncenter = TON_PROVIDER === 'toncenter';
+    const tryToncenter = async () => await toncenterPost('sendBoc', { boc });
+    const tryTonapi = async () => await tonapiPostTry(['/v2/blockchain/send', '/v2/blockchain/send-boc'], { boc });
+    try {
+      return preferToncenter ? await tryToncenter() : await tryTonapi();
+    } catch (e) {
+      console.warn('[escrow] primary send failed, switching provider', e);
+      return preferToncenter ? await tryTonapi() : await tryToncenter();
+    }
   }
 
   // helper: get user's USDT jetton wallet address via TonAPI (kept for future USDT flow, not used in TON flow)
@@ -296,8 +399,10 @@ export function bountyRouter() {
         return res.status(422).json({ ok: false, error: `wallet_network_mismatch:${userNetwork}->${NETWORK}` });
       }
 
-      // 2) TON amounts (in nanoTON)
-      const amountNano = toNano(String(amount));
+      // 2) TON amounts (in nanoTON) — ограничим до 9 знаков после запятой
+      let amountStr = amount.toFixed(9);
+      amountStr = amountStr.replace(/0+$/, '').replace(/\.$/, '');
+      const amountNano = toNano(amountStr);
       const feeNano = ((amountNano * BigInt(FEE_BPS)) + 9999n) / 10000n; // round up
       const comment = `bounty|from:${owner}${taskId ? `|task:${taskId}` : ''}|ts:${Date.now()}`;
       const payloadAmount = buildTextCommentPayload(comment);
@@ -324,11 +429,49 @@ export function bountyRouter() {
     }
   });
 
-  // POST /bounty/release-request { taskId }
+  // POST /bounty/release-request { taskId, amountTon? }
   router.post('/bounty/release-request', async (req, res) => {
     try {
-      // TODO: implement prepare transaction to pay executor + fee to feeRecipient
-      return res.status(501).json({ ok: false, error: 'not_implemented' });
+      const taskId = String(req.body?.taskId || '').trim();
+      const amountTon = req.body?.amountTon !== undefined ? Number(req.body.amountTon) : null;
+      if (!taskId) return res.status(400).json({ ok: false, error: 'taskId_required' });
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      try {
+        const t = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, assigneeChatId: true, bountyStars: true, bountyStatus: true } });
+        if (!t) return res.status(404).json({ ok: false, error: 'task_not_found' });
+        if (!t.assigneeChatId) return res.status(422).json({ ok: false, error: 'no_assignee' });
+        // resolve executor wallet
+        const u = await prisma.user.findUnique({ where: { chatId: String(t.assigneeChatId) }, select: { tonAddress: true } });
+        if (!u?.tonAddress) return res.status(422).json({ ok: false, error: 'needs_wallet' });
+        // resolve amount in TON
+        let ton = amountTon;
+        if (!ton || ton <= 0) {
+          // fallback: convert from RUB bountyStars using current rate
+          const ru = Number(t.bountyStars || 0);
+          if (ru <= 0) return res.status(422).json({ ok: false, error: 'amount_missing' });
+          // fetch rate
+          let rate = null;
+          try {
+            const r = await fetch(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`, { headers: { Authorization: `Bearer ${TONAPI_KEY}` } });
+            if (r.ok) {
+              const j = await r.json();
+              const item = j?.rates?.TON || j?.rates?.ton || j?.rates?.[0];
+              rate = Number(item?.prices?.RUB || item?.rub || null);
+            }
+          } catch {}
+          if (!rate || !Number.isFinite(rate) || rate <= 0) return res.status(503).json({ ok: false, error: 'rate_unavailable' });
+          ton = ru / rate;
+        }
+        // limit fractional part to 9 decimals
+        const amountStr = Number(ton).toFixed(9).replace(/0+$/, '').replace(/\.$/, '');
+        const amountNano = toNano(amountStr);
+        const sent = await sendFromEscrow({ to: u.tonAddress, amountNano, comment: `release|task:${taskId}|ts:${Date.now()}` });
+        await prisma.task.update({ where: { id: taskId }, data: { bountyStatus: 'PAID' } });
+        return res.json({ ok: true, tx: sent || null });
+      } finally {
+        await prisma.$disconnect().catch(()=>{});
+      }
     } catch (e) {
       console.error('[bounty] release-request error', e);
       res.status(500).json({ ok: false, error: 'internal' });

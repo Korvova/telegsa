@@ -21,6 +21,7 @@ import type { StageKey } from '../../components/StageScroller';
 import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
 import StarBadge from '../../components/StarBadge';
+import PayoutPromptModal from '../../components/PayoutPromptModal';
 
 const LONG_PRESS_MS = 500;
 
@@ -160,6 +161,7 @@ export default function HomePage({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [payoutPrompt, setPayoutPrompt] = useState<{ id: string; rub: number } | null>(null);
 
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
@@ -202,6 +204,27 @@ export default function HomePage({
       alive = false;
     };
   }, [chatId, search, reloadKey]);
+
+  // Показ модалки для ответственного, если задача в Done и есть невыплаченное вознаграждение (без скрытия до оплаты)
+  useEffect(() => {
+    try {
+      if (!items.length) return;
+      const me = String(WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || '');
+      const first = items.find((t) => {
+        const rub = Number((t as any).bountyStars || 0);
+        const status = String((t as any).bountyStatus || 'NONE');
+        const assignee = String((t as any).assigneeChatId || '');
+        const isDone = (String((t as any).status || '').toLowerCase() === 'готово') || (String((t as any).phase || '').toLowerCase() === 'done');
+        if (!rub || rub <= 0) return false;
+        if (status === 'PAID') return false;
+        if (!isDone) return false;
+        if (!assignee || assignee !== me) return false;
+        return true;
+      });
+      if (first) setPayoutPrompt({ id: (first as any).id, rub: Number((first as any).bountyStars || 0) });
+      else setPayoutPrompt(null);
+    } catch {}
+  }, [items]);
 
   const loadMore = async () => {
     if (loading || !hasMore) return;
@@ -1011,6 +1034,19 @@ export default function HomePage({
           finally { setUploadBusy(false); }
         }}
       />
+
+      {payoutPrompt && (
+        <PayoutPromptModal
+          open={true}
+          taskId={payoutPrompt.id}
+          amountRub={payoutPrompt.rub}
+          chatId={chatId}
+          onPaid={() => {
+            setItems((prev) => prev.map((it) => (it.id === payoutPrompt.id ? ({ ...it, bountyStatus: 'PAID' } as any) : it)));
+            setPayoutPrompt(null);
+          }}
+        />
+      )}
       {/* 🚩 Пикер дедлайна для карточек в ленте */}
       <DeadlinePicker
         open={!!deadlineEdit}

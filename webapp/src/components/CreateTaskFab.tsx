@@ -109,44 +109,57 @@ export default function CreateTaskFab({
   const [bountyRub, setBountyRub] = useState<number | null>(null);
   const [bountyLocked, setBountyLocked] = useState<boolean>(false);
 
-  // persist draft bounty across reloads and lock panel if present
+  // server-side draft: lock panel if draft exists on server
   useEffect(() => {
-    try {
-      const key = `draftBounty:${chatId}`;
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const j = JSON.parse(raw);
-        if (j && typeof j.amountTon === 'number') {
-          setBountyAmount(j.amountTon);
-          setBountyRub(typeof j.amountRub === 'number' ? j.amountRub : null);
+    (async () => {
+      try {
+        const r = await fetch(`/telegsar-api/bounty/draft/get?chatId=${encodeURIComponent(chatId)}`);
+        const j = await r.json().catch(()=>({}));
+        const d = j?.draft;
+        if (d && typeof d.amountTon === 'number') {
+          setBountyAmount(d.amountTon);
+          setBountyRub(typeof d.amountRub === 'number' ? d.amountRub : null);
           setBountyLocked(true);
           setOpen(true);
         }
-      }
-    } catch {}
+      } catch {}
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const saveDraftBounty = (amtTon: number, amtRub: number | null) => {
-    try { localStorage.setItem(`draftBounty:${chatId}`, JSON.stringify({ amountTon: amtTon, amountRub: amtRub ?? null })); } catch {}
-  };
-  // const clearDraftBounty = () => { try { localStorage.removeItem(`draftBounty:${chatId}`); } catch {} };
-
-  async function startTonPayment(taskId?: string | null) {
+  async function startTonPayment(taskId?: string | null, amountTonParam?: number, amountRubParam?: number | null) {
     try {
+      // Ensure TonConnect is initialized
+      let tonAny: any = (window as any).ton;
+      if (!tonAny?.sendTransaction) {
+        try {
+          const appOrigin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || location.origin;
+          const mod: any = await import('@tonconnect/ui');
+          const inst = new mod.TonConnectUI({ manifestUrl: `${appOrigin}/tonconnect-manifest.json` });
+          (window as any).ton = inst;
+          tonAny = inst;
+        } catch {}
+      }
+
       const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
       const sj = await st.json();
       if (sj?.network && sj.network !== 'mainnet') { alert('Кошелёк подключен к '+sj.network+'. Переключите сеть на Mainnet и переподключите.'); return; }
-      if (!sj?.connected) { try { (window as any).ton?.openModal?.(); } catch {}; alert('Подключите тон-кошелёк для оплаты.'); return; }
+      if (!sj?.connected) { try { tonAny?.openModal?.(); } catch {}; alert('Подключите тон-кошелёк для оплаты.'); return; }
       const ownerAddress = sj?.address || '';
-      const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount, taskId: taskId || null }) });
+      const amountToUse = (typeof amountTonParam === 'number' && amountTonParam > 0) ? amountTonParam : bountyAmount;
+      const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: amountToUse, taskId: taskId || null }) });
       const fj = await fr.json().catch(()=>({ ok:false, error:'internal' }));
       if (!fr.ok || !fj?.ok) { alert(String(fj?.error || `http_${fr.status}`)); return; }
       const ton = (window as any).ton;
-      if (!ton?.sendTransaction) { alert('TonConnect не инициализирован'); return; }
+      if (!ton?.sendTransaction) { alert('TonConnect не инициализирован'); try { tonAny?.openModal?.(); } catch {}; return; }
       await ton.sendTransaction(fj.transaction);
+      // Фиксируем только после успешной отправки в кошельке
+      const lockedTon = amountToUse;
+      const lockedRub = (typeof amountRubParam === 'number' ? amountRubParam : bountyRub) ?? null;
+      setBountyAmount(lockedTon);
+      setBountyRub(lockedRub);
       setBountyLocked(true);
-      saveDraftBounty(bountyAmount, bountyRub ?? null);
+      try { await fetch('/telegsar-api/bounty/draft/set', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, amountTon: lockedTon, amountRub: lockedRub ?? undefined }) }); } catch {}
     } catch (e:any) { alert(e?.message || 'payment_failed'); }
   }
 
@@ -301,6 +314,12 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
 
   return (
     <>
+      {/* Hidden TonConnect initializer to ensure window.ton exists while modal is open */}
+      {open && (
+        <div style={{ display: 'none' }}>
+          <TonWalletConnect chatId={chatId} />
+        </div>
+      )}
       {/* FAB [+] */}
       <button
         onClick={openModal}
@@ -542,7 +561,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🪙
+                        🥮
                       </button>
 
                       {/* Тогглер вложений (🧷) — простая форма */}
@@ -622,8 +641,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                   try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
                                 }
 
-                                // Зафиксировать сумму в ₽ на задаче (для значков) — если есть оплаченная/выбранная сумма
-                                if (bountyAmount > 0 && (bountyRub ?? null) !== null) {
+                                // Зафиксировать сумму в ₽ на задаче — только если оплата подтверждена (bountyLocked)
+                                if (bountyLocked && bountyAmount > 0 && (bountyRub ?? null) !== null) {
                                   try {
                                     const api = await import('../api');
                                     await api.setTaskBounty(newTaskId, chatId, Number(bountyRub));
@@ -646,8 +665,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 }
 
                                 WebApp?.HapticFeedback?.notificationOccurred?.('success');
-                                // после отправки — снимаем фиксацию и сбрасываем драфт
-                                try { setBountyLocked(false); localStorage.removeItem(`draftBounty:${chatId}`); } catch {}
+                                // после отправки — если до этого была предоплата, снимаем фиксацию и сбрасываем драфт
+                                try { if (bountyLocked) { setBountyLocked(false); await fetch('/telegsar-api/bounty/draft/clear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId }) }); } } catch {}
                                 onCreated?.();
                                 closeModal();
 
@@ -776,13 +795,13 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       <div style={{ fontSize: 12, opacity: 0.85 }}>☝️ Требуется согласование 🤝</div>
                     )}
 
-                    {bountyAmount > 0 ? (() => {
-                      const fee = Math.round((bountyAmount * 100)) / 10000; // 1%
-                      const total = bountyAmount + fee;
+                    {bountyLocked && bountyAmount > 0 ? (() => {
+                      const tonText = bountyAmount.toFixed(9).replace(/0+$/, '').replace(/\.$/, '');
+                      const rubText = typeof bountyRub === 'number' ? `${bountyRub} ₽` : '';
                       return (
                         <div style={{ fontSize: 12, opacity: 0.95, display:'grid', gap:6 }}>
                           <div>
-                            🪙 Вознаграждение: <b>{bountyAmount}</b> TON {typeof bountyRub === 'number' ? `(≈ ${bountyRub} ₽)` : ''}
+                            🥮 Вознаграждение: {rubText ? `(${rubText}) ` : ''}≈ {tonText} TON
                             {bountyLocked && (
                               <button
                                 onClick={async ()=>{
@@ -797,18 +816,20 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                     setBountyLocked(false);
                                     setBountyAmount(0);
                                     setBountyRub(null);
-                                    try { localStorage.removeItem(`draftBounty:${chatId}`); } catch {}
+                                    try { await fetch('/telegsar-api/bounty/draft/clear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId }) }); } catch {}
                                     alert('Возврат запрошен.');
                                   } catch (e:any) { alert(e?.message || 'refund_failed'); }
                                 }}
                                 title="Отменить и вернуть средства (без комиссии)"
                                 style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>×</button>
                             )}
-                          </div>
-                          <div>Комиссия (1%): {fee.toFixed(4)} TON • Плательщик: заказчик</div>
-                          <div>Итого к оплате: <b>{total.toFixed(4)} TON</b></div>
-                          <div style={{ marginTop: 4 }}>
-                            <TonWalletConnect chatId={chatId} />
+                            {bountyLocked && (
+                              <button
+                                onClick={async () => { if (confirm('Сбросить предзадачу без возврата?')) { setBountyLocked(false); setBountyAmount(0); setBountyRub(null); try { await fetch('/telegsar-api/bounty/draft/clear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId }) }); } catch {} } }}
+                                title="Сбросить предзадачу (без возврата)"
+                                style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#3a1020', color:'#fca5a5', cursor:'pointer' }}
+                              >Разблокировать</button>
+                            )}
                           </div>
                         </div>
                       );
@@ -890,7 +911,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}
                       >
-                        🪙
+                        🥮
                       </button>
                       <button
                         type="button"
@@ -923,7 +944,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         title="Вознаграждение"
                         style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
                       >
-                        🪙
+                        🥮
                       </button>
                       <button
                         type="button"
@@ -1256,14 +1277,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
       <BountyPicker
         open={bountyOpen}
         initial={bountyAmount}
-        onApply={(n, approxRub) => {
+        initialRub={bountyRub ?? null}
+        onApply={async (n, approxRub) => {
+          // сохраняем выбранную сумму, но НЕ блокируем панель до подтверждения транзакции
           setBountyAmount(n);
           const rub = typeof approxRub === 'number' ? approxRub : (bountyRub ?? null);
           setBountyRub(rub);
-          setBountyLocked(true);
-          saveDraftBounty(n, rub);
-          // авто-оплата сразу после выбора
-          setTimeout(() => { startTonPayment(null); }, 0);
+          // авто-оплата сразу после выбора — передаём сумму явно, чтобы избежать гонок setState
+          setTimeout(() => { startTonPayment(null, n, rub ?? null); }, 0);
         }}
         onClose={() => { setBountyOpen(false); focusText(); }}
       />
