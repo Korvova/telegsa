@@ -1146,6 +1146,30 @@ app.patch('/tasks/:id/move', async (req, res) => {
       }
     });
 
+    // Авто-рефанд при переносе в Cancel (асинхронно)
+    ;(async () => {
+      try {
+        const name = String(toCol?.name || '');
+        const isCancel = /(^|::)Cancel$/.test(name);
+        if (isCancel) {
+          const ru = Number((result as any)?.bountyStars || 0);
+          const st = String((result as any)?.bountyStatus || 'NONE');
+          if (ru > 0 && st !== 'PAID') {
+            const ownerChatId = String((result as any)?.createdByChatId || (result as any)?.chatId || '');
+            if (ownerChatId) {
+              const port = Number(process.env.PORT || 3300);
+              const base = `http://127.0.0.1:${port}`;
+              await fetch(`${base}/bounty/refund-request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chatId: ownerChatId, amountRub: ru, taskId: taskId }),
+              }).catch(()=>{});
+            }
+          }
+        }
+      } catch (e) { console.warn('[auto-refund:cancel]', e); }
+    })().catch(()=>{});
+
     res.json({ ok: true, task: result });
   } catch (e) {
     console.error('PATCH /tasks/:id/move error:', e);
@@ -1892,12 +1916,35 @@ app.post('/tasks/:id/complete', async (req, res) => {
       const moved = await tx.task.update({ where: { id }, data: { columnId: targetCol.id, order: toIndex } });
 
       // === Bounty handling on Done ===
-      // Не помечаем PAID автоматически — реальная выплата идёт через /bounty/release-request,
-      // чтобы исполнитель получил фиксированное окно и подтвердил получение.
-      // Если нужен авто-рефанд при отсутствии исполнителя, логика будет в отдельном потоке.
+      // Не помечаем PAID автоматически — реальная выплата идёт через /bounty/release-request.
+      // Авто-рефанд при отсутствии исполнителя выполнится асинхронно ниже (после транзакции).
 
       return await tx.task.findUnique({ where: { id } });
     });
+
+    // Авто-рефанд при Done без ответственного (асинхронно; не блокируем ответ)
+    ;(async () => {
+      try {
+        if (!requiresApproval) {
+          const cur = await prisma.task.findUnique({ where: { id }, select: { id: true, bountyStars: true, bountyStatus: true, assigneeChatId: true, createdByChatId: true, chatId: true } });
+          const ru = Number(cur?.bountyStars || 0);
+          const st = String(cur?.bountyStatus || 'NONE');
+          const hasAssignee = !!cur?.assigneeChatId;
+          if (ru > 0 && st !== 'PAID' && !hasAssignee) {
+            const ownerChatId = String(cur?.createdByChatId || cur?.chatId || '');
+            if (ownerChatId) {
+              const port = Number(process.env.PORT || 3300);
+              const base = `http://127.0.0.1:${port}`;
+              await fetch(`${base}/bounty/refund-request`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chatId: ownerChatId, amountRub: ru, taskId: id }),
+              }).catch(()=>{});
+            }
+          }
+        }
+      } catch (e) { console.warn('[auto-refund:done]', e); }
+    })().catch(()=>{});
 
     // Групповое уведомление о результате
     try {

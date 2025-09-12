@@ -315,6 +315,26 @@ router.delete('/:id', async (req, res) => {
     const i = nm.indexOf(GROUP_SEP);
     if (i > 0) groupId = nm.slice(0, i);
 
+    // авто-рефанд поручителю (асинхронно, не блокируем удаление)
+    ;(async () => {
+      try {
+        const ru = Number(task.bountyStars || 0);
+        const st = String(task.bountyStatus || 'NONE');
+        if (ru > 0 && st !== 'PAID') {
+          const ownerChatId = String(task.createdByChatId || task.chatId || '');
+          if (ownerChatId) {
+            const port = Number(process.env.PORT || 3300);
+            const base = `http://127.0.0.1:${port}`;
+            await fetch(`${base}/bounty/refund-request`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chatId: ownerChatId, amountRub: ru, taskId: id }),
+            }).catch(()=>{});
+          }
+        }
+      } catch (e) { console.warn('[auto-refund:delete]', e); }
+    })().catch(()=>{});
+
     await prisma.$transaction(async (tx) => {
       // Если есть PLEDGED bounty — вернём
       if (Number(task.bountyStars || 0) > 0 && String(task.bountyStatus || 'NONE') !== 'PAID') {

@@ -480,22 +480,64 @@ export function bountyRouter() {
     }
   });
 
-  // POST /bounty/refund-request { chatId, ownerAddress, amount, taskId? }
-  // NOTE: For now, we just acknowledge request (off-chain) — real refund will be processed by escrow service.
+  // POST /bounty/refund-request
+  // body: { chatId?, ownerAddress?, amountTon?, amountRub?, taskId? }
   router.post('/bounty/refund-request', async (req, res) => {
     try {
-      const amount = Number(req.body?.amount || 0);
-      const owner = String(req.body?.ownerAddress || '').trim();
-      if (!Number.isFinite(amount) || amount <= 0) return res.status(422).json({ ok: false, error: 'bad_amount' });
-      if (!owner) return res.status(422).json({ ok: false, error: 'owner_required' });
-      // Perform TON refund from escrow (without fee)
-      const amountNano = toNano(String(amount));
+      const chatIdRaw = req.body?.chatId != null ? String(req.body.chatId) : null;
+      const ownerAddressRaw = req.body?.ownerAddress != null ? String(req.body.ownerAddress) : null;
+      const amountTonRaw = req.body?.amountTon != null ? Number(req.body.amountTon) : (req.body?.amount != null ? Number(req.body.amount) : null);
+      const amountRubRaw = req.body?.amountRub != null ? Number(req.body.amountRub) : null;
+      const taskId = req.body?.taskId ? String(req.body.taskId) : null;
+
+      // resolve owner address
+      let owner = (ownerAddressRaw || '').trim();
+      let ru = amountRubRaw != null ? Number(amountRubRaw) : null;
+      let ton = amountTonRaw != null ? Number(amountTonRaw) : null;
+
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
       try {
-        const sent = await sendFromEscrow({ to: owner, amountNano, comment: `refund|ts:${Date.now()}` });
+        if (!owner) {
+          // prefer chatId param
+          let who = chatIdRaw ? String(chatIdRaw) : null;
+          // or derive from task.createdByChatId / task.chatId
+          if (!who && taskId) {
+            try {
+              const t = await prisma.task.findUnique({ where: { id: taskId }, select: { createdByChatId: true, chatId: true, bountyStars: true } });
+              who = String(t?.createdByChatId || t?.chatId || '');
+              if (ru == null && t?.bountyStars != null) ru = Number(t.bountyStars);
+            } catch {}
+          }
+          if (who) {
+            const u = await prisma.user.findUnique({ where: { chatId: String(who) }, select: { tonAddress: true } });
+            if (u?.tonAddress) owner = String(u.tonAddress);
+          }
+        }
+
+        if (!owner) return res.status(422).json({ ok: false, error: 'owner_required' });
+
+        // resolve amount TON
+        if (ton == null || !Number.isFinite(ton) || ton <= 0) {
+          if (ru == null || !Number.isFinite(ru) || ru <= 0) return res.status(422).json({ ok: false, error: 'amount_missing' });
+          try {
+            const r = await resolveTonRubRate({ allowCache: true });
+            ton = ru / r.rub;
+          } catch {
+            return res.status(503).json({ ok: false, error: 'rate_unavailable' });
+          }
+        }
+        const amountStr = Number(ton).toFixed(9).replace(/0+$/, '').replace(/\.$/, '');
+        const amountNano = toNano(amountStr);
+        const sent = await sendFromEscrow({ to: owner, amountNano, comment: `refund|${taskId ? `task:${taskId}|` : ''}ts:${Date.now()}` });
+
+        if (taskId) {
+          try { await prisma.task.update({ where: { id: taskId }, data: { bountyStatus: 'REFUNDED', bountyStars: 0 } }); } catch {}
+        }
+
         return res.json({ ok: true, tx: sent || null });
-      } catch (e) {
-        console.error('[bounty] refund tx failed', e);
-        return res.status(500).json({ ok: false, error: 'refund_failed' });
+      } finally {
+        await prisma.$disconnect().catch(()=>{});
       }
     } catch (e) {
       console.error('[bounty] refund-request error', e);
