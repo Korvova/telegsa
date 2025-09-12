@@ -573,13 +573,39 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                   try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
                                 }
 
-                                // Привязать вознаграждение (и симулировать депозит)
+                                // Оплата вознаграждения TON через TonConnect
                                 if (bountyAmount > 0) {
                                   try {
-                                    const api = await import('../api');
-                                    await api.setTaskBounty(newTaskId, chatId, bountyAmount);
-                                    await api.fakeDeposit(newTaskId, chatId, bountyAmount);
-                                  } catch {}
+                                    const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
+                                    const sj = await st.json();
+                                    if (sj?.network && sj.network !== 'mainnet') {
+                                      alert('Кошелёк подключен к '+sj.network+'. Переключите сеть на Mainnet и переподключите.');
+                                    } else if (!sj?.connected) {
+                                      // попробовать открыть модалку TonConnect
+                                      try { (window as any).ton?.openModal?.(); } catch {}
+                                      alert('Подключите тон-кошелёк для оплаты.');
+                                    } else {
+                                      const ownerAddress = sj?.address || '';
+                                      const qr = await fetch('/telegsar-api/bounty/quote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amount: bountyAmount }) });
+                                      const qj = await qr.json();
+                                      if (!qj?.ok) throw new Error(qj?.error || 'quote_failed');
+                                      const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount, taskId: newTaskId }) });
+                                      const fj = await fr.json().catch(()=>({ ok:false, error:'internal' }));
+                                      if (!fr.ok || !fj?.ok) {
+                                        const err = fj?.error || `http_${fr.status}`;
+                                        alert(String(err));
+                                      } else {
+                                        const ton = (window as any).ton;
+                                        if (!ton?.sendTransaction) {
+                                          alert('TonConnect не инициализирован');
+                                        } else {
+                                          try { await ton.sendTransaction(fj.transaction); } catch (e:any) { alert(e?.message || 'payment_cancelled'); }
+                                        }
+                                      }
+                                    }
+                                  } catch (e:any) {
+                                    console.error('bounty payment failed', e);
+                                  }
                                 }
 
                                 if (pendingFiles.length) {
