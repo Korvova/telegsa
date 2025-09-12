@@ -119,6 +119,16 @@ export default function HomePage({
   onOpenTask: (id: string) => void;
   reloadKey?: number;
 }) {
+  // скрывать верхние FAB 📁/🏷️, когда открыт CreateTask
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setIsCreateTaskOpen(Boolean(detail));
+    };
+    window.addEventListener('create-task-open', handler as EventListener);
+    return () => window.removeEventListener('create-task-open', handler as EventListener);
+  }, []);
   // 🏷️ кэш ярлыков по задачам
   const [labelsByTask, setLabelsByTask] = useState<Record<string, GroupLabel[]>>({});
 
@@ -842,7 +852,8 @@ export default function HomePage({
         )}
       </div>
 
-      {/* 📁 фильтр по группе */}
+      {/* 📁 фильтр по группе (скрыть, если открыт CreateTask) */}
+      {!isCreateTaskOpen && (
       <button
         onClick={() => setGroupPickerOpen(true)}
         aria-label="Фильтр по группе"
@@ -865,9 +876,10 @@ export default function HomePage({
       >
         📁
       </button>
+      )}
 
       {/* 🏷️ появляется над 📁 только для группы и после клика по названию группы */}
-      {scope.kind === 'group' && showLabelFab && (
+      {scope.kind === 'group' && showLabelFab && !isCreateTaskOpen && (
         <button
           onClick={async () => {
             if (scope.kind !== 'group') return;
