@@ -1891,18 +1891,10 @@ app.post('/tasks/:id/complete', async (req, res) => {
       await tx.task.updateMany({ where: { columnId: fromColumnId, order: { gt: task.order } }, data: { order: { decrement: 1 } } });
       const moved = await tx.task.update({ where: { id }, data: { columnId: targetCol.id, order: toIndex } });
 
-      // === Bounty handling (virtual) — только при переходе в Done ===
-      if (!requiresApproval) {
-        if (Number(moved.bountyStars || 0) > 0 && String(moved.bountyStatus || 'NONE') !== 'PAID') {
-          if (moved.assigneeChatId) {
-            await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: String(moved.assigneeChatId), amount: Number(moved.bountyStars), kind: 'PAYOUT' } });
-            await tx.task.update({ where: { id }, data: { bountyStatus: 'PAID' } });
-          } else {
-            await tx.starLedger.create({ data: { taskId: id, fromChatId: String(moved.chatId), toChatId: null, amount: Number(moved.bountyStars), kind: 'REFUND' } });
-            await tx.task.update({ where: { id }, data: { bountyStatus: 'REFUNDED', bountyStars: 0 } });
-          }
-        }
-      }
+      // === Bounty handling on Done ===
+      // Не помечаем PAID автоматически — реальная выплата идёт через /bounty/release-request,
+      // чтобы исполнитель получил фиксированное окно и подтвердил получение.
+      // Если нужен авто-рефанд при отсутствии исполнителя, логика будет в отдельном потоке.
 
       return await tx.task.findUnique({ where: { id } });
     });
