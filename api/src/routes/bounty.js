@@ -1,6 +1,6 @@
 // api/src/routes/bounty.js
 import express from 'express';
-import { beginCell, Address, toNano } from '@ton/core';
+import { beginCell, Address, toNano, Cell } from '@ton/core';
 
 export function bountyRouter() {
   const router = express.Router();
@@ -41,6 +41,21 @@ export function bountyRouter() {
     return r.json();
   }
 
+  async function tonapiPost(path, body) {
+    const url = `${TONAPI_BASE_URL}${path}`;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TONAPI_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(()=> '');
+      console.error('[tonapi-post]', r.status, url, txt?.slice?.(0, 300));
+      throw new Error(`tonapi_failed_${r.status}`);
+    }
+    return r.json();
+  }
+
   // helper: get user's USDT jetton wallet address via TonAPI
   function normalizeRaw(addr) {
     try { return Address.parse(addr).toRawString(); } catch { return String(addr); }
@@ -48,21 +63,56 @@ export function bountyRouter() {
   function normalizeFriendly(addr) {
     try { return Address.parse(addr).toString(); } catch { return String(addr); }
   }
-  function friendlyNonUrl(addr) {
-    try { return Address.parse(addr).toString({ urlSafe: false }); } catch { return String(addr); }
+  function friendlyUrlSafe(addr) {
+    try { return Address.parse(addr).toString({ urlSafe: true }); } catch { return String(addr); }
   }
 
   async function getUserJettonWallet(owner, jettonMaster) {
+    // 0) Try runGetMethod(get_wallet_address) on jetton master — works even if wallet not deployed
+    try {
+      const ownerCell = beginCell().storeAddress(Address.parse(owner)).endCell();
+      const body = {
+        address: normalizeFriendly(jettonMaster),
+        method: 'get_wallet_address',
+        stack: [ { type: 'slice', cell: ownerCell.toBoc({ idx: false }).toString('base64') } ],
+      };
+      const res = await tonapiPost('/v2/blockchain/runGetMethod', body);
+      // TonAPI variants: decoded.address OR raw stack cell with address slice
+      const decodedAddr = res?.decoded?.address || res?.decoded?.result || res?.decoded?.value;
+      if (decodedAddr) return normalizeFriendly(decodedAddr);
+      const stack0 = res?.stack?.[0];
+      const cellB64 = stack0?.cell || stack0?.slice || stack0?.value || null;
+      if (cellB64) {
+        try {
+          const cell = Cell.fromBase64(cellB64);
+          const slice = cell.beginParse();
+          const addr = slice.readAddress();
+          if (addr) return addr.toString();
+        } catch {}
+      }
+      // Some TonAPI deployments return stack as array of arrays: [["tvm.Slice", "base64..."]]
+      if (Array.isArray(res?.stack) && Array.isArray(res.stack[0]) && typeof res.stack[0][1] === 'string') {
+        try {
+          const cell = Cell.fromBase64(res.stack[0][1]);
+          const slice = cell.beginParse();
+          const addr = slice.readAddress();
+          if (addr) return addr.toString();
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('[tonapi] runGetMethod get_wallet_address failed, fallback to listings');
+    }
+
     const ownerFriendly = normalizeFriendly(owner);
     const jettonFriendly = normalizeFriendly(jettonMaster);
-    const ownerFriendlyNonUrl = friendlyNonUrl(owner);
-    const jettonFriendlyNonUrl = friendlyNonUrl(jettonMaster);
+    const ownerFriendlyUrl = friendlyUrlSafe(owner);
+    const jettonFriendlyUrl = friendlyUrlSafe(jettonMaster);
     const ownerRaw = normalizeRaw(owner);
     const jettonRaw = normalizeRaw(jettonMaster);
 
     // 1) Try list jettons for account (friendly in path)
     try {
-      const j = await tonapi(`/v2/accounts/${encodeURIComponent(ownerFriendlyNonUrl)}/jettons`);
+      const j = await tonapi(`/v2/accounts/${encodeURIComponent(ownerFriendlyUrl)}/jettons`);
       const items = j?.balances || j?.jettons || j?.items || [];
       for (const it of items) {
         const m = it?.jetton?.address || it?.master?.address || it?.jetton_address || it?.jetton;
@@ -76,23 +126,19 @@ export function bountyRouter() {
       console.warn('[tonapi] accounts jettons failed, fallback to /v2/jettons/wallets');
     }
 
-    // 2) Try TonAPI: /v2/jettons/{jetton}/wallets?owner={owner}
+    // 2) /v2/jettons/wallets?account=...&jetton=...
     try {
-      const path = `/v2/jettons/${encodeURIComponent(jettonFriendlyNonUrl)}/wallets`;
-      const w = await tonapi(path, { owner: ownerFriendlyNonUrl });
+      const w = await tonapi('/v2/jettons/wallets', { account: ownerFriendlyUrl, jetton: jettonFriendlyUrl });
       const addr = w?.addresses?.[0]?.address || w?.addresses?.[0] || w?.address || (w?.wallets && w.wallets[0]?.address);
       if (addr) return normalizeFriendly(addr);
     } catch (e) {
-      console.warn('[tonapi] jettons/{jetton}/wallets failed, try variant with account=');
+      console.warn('[tonapi] jettons/wallets?account= failed, try owner=');
+      try {
+        const w2 = await tonapi('/v2/jettons/wallets', { owner: ownerFriendlyUrl, jetton: jettonFriendlyUrl });
+        const addr2 = w2?.addresses?.[0]?.address || w2?.addresses?.[0] || w2?.address || (w2?.wallets && w2.wallets[0]?.address);
+        if (addr2) return normalizeFriendly(addr2);
+      } catch {}
     }
-
-    // 3) Fallback: some APIs expect account instead of owner (alternate param)
-    try {
-      const path = `/v2/jettons/${encodeURIComponent(jettonFriendlyNonUrl)}/wallets`;
-      const w2 = await tonapi(path, { account: ownerFriendlyNonUrl });
-      const addr2 = w2?.addresses?.[0]?.address || w2?.addresses?.[0] || w2?.address || (w2?.wallets && w2.wallets[0]?.address);
-      if (addr2) return normalizeFriendly(addr2);
-    } catch (e) {}
 
     throw new Error('jetton_wallet_not_found');
   }
@@ -136,6 +182,7 @@ export function bountyRouter() {
 
       // 1) determine owner address (from request or fallback to stored user wallet)
       let owner = ownerAddress;
+      let userNetwork = null;
       if (!owner) {
         const chatId = String(req.body?.chatId || '').trim();
         if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
@@ -143,12 +190,18 @@ export function bountyRouter() {
         try {
           const { PrismaClient } = await import('@prisma/client');
           const prisma = new PrismaClient();
-          const u = await prisma.user.findUnique({ where: { chatId }, select: { tonAddress: true } });
+          const u = await prisma.user.findUnique({ where: { chatId }, select: { tonAddress: true, tonNetwork: true } });
           await prisma.$disconnect().catch(()=>{});
           if (u?.tonAddress) owner = String(u.tonAddress);
+          if (u?.tonNetwork) userNetwork = String(u.tonNetwork).toLowerCase();
         } catch {}
       }
       if (!owner) return res.status(422).json({ ok: false, error: 'owner_wallet_missing' });
+
+      // ensure network matches configured
+      if (userNetwork && userNetwork !== NETWORK) {
+        return res.status(422).json({ ok: false, error: `wallet_network_mismatch:${userNetwork}->${NETWORK}` });
+      }
 
       // 2) user's USDT jetton wallet address
       const userJettonWallet = await getUserJettonWallet(owner, USDT_MASTER);
