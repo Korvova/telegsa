@@ -37,46 +37,54 @@ export function bountyRouter() {
     }
   });
 
+  // Helper to resolve TON/RUB rate with cache and fallbacks
+  async function resolveTonRubRate({ allowCache = true } = {}) {
+    const now = Date.now();
+    if (allowCache && RATES_CACHE.tonRub && now - RATES_CACHE.ts < 60_000) {
+      return { rub: RATES_CACHE.tonRub, ts: RATES_CACHE.ts };
+    }
+    async function fetchJson(url) {
+      const r = await fetch(url, { headers: { accept: 'application/json' } });
+      if (!r.ok) throw new Error('bad_rate_' + r.status);
+      return r.json();
+    }
+    let rub = null;
+    // 1) Coingecko toncoin
+    try {
+      const j = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=toncoin&vs_currencies=rub');
+      rub = Number(j?.toncoin?.rub || null);
+    } catch {}
+    // 2) Coingecko the-open-network
+    if (!rub) {
+      try {
+        const j2 = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=rub');
+        rub = Number(j2?.['the-open-network']?.rub || null);
+      } catch {}
+    }
+    // 3) TonAPI (если ключ задан)
+    if (!rub && TONAPI_KEY) {
+      try {
+        const r = await fetch(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`, { headers: { Authorization: `Bearer ${TONAPI_KEY}` } });
+        if (r.ok) {
+          const j3 = await r.json();
+          const rate = j3?.rates?.TON || j3?.rates?.ton || j3?.rates?.[0];
+          const maybeRub = rate?.prices?.RUB || rate?.rub || null;
+          if (maybeRub) rub = Number(maybeRub);
+        }
+      } catch {}
+    }
+    if (!rub || !Number.isFinite(rub) || rub <= 0) throw new Error('rate_unavailable');
+    RATES_CACHE = { ts: Date.now(), tonRub: rub };
+    return { rub: RATES_CACHE.tonRub, ts: RATES_CACHE.ts };
+  }
+
   // GET /bounty/rates -> { ok, tonRub, updatedAt }
   router.get('/bounty/rates', async (_req, res) => {
     try {
-      const now = Date.now();
-      if (RATES_CACHE.tonRub && now - RATES_CACHE.ts < 60_000) {
-        return res.json({ ok: true, tonRub: RATES_CACHE.tonRub, updatedAt: RATES_CACHE.ts });
-      }
-      // Try Coingecko first (toncoin id)
-      async function fetchJson(url) {
-        const r = await fetch(url, { headers: { 'accept': 'application/json' } });
-        if (!r.ok) throw new Error('bad_rate_' + r.status);
-        return r.json();
-      }
-      let rub = null;
-      try {
-        const j = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=toncoin&vs_currencies=rub');
-        rub = Number(j?.toncoin?.rub || null);
-      } catch {}
-      if (!rub) {
-        try {
-          const j2 = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=rub');
-          rub = Number(j2?.['the-open-network']?.rub || null);
-        } catch {}
-      }
-      if (!rub && TON_PROVIDER === 'tonapi' && TONAPI_KEY) {
-        try {
-          const r = await fetch(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`, { headers: { Authorization: `Bearer ${TONAPI_KEY}` } });
-          if (r.ok) {
-            const j3 = await r.json();
-            // try to locate rub rate
-            const rate = j3?.rates?.TON || j3?.rates?.ton || j3?.rates?.[0];
-            const maybeRub = rate?.prices?.RUB || rate?.rub || null;
-            if (maybeRub) rub = Number(maybeRub);
-          }
-        } catch {}
-      }
-      if (!rub || !Number.isFinite(rub) || rub <= 0) return res.status(503).json({ ok: false, error: 'rate_unavailable' });
-      RATES_CACHE = { ts: Date.now(), tonRub: rub };
-      res.json({ ok: true, tonRub: rub, updatedAt: RATES_CACHE.ts });
+      const r = await resolveTonRubRate({ allowCache: true });
+      return res.json({ ok: true, tonRub: r.rub, updatedAt: r.ts });
     } catch (e) {
+      if (String(e?.message || '').includes('rate_unavailable')) return res.status(503).json({ ok: false, error: 'rate_unavailable' });
       console.error('[bounty] rates error', e);
       res.status(500).json({ ok: false, error: 'internal' });
     }
@@ -447,21 +455,15 @@ export function bountyRouter() {
         // resolve amount in TON
         let ton = amountTon;
         if (!ton || ton <= 0) {
-          // fallback: convert from RUB bountyStars using current rate
+          // convert from RUB bountyStars using cached/multi-source rate
           const ru = Number(t.bountyStars || 0);
           if (ru <= 0) return res.status(422).json({ ok: false, error: 'amount_missing' });
-          // fetch rate
-          let rate = null;
           try {
-            const r = await fetch(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`, { headers: { Authorization: `Bearer ${TONAPI_KEY}` } });
-            if (r.ok) {
-              const j = await r.json();
-              const item = j?.rates?.TON || j?.rates?.ton || j?.rates?.[0];
-              rate = Number(item?.prices?.RUB || item?.rub || null);
-            }
-          } catch {}
-          if (!rate || !Number.isFinite(rate) || rate <= 0) return res.status(503).json({ ok: false, error: 'rate_unavailable' });
-          ton = ru / rate;
+            const r = await resolveTonRubRate({ allowCache: true });
+            ton = ru / r.rub;
+          } catch (err) {
+            return res.status(503).json({ ok: false, error: 'rate_unavailable' });
+          }
         }
         // limit fractional part to 9 decimals
         const amountStr = Number(ton).toFixed(9).replace(/0+$/, '').replace(/\.$/, '');
