@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { createPortal } from 'react-dom';
 import CameraCaptureModal from './components/CameraCaptureModal';
+import PayoutPromptModal from './components/PayoutPromptModal';
 
 import type { Task, TaskMedia, GroupLabel } from './api';
 import {
@@ -140,6 +141,20 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [reminders, setReminders] = useState<TReminder[]>([]);
   const [remBusy, setRemBusy] = useState(false);
+
+  // Выплата исполнителю: фиксированная модалка до подтверждения
+  const [payoutOpen, setPayoutOpen] = useState(false);
+
+  // Следим за условиями показа модалки: Done + есть вознаграждение + не выплачено + я = ответственный
+  useEffect(() => {
+    try {
+      const rub = Number((task as any)?.bountyStars || 0);
+      const status = String((task as any)?.bountyStatus || 'NONE');
+      const assignee = String((task as any)?.assigneeChatId || '');
+      const should = rub > 0 && status !== 'PAID' && isDone && !!assignee && assignee === meChatId;
+      setPayoutOpen(should);
+    } catch {}
+  }, [task?.bountyStars, task?.bountyStatus, task?.assigneeChatId, isDone, meChatId]);
 
   // когда узнали groupId — подтягиваем участников
   useEffect(() => {
@@ -1112,6 +1127,20 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         </div>
       )}
       </div>
+
+      {/* Фиксированная модалка выплаты исполнителю */}
+      {payoutOpen && (
+        <PayoutPromptModal
+          open={true}
+          taskId={taskId}
+          amountRub={Number((task as any)?.bountyStars || 0)}
+          chatId={meChatId}
+          onPaid={() => {
+            setTask((prev) => (prev ? ({ ...prev, bountyStatus: 'PAID' } as any) : prev));
+            setPayoutOpen(false);
+          }}
+        />
+      )}
 
       {/* Диалог завершения: нужно фото */}
       {completeNeedPhotoOpen && (
