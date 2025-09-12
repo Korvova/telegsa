@@ -106,6 +106,49 @@ export default function CreateTaskFab({
   const [toolsOpen, setToolsOpen] = useState(false);
   const [bountyOpen, setBountyOpen] = useState(false);
   const [bountyAmount, setBountyAmount] = useState<number>(0);
+  const [bountyRub, setBountyRub] = useState<number | null>(null);
+  const [bountyLocked, setBountyLocked] = useState<boolean>(false);
+
+  // persist draft bounty across reloads and lock panel if present
+  useEffect(() => {
+    try {
+      const key = `draftBounty:${chatId}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const j = JSON.parse(raw);
+        if (j && typeof j.amountTon === 'number') {
+          setBountyAmount(j.amountTon);
+          setBountyRub(typeof j.amountRub === 'number' ? j.amountRub : null);
+          setBountyLocked(true);
+          setOpen(true);
+        }
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveDraftBounty = (amtTon: number, amtRub: number | null) => {
+    try { localStorage.setItem(`draftBounty:${chatId}`, JSON.stringify({ amountTon: amtTon, amountRub: amtRub ?? null })); } catch {}
+  };
+  // const clearDraftBounty = () => { try { localStorage.removeItem(`draftBounty:${chatId}`); } catch {} };
+
+  async function startTonPayment(taskId?: string | null) {
+    try {
+      const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
+      const sj = await st.json();
+      if (sj?.network && sj.network !== 'mainnet') { alert('Кошелёк подключен к '+sj.network+'. Переключите сеть на Mainnet и переподключите.'); return; }
+      if (!sj?.connected) { try { (window as any).ton?.openModal?.(); } catch {}; alert('Подключите тон-кошелёк для оплаты.'); return; }
+      const ownerAddress = sj?.address || '';
+      const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount, taskId: taskId || null }) });
+      const fj = await fr.json().catch(()=>({ ok:false, error:'internal' }));
+      if (!fr.ok || !fj?.ok) { alert(String(fj?.error || `http_${fr.status}`)); return; }
+      const ton = (window as any).ton;
+      if (!ton?.sendTransaction) { alert('TonConnect не инициализирован'); return; }
+      await ton.sendTransaction(fj.transaction);
+      setBountyLocked(true);
+      saveDraftBounty(bountyAmount, bountyRub ?? null);
+    } catch (e:any) { alert(e?.message || 'payment_failed'); }
+  }
 
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
@@ -232,6 +275,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
     try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: true })); } catch {}
   };
   const closeModal = () => {
+    if (bountyLocked) return; // нельзя закрыть при наличии вознаграждения
     setOpen(false);
     setBusy(false);
     setText('');
@@ -573,40 +617,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                   try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
                                 }
 
-                                // Оплата вознаграждения TON через TonConnect
-                                if (bountyAmount > 0) {
-                                  try {
-                                    const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
-                                    const sj = await st.json();
-                                    if (sj?.network && sj.network !== 'mainnet') {
-                                      alert('Кошелёк подключен к '+sj.network+'. Переключите сеть на Mainnet и переподключите.');
-                                    } else if (!sj?.connected) {
-                                      // попробовать открыть модалку TonConnect
-                                      try { (window as any).ton?.openModal?.(); } catch {}
-                                      alert('Подключите тон-кошелёк для оплаты.');
-                                    } else {
-                                      const ownerAddress = sj?.address || '';
-                                      const qr = await fetch('/telegsar-api/bounty/quote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amount: bountyAmount }) });
-                                      const qj = await qr.json();
-                                      if (!qj?.ok) throw new Error(qj?.error || 'quote_failed');
-                                      const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount, taskId: newTaskId }) });
-                                      const fj = await fr.json().catch(()=>({ ok:false, error:'internal' }));
-                                      if (!fr.ok || !fj?.ok) {
-                                        const err = fj?.error || `http_${fr.status}`;
-                                        alert(String(err));
-                                      } else {
-                                        const ton = (window as any).ton;
-                                        if (!ton?.sendTransaction) {
-                                          alert('TonConnect не инициализирован');
-                                        } else {
-                                          try { await ton.sendTransaction(fj.transaction); } catch (e:any) { alert(e?.message || 'payment_cancelled'); }
-                                        }
-                                      }
-                                    }
-                                  } catch (e:any) {
-                                    console.error('bounty payment failed', e);
-                                  }
-                                }
+                                // Оплата теперь происходит на этапе выбора суммы (авто-запуск)
 
                                 if (pendingFiles.length) {
                                   for (const f of pendingFiles) {
@@ -755,46 +766,16 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       const total = bountyAmount + fee;
                       return (
                         <div style={{ fontSize: 12, opacity: 0.95, display:'grid', gap:6 }}>
-                          <div>🪙 Вознаграждение: <b>{bountyAmount}</b> TON</div>
-                          <div>Комиссия (1%): {fee.toFixed(4)} USDT • Плательщик: заказчик</div>
-                          <div>Итого к оплате: <b>{total.toFixed(4)} USDT</b></div>
+                          <div>
+                            🪙 Вознаграждение: <b>{bountyAmount}</b> TON {typeof bountyRub === 'number' ? `(≈ ${bountyRub} ₽)` : ''}
+                            {bountyLocked && (
+                              <button onClick={()=>{ alert('Возврат средств пока настраивается'); }} title="Отменить и вернуть средства (без комиссии)" style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>×</button>
+                            )}
+                          </div>
+                          <div>Комиссия (1%): {fee.toFixed(4)} TON • Плательщик: заказчик</div>
+                          <div>Итого к оплате: <b>{total.toFixed(4)} TON</b></div>
                           <div style={{ marginTop: 4 }}>
                             <TonWalletConnect chatId={chatId} />
-                          </div>
-                          <div>
-                            <button
-                              onClick={async ()=>{
-                                try {
-                                  const qr = await fetch('/telegsar-api/bounty/quote', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amount: bountyAmount }) });
-                                  const qj = await qr.json();
-                                  if (!qj?.ok) { alert(qj?.error || 'quote_failed'); return; }
-                                  // узнаем адрес кошелька из статуса
-                                  const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
-                                  const sj = await st.json();
-                                  if (sj?.network && sj.network !== 'mainnet') {
-                                    alert('Кошелёк подключен к '+sj.network+'. Переключите в Tonkeeper сеть на Mainnet и переподключите.');
-                                    return;
-                                  }
-                                  const ownerAddress = sj?.address || '';
-                                  const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount }) });
-                                  const fj = await fr.json().catch(()=>({ ok:false, error:'internal' }));
-                                  if (!fr.ok || !fj?.ok) {
-                                    const code = fr.status;
-                                    const err = fj?.error || `http_${code}`;
-                                    if (String(err).startsWith('tonapi_failed_400')) alert('TonAPI: неверный адрес или jetton. Проверьте кошелёк и повторите.');
-                                    else if (err === 'jetton_wallet_not_found') alert('Не найден USDT-кошелёк для этого адреса. Попробуйте получить первый USDT-токен, чтобы кошелёк развернулся.');
-                                    else if (String(err).startsWith('wallet_network_mismatch')) alert('Кошелёк в другой сети. Переключите на Mainnet и переподключите.');
-                                    else alert(err || 'USDT не настроен. Сообщите администратору.');
-                                    return;
-                                  }
-                                  // @ts-ignore
-                                  const ton = (window as any).ton;
-                                  if (!ton?.sendTransaction) { alert('TonConnect не инициализирован'); return; }
-                                  await ton.sendTransaction(fj.transaction);
-                                } catch (e:any) { alert(e?.message || 'payment_failed'); }
-                              }}
-                              style={{ padding:'8px 12px', borderRadius: 10, border:'1px solid transparent', background:'#16a34a', color:'#fff' }}
-                            >Оплатить TON</button>
                           </div>
                         </div>
                       );
@@ -1242,7 +1223,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
       <BountyPicker
         open={bountyOpen}
         initial={bountyAmount}
-        onApply={(n) => setBountyAmount(n)}
+        onApply={(n, approxRub) => {
+          setBountyAmount(n);
+          setBountyRub(typeof approxRub === 'number' ? approxRub : bountyRub);
+          setBountyLocked(true);
+          saveDraftBounty(n, typeof approxRub === 'number' ? approxRub : (bountyRub ?? null));
+          // авто-оплата сразу после выбора
+          setTimeout(() => { startTonPayment(null); }, 0);
+        }}
         onClose={() => { setBountyOpen(false); focusText(); }}
       />
     </>
