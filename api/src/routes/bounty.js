@@ -33,16 +33,68 @@ export function bountyRouter() {
     const qs = params ? ('?' + new URLSearchParams(params).toString()) : '';
     const url = `${TONAPI_BASE_URL}${path}${qs}`;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${TONAPI_KEY}` } });
-    if (!r.ok) throw new Error(`tonapi_failed_${r.status}`);
+    if (!r.ok) {
+      const txt = await r.text().catch(()=>'');
+      console.error('[tonapi]', r.status, url, txt?.slice?.(0, 300));
+      throw new Error(`tonapi_failed_${r.status}`);
+    }
     return r.json();
   }
 
   // helper: get user's USDT jetton wallet address via TonAPI
+  function normalizeRaw(addr) {
+    try { return Address.parse(addr).toRawString(); } catch { return String(addr); }
+  }
+  function normalizeFriendly(addr) {
+    try { return Address.parse(addr).toString(); } catch { return String(addr); }
+  }
+  function friendlyNonUrl(addr) {
+    try { return Address.parse(addr).toString({ urlSafe: false }); } catch { return String(addr); }
+  }
+
   async function getUserJettonWallet(owner, jettonMaster) {
-    const j = await tonapi('/v2/jettons/wallets', { owner, jetton: jettonMaster });
-    const addr = j?.addresses?.[0] || j?.address || (j?.wallets && j.wallets[0]?.address);
-    if (!addr) throw new Error('jetton_wallet_not_found');
-    return addr;
+    const ownerFriendly = normalizeFriendly(owner);
+    const jettonFriendly = normalizeFriendly(jettonMaster);
+    const ownerFriendlyNonUrl = friendlyNonUrl(owner);
+    const jettonFriendlyNonUrl = friendlyNonUrl(jettonMaster);
+    const ownerRaw = normalizeRaw(owner);
+    const jettonRaw = normalizeRaw(jettonMaster);
+
+    // 1) Try list jettons for account (friendly in path)
+    try {
+      const j = await tonapi(`/v2/accounts/${encodeURIComponent(ownerFriendlyNonUrl)}/jettons`);
+      const items = j?.balances || j?.jettons || j?.items || [];
+      for (const it of items) {
+        const m = it?.jetton?.address || it?.master?.address || it?.jetton_address || it?.jetton;
+        const mRaw = m ? normalizeRaw(m) : '';
+        if (mRaw && mRaw === jettonRaw) {
+          const wa = it?.wallet_address || it?.wallet?.address || it?.address;
+          if (wa) return normalizeFriendly(wa);
+        }
+      }
+    } catch (e) {
+      console.warn('[tonapi] accounts jettons failed, fallback to /v2/jettons/wallets');
+    }
+
+    // 2) Try TonAPI: /v2/jettons/{jetton}/wallets?owner={owner}
+    try {
+      const path = `/v2/jettons/${encodeURIComponent(jettonFriendlyNonUrl)}/wallets`;
+      const w = await tonapi(path, { owner: ownerFriendlyNonUrl });
+      const addr = w?.addresses?.[0]?.address || w?.addresses?.[0] || w?.address || (w?.wallets && w.wallets[0]?.address);
+      if (addr) return normalizeFriendly(addr);
+    } catch (e) {
+      console.warn('[tonapi] jettons/{jetton}/wallets failed, try variant with account=');
+    }
+
+    // 3) Fallback: some APIs expect account instead of owner (alternate param)
+    try {
+      const path = `/v2/jettons/${encodeURIComponent(jettonFriendlyNonUrl)}/wallets`;
+      const w2 = await tonapi(path, { account: ownerFriendlyNonUrl });
+      const addr2 = w2?.addresses?.[0]?.address || w2?.addresses?.[0] || w2?.address || (w2?.wallets && w2.wallets[0]?.address);
+      if (addr2) return normalizeFriendly(addr2);
+    } catch (e) {}
+
+    throw new Error('jetton_wallet_not_found');
   }
 
   // helper: build jetton transfer payload (USDT has 6 decimals)
@@ -103,18 +155,25 @@ export function bountyRouter() {
 
       // 3) amounts
       const fee = Math.ceil((amount * FEE_BPS) / 10000 * 1e6) / 1e6; // 6 dp
-      const total = amount + fee;
       const decimals = 6; // USDT on TON
-      const units = BigInt(Math.round(total * 10 ** decimals));
+      const amountUnits = BigInt(Math.round(amount * 10 ** decimals));
+      const feeUnits = BigInt(Math.round(fee * 10 ** decimals));
 
       // 4) build payload to forward tokens to ESCROW (forward_payload comment contains meta)
       const comment = `bounty|from:${owner}|ts:${Date.now()}`;
-      const payload = buildJettonTransferPayload({
-        amountUnits: units.toString(),
+      const payloadAmount = buildJettonTransferPayload({
+        amountUnits: amountUnits.toString(),
         to: ESCROW_WALLET_ADDRESS,
         responseTo: owner,
-        fwdAmountNano: toNano('0.02').toString(), // forward a bit of TON
+        fwdAmountNano: toNano('0.02').toString(),
         comment,
+      });
+      const payloadFee = buildJettonTransferPayload({
+        amountUnits: feeUnits.toString(),
+        to: FEE_RECIPIENT || ESCROW_WALLET_ADDRESS,
+        responseTo: owner,
+        fwdAmountNano: toNano('0.02').toString(),
+        comment: `${comment}|fee`,
       });
 
       // 5) craft TonConnect transaction (send internal message to user's jetton wallet)
@@ -124,8 +183,13 @@ export function bountyRouter() {
         messages: [
           {
             address: userJettonWallet,
-            amount: toNano('0.1').toString(), // pay gas for jetton wallet
-            payload,
+            amount: toNano('0.1').toString(), // gas for jetton wallet
+            payload: payloadAmount,
+          },
+          {
+            address: userJettonWallet,
+            amount: toNano('0.1').toString(),
+            payload: payloadFee,
           },
         ],
       };
@@ -133,6 +197,10 @@ export function bountyRouter() {
       return res.json({ ok: true, transaction: tx });
     } catch (e) {
       console.error('[bounty] fund-request error', e);
+      const msg = (e && e.message) ? String(e.message) : 'internal';
+      // map common causes to 422 for clearer UI
+      if (msg.startsWith('tonapi_failed_')) return res.status(422).json({ ok: false, error: msg });
+      if (msg === 'jetton_wallet_not_found') return res.status(422).json({ ok: false, error: msg });
       res.status(500).json({ ok: false, error: 'internal' });
     }
   });
