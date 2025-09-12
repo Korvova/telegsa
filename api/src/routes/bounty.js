@@ -19,9 +19,10 @@ export function bountyRouter() {
     try {
       const amount = Number(req.body?.amount || 0);
       if (!Number.isFinite(amount) || amount <= 0) return res.status(422).json({ ok: false, error: 'bad_amount' });
-      const fee = Math.ceil((amount * FEE_BPS) / 10000 * 1e6) / 1e6; // round up to 6 dp
+      // For TON payments: compute fee in TON (display-only here)
+      const fee = Math.ceil((amount * FEE_BPS) / 10000 * 1e4) / 1e4; // show 4 dp for TON
       const total = amount + fee; // customer pays fee on top
-      res.json({ ok: true, token: 'USDT', network: NETWORK, feeBps: FEE_BPS, feeRecipient: FEE_RECIPIENT, amount, fee, total });
+      res.json({ ok: true, token: 'TON', network: NETWORK, feeBps: FEE_BPS, feeRecipient: FEE_RECIPIENT, amount, fee, total });
     } catch (e) {
       console.error('[bounty] quote error', e);
       res.status(500).json({ ok: false, error: 'internal' });
@@ -56,7 +57,7 @@ export function bountyRouter() {
     return r.json();
   }
 
-  // helper: get user's USDT jetton wallet address via TonAPI
+  // helper: get user's USDT jetton wallet address via TonAPI (kept for future USDT flow, not used in TON flow)
   function normalizeRaw(addr) {
     try { return Address.parse(addr).toRawString(); } catch { return String(addr); }
   }
@@ -169,16 +170,18 @@ export function bountyRouter() {
     return payload.toBoc({ idx: false }).toString('base64');
   }
 
+  function buildTextCommentPayload(text) {
+    const cell = beginCell().storeUint(0, 32).storeStringTail(text || '').endCell();
+    return cell.toBoc({ idx: false }).toString('base64');
+  }
+
   // POST /bounty/fund-request { chatId, amount, ownerAddress? }
   router.post('/bounty/fund-request', async (req, res) => {
     try {
       const amount = Number(req.body?.amount || 0);
       const ownerAddress = String(req.body?.ownerAddress || '').trim();
       if (!Number.isFinite(amount) || amount <= 0) return res.status(422).json({ ok: false, error: 'bad_amount' });
-      if (!USDT_MASTER) return res.status(422).json({ ok: false, error: 'usdt_not_configured' });
       if (!ESCROW_WALLET_ADDRESS) return res.status(422).json({ ok: false, error: 'escrow_not_configured' });
-      if (TON_PROVIDER !== 'tonapi') return res.status(422).json({ ok: false, error: 'provider_not_supported' });
-      if (!TONAPI_KEY) return res.status(422).json({ ok: false, error: 'tonapi_key_missing' });
 
       // 1) determine owner address (from request or fallback to stored user wallet)
       let owner = ownerAddress;
@@ -203,47 +206,20 @@ export function bountyRouter() {
         return res.status(422).json({ ok: false, error: `wallet_network_mismatch:${userNetwork}->${NETWORK}` });
       }
 
-      // 2) user's USDT jetton wallet address
-      const userJettonWallet = await getUserJettonWallet(owner, USDT_MASTER);
-
-      // 3) amounts
-      const fee = Math.ceil((amount * FEE_BPS) / 10000 * 1e6) / 1e6; // 6 dp
-      const decimals = 6; // USDT on TON
-      const amountUnits = BigInt(Math.round(amount * 10 ** decimals));
-      const feeUnits = BigInt(Math.round(fee * 10 ** decimals));
-
-      // 4) build payload to forward tokens to ESCROW (forward_payload comment contains meta)
+      // 2) TON amounts (in nanoTON)
+      const amountNano = toNano(String(amount));
+      const feeNano = ((amountNano * BigInt(FEE_BPS)) + 9999n) / 10000n; // round up
       const comment = `bounty|from:${owner}|ts:${Date.now()}`;
-      const payloadAmount = buildJettonTransferPayload({
-        amountUnits: amountUnits.toString(),
-        to: ESCROW_WALLET_ADDRESS,
-        responseTo: owner,
-        fwdAmountNano: toNano('0.02').toString(),
-        comment,
-      });
-      const payloadFee = buildJettonTransferPayload({
-        amountUnits: feeUnits.toString(),
-        to: FEE_RECIPIENT || ESCROW_WALLET_ADDRESS,
-        responseTo: owner,
-        fwdAmountNano: toNano('0.02').toString(),
-        comment: `${comment}|fee`,
-      });
+      const payloadAmount = buildTextCommentPayload(comment);
+      const payloadFee = buildTextCommentPayload(`${comment}|fee`);
 
-      // 5) craft TonConnect transaction (send internal message to user's jetton wallet)
+      // 3) craft TonConnect transaction: two TON transfers
       const validUntil = Math.floor(Date.now() / 1000) + 600; // 10 min
       const tx = {
         validUntil,
         messages: [
-          {
-            address: userJettonWallet,
-            amount: toNano('0.1').toString(), // gas for jetton wallet
-            payload: payloadAmount,
-          },
-          {
-            address: userJettonWallet,
-            amount: toNano('0.1').toString(),
-            payload: payloadFee,
-          },
+          { address: ESCROW_WALLET_ADDRESS, amount: amountNano.toString(), payload: payloadAmount },
+          { address: (FEE_RECIPIENT || ESCROW_WALLET_ADDRESS), amount: feeNano.toString(), payload: payloadFee },
         ],
       };
 

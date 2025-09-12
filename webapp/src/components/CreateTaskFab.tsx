@@ -729,7 +729,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       const total = bountyAmount + fee;
                       return (
                         <div style={{ fontSize: 12, opacity: 0.95, display:'grid', gap:6 }}>
-                          <div>🪙 Вознаграждение: <b>{bountyAmount}</b> USDT</div>
+                          <div>🪙 Вознаграждение: <b>{bountyAmount}</b> TON</div>
                           <div>Комиссия (1%): {fee.toFixed(4)} USDT • Плательщик: заказчик</div>
                           <div>Итого к оплате: <b>{total.toFixed(4)} USDT</b></div>
                           <div style={{ marginTop: 4 }}>
@@ -745,10 +745,22 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                   // узнаем адрес кошелька из статуса
                                   const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
                                   const sj = await st.json();
+                                  if (sj?.network && sj.network !== 'mainnet') {
+                                    alert('Кошелёк подключен к '+sj.network+'. Переключите в Tonkeeper сеть на Mainnet и переподключите.');
+                                    return;
+                                  }
                                   const ownerAddress = sj?.address || '';
                                   const fr = await fetch('/telegsar-api/bounty/fund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount }) });
-                                  const fj = await fr.json();
-                                  if (!fj?.ok) { alert(fj?.error || 'USDT не настроен. Сообщите администратору.'); return; }
+                                  const fj = await fr.json().catch(()=>({ ok:false, error:'internal' }));
+                                  if (!fr.ok || !fj?.ok) {
+                                    const code = fr.status;
+                                    const err = fj?.error || `http_${code}`;
+                                    if (String(err).startsWith('tonapi_failed_400')) alert('TonAPI: неверный адрес или jetton. Проверьте кошелёк и повторите.');
+                                    else if (err === 'jetton_wallet_not_found') alert('Не найден USDT-кошелёк для этого адреса. Попробуйте получить первый USDT-токен, чтобы кошелёк развернулся.');
+                                    else if (String(err).startsWith('wallet_network_mismatch')) alert('Кошелёк в другой сети. Переключите на Mainnet и переподключите.');
+                                    else alert(err || 'USDT не настроен. Сообщите администратору.');
+                                    return;
+                                  }
                                   // @ts-ignore
                                   const ton = (window as any).ton;
                                   if (!ton?.sendTransaction) { alert('TonConnect не инициализирован'); return; }
@@ -756,7 +768,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                 } catch (e:any) { alert(e?.message || 'payment_failed'); }
                               }}
                               style={{ padding:'8px 12px', borderRadius: 10, border:'1px solid transparent', background:'#16a34a', color:'#fff' }}
-                            >Оплатить USDT</button>
+                            >Оплатить TON</button>
                           </div>
                         </div>
                       );
