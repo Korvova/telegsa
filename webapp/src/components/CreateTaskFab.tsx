@@ -150,6 +150,11 @@ export default function CreateTaskFab({
     } catch (e:any) { alert(e?.message || 'payment_failed'); }
   }
 
+  // Keep global FABs in sync with modal visibility (covers draft-open and reloads)
+  useEffect(() => {
+    try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: open })); } catch {}
+  }, [open]);
+
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const ownGroups = useMemo(() => groups.filter(g => g.kind === 'own'), [groups]);
@@ -329,7 +334,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
             position: 'fixed',
             inset: 0,
             background: 'rgba(0,0,0,.45)',
-            zIndex: 1000,
+            zIndex: 2000,
             display: 'flex',
             alignItems: 'flex-end',
             justifyContent: 'center',
@@ -617,6 +622,14 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                                   try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
                                 }
 
+                                // Зафиксировать сумму в ₽ на задаче (для значков) — если есть оплаченная/выбранная сумма
+                                if (bountyAmount > 0 && (bountyRub ?? null) !== null) {
+                                  try {
+                                    const api = await import('../api');
+                                    await api.setTaskBounty(newTaskId, chatId, Number(bountyRub));
+                                  } catch {}
+                                }
+
                                 // Оплата теперь происходит на этапе выбора суммы (авто-запуск)
 
                                 if (pendingFiles.length) {
@@ -771,7 +784,25 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           <div>
                             🪙 Вознаграждение: <b>{bountyAmount}</b> TON {typeof bountyRub === 'number' ? `(≈ ${bountyRub} ₽)` : ''}
                             {bountyLocked && (
-                              <button onClick={()=>{ alert('Возврат средств пока настраивается'); }} title="Отменить и вернуть средства (без комиссии)" style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>×</button>
+                              <button
+                                onClick={async ()=>{
+                                  try {
+                                    if (!confirm('Вернуть средства? Комиссия не возвращается.')) return;
+                                    const st = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`);
+                                    const sj = await st.json();
+                                    const ownerAddress = sj?.address || '';
+                                    const rr = await fetch('/telegsar-api/bounty/refund-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, ownerAddress, amount: bountyAmount }) });
+                                    const rj = await rr.json().catch(()=>({ ok:false, error:'internal' }));
+                                    if (!rr.ok || !rj?.ok) { alert(String(rj?.error || `http_${rr.status}`)); return; }
+                                    setBountyLocked(false);
+                                    setBountyAmount(0);
+                                    setBountyRub(null);
+                                    try { localStorage.removeItem(`draftBounty:${chatId}`); } catch {}
+                                    alert('Возврат запрошен.');
+                                  } catch (e:any) { alert(e?.message || 'refund_failed'); }
+                                }}
+                                title="Отменить и вернуть средства (без комиссии)"
+                                style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>×</button>
                             )}
                           </div>
                           <div>Комиссия (1%): {fee.toFixed(4)} TON • Плательщик: заказчик</div>
@@ -1227,9 +1258,10 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
         initial={bountyAmount}
         onApply={(n, approxRub) => {
           setBountyAmount(n);
-          setBountyRub(typeof approxRub === 'number' ? approxRub : bountyRub);
+          const rub = typeof approxRub === 'number' ? approxRub : (bountyRub ?? null);
+          setBountyRub(rub);
           setBountyLocked(true);
-          saveDraftBounty(n, typeof approxRub === 'number' ? approxRub : (bountyRub ?? null));
+          saveDraftBounty(n, rub);
           // авто-оплата сразу после выбора
           setTimeout(() => { startTonPayment(null); }, 0);
         }}
