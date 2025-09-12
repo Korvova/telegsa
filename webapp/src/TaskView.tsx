@@ -686,7 +686,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
         <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8, display:'flex', alignItems:'center', gap:6 }}>
           {typeof (task as any).bountyStars === 'number' && (task as any).bountyStars > 0 ? (
             <span title={String((task as any).bountyStatus)==='PAID' ? 'Выплачено' : 'Ожидает выплаты'} style={{ display:'inline-block', border:`1px solid ${String((task as any).bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String((task as any).bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String((task as any).bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'0 6px', lineHeight:'16px', fontSize:12 }}>
-              {String((task as any).bountyStatus)==='PAID' ? '💫' : '🪙'} ({(task as any).bountyStars})
+              {String((task as any).bountyStatus)==='PAID' ? '💫' : '💰'} ({(task as any).bountyStars})
             </span>
           ) : null}
           <span>ID: {task.id}</span>

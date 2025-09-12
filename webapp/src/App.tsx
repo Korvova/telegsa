@@ -166,7 +166,7 @@ function TaskCard({
       <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
         {typeof bountyStars === 'number' && bountyStars > 0 ? (
           <span title={String(bountyStatus)==='PAID' ? 'Выплачено' : 'Ожидает выплаты'} style={{ display:'inline-block', border:`1px solid ${String(bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String(bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String(bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'0 6px', lineHeight:'16px', fontSize:12 }}>
-            {String(bountyStatus)==='PAID' ? '💫' : '🪙'} ({bountyStars})
+            {String(bountyStatus)==='PAID' ? '💫' : '💰'} ({bountyStars})
           </span>
         ) : null}
         <span>#{order}</span>
