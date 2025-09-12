@@ -81,7 +81,16 @@ export function walletTonRouter() {
     try {
       const chatId = String(req.body?.chatId || '').trim();
       if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
-      await prisma.user.update({ where: { chatId }, data: { tonVerifyNonce: null } }).catch(() => {});
+      await prisma.user.update({
+        where: { chatId },
+        data: {
+          tonAddress: null,
+          tonNetwork: null,
+          tonWalletApp: null,
+          tonVerifiedAt: null,
+          tonVerifyNonce: null,
+        },
+      }).catch(() => {});
       res.json({ ok: true });
     } catch (e) {
       console.error('[wallet] disconnect error', e);
@@ -93,4 +102,3 @@ export function walletTonRouter() {
 }
 
 export default walletTonRouter;
-
