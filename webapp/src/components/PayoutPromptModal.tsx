@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import coinSfx from '../assets/coin.mp3';
 import TonWalletConnect from './TonWalletConnect';
 
 export default function PayoutPromptModal({
@@ -16,8 +17,21 @@ export default function PayoutPromptModal({
 }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => { if (!open) { setBusy(false); setDone(false); } }, [open]);
+
+  // Play sound when payment is confirmed
+  useEffect(() => {
+    if (!done) return;
+    try {
+      if (!audioRef.current) audioRef.current = new Audio(coinSfx);
+      const a = audioRef.current;
+      a.currentTime = 0;
+      a.volume = 1;
+      a.play().catch(() => {});
+    } catch {}
+  }, [done]);
 
   if (!open) return null;
 
