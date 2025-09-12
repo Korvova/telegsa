@@ -1152,10 +1152,10 @@ app.patch('/tasks/:id/move', async (req, res) => {
         const name = String(toCol?.name || '');
         const isCancel = /(^|::)Cancel$/.test(name);
         if (isCancel) {
-          const ru = Number((result as any)?.bountyStars || 0);
-          const st = String((result as any)?.bountyStatus || 'NONE');
+          const ru = Number(result?.bountyStars || 0);
+          const st = String(result?.bountyStatus || 'NONE');
           if (ru > 0 && st !== 'PAID') {
-            const ownerChatId = String((result as any)?.createdByChatId || (result as any)?.chatId || '');
+            const ownerChatId = String(result?.createdByChatId || result?.chatId || '');
             if (ownerChatId) {
               const port = Number(process.env.PORT || 3300);
               const base = `http://127.0.0.1:${port}`;
