@@ -1,6 +1,9 @@
 // api/src/routes/bounty.js
 import express from 'express';
 import { beginCell, Address, toNano, Cell } from '@ton/core';
+import { external, internal, storeMessage } from '@ton/core';
+import { WalletContractV4 } from '@ton/ton';
+import { mnemonicToPrivateKey } from '@ton/crypto';
 
 export function bountyRouter() {
   const router = express.Router();
@@ -13,7 +16,8 @@ export function bountyRouter() {
   const TONAPI_BASE_URL = process.env.TONAPI_BASE_URL || 'https://tonapi.io';
   const TONAPI_KEY = process.env.TONAPI_KEY || '';
   const ESCROW_WALLET_ADDRESS = process.env.ESCROW_WALLET_ADDRESS || '';
-  let RATES_CACHE = { ts: 0, tonRub: null } as { ts: number; tonRub: number | null };
+  // simple runtime cache for rates
+  let RATES_CACHE = { ts: 0, tonRub: null };
 
   // POST /bounty/quote { amount: number }
   router.post('/bounty/quote', async (req, res) => {
@@ -43,7 +47,7 @@ export function bountyRouter() {
         if (!r.ok) throw new Error('bad_rate_' + r.status);
         return r.json();
       }
-      let rub: number | null = null;
+      let rub = null;
       try {
         const j = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=toncoin&vs_currencies=rub');
         rub = Number(j?.toncoin?.rub || null);
@@ -101,6 +105,45 @@ export function bountyRouter() {
       throw new Error(`tonapi_failed_${r.status}`);
     }
     return r.json();
+  }
+
+  // --- Escrow wallet helpers ---
+  let ESCROW_CACHE = { init: false, publicKey: null, secretKey: null, wallet: null, address: null };
+  async function getEscrow() {
+    if (!process.env.ESCROW_WALLET_MNEMONIC || !ESCROW_WALLET_ADDRESS) throw new Error('escrow_not_configured');
+    if (!ESCROW_CACHE.init) {
+      const words = String(process.env.ESCROW_WALLET_MNEMONIC).trim().split(/\s+/g);
+      const kp = await mnemonicToPrivateKey(words);
+      const wallet = WalletContractV4.create({ workchain: 0, publicKey: kp.publicKey });
+      ESCROW_CACHE = { init: true, publicKey: kp.publicKey, secretKey: kp.secretKey, wallet, address: wallet.address };
+    }
+    return ESCROW_CACHE;
+  }
+
+  async function getWalletSeqno(addrFriendly) {
+    try {
+      const res = await tonapiPost('/v2/blockchain/runGetMethod', { address: addrFriendly, method: 'seqno', stack: [] });
+      // try decoded or stack[0]
+      const dec = res?.decoded?.result ?? res?.decoded?.value ?? res?.decoded?.number;
+      if (dec !== undefined) return Number(dec);
+      const s0 = res?.stack?.[0];
+      if (Array.isArray(s0) && typeof s0[1] === 'string') return parseInt(Buffer.from(s0[1], 'base64').toString('hex'), 16) || 0;
+      if (s0?.number !== undefined) return Number(s0.number);
+    } catch (e) {
+      console.warn('[escrow] seqno failed', e);
+    }
+    return 0;
+  }
+
+  async function sendFromEscrow({ to, amountNano, comment }) {
+    const { wallet, secretKey, address } = await getEscrow();
+    const seqno = await getWalletSeqno(Address.isAddress(address) ? address.toString() : String(address));
+    const msg = internal({ to, value: amountNano, body: comment ? beginCell().storeUint(0,32).storeStringTail(comment).endCell() : undefined });
+    const body = wallet.createTransfer({ seqno, secretKey, messages: [msg] });
+    const ext = external({ to: wallet.address, body });
+    const boc = beginCell().store(storeMessage(ext)).endCell().toBoc({ idx: false }).toString('base64');
+    const r = await tonapiPost('/v2/blockchain/send', { boc });
+    return r;
   }
 
   // helper: get user's USDT jetton wallet address via TonAPI (kept for future USDT flow, not used in TON flow)
@@ -288,6 +331,29 @@ export function bountyRouter() {
       return res.status(501).json({ ok: false, error: 'not_implemented' });
     } catch (e) {
       console.error('[bounty] release-request error', e);
+      res.status(500).json({ ok: false, error: 'internal' });
+    }
+  });
+
+  // POST /bounty/refund-request { chatId, ownerAddress, amount, taskId? }
+  // NOTE: For now, we just acknowledge request (off-chain) — real refund will be processed by escrow service.
+  router.post('/bounty/refund-request', async (req, res) => {
+    try {
+      const amount = Number(req.body?.amount || 0);
+      const owner = String(req.body?.ownerAddress || '').trim();
+      if (!Number.isFinite(amount) || amount <= 0) return res.status(422).json({ ok: false, error: 'bad_amount' });
+      if (!owner) return res.status(422).json({ ok: false, error: 'owner_required' });
+      // Perform TON refund from escrow (without fee)
+      const amountNano = toNano(String(amount));
+      try {
+        const sent = await sendFromEscrow({ to: owner, amountNano, comment: `refund|ts:${Date.now()}` });
+        return res.json({ ok: true, tx: sent || null });
+      } catch (e) {
+        console.error('[bounty] refund tx failed', e);
+        return res.status(500).json({ ok: false, error: 'refund_failed' });
+      }
+    } catch (e) {
+      console.error('[bounty] refund-request error', e);
       res.status(500).json({ ok: false, error: 'internal' });
     }
   });
