@@ -50,6 +50,8 @@ export default function CreateTaskFab({
   onCreated,
 }: Props) {
   const [open, setOpen] = useState(false);
+  // Контекст открытия из ленты (по клику на 🔘/⚫)
+  const [edgeContext, setEdgeContext] = useState<null | { taskId: string; text: string; groupId: string | null }>(null);
 
   const isSimpleMode = useMemo(
     () => typeof defaultGroupId !== 'undefined',
@@ -178,6 +180,38 @@ export default function CreateTaskFab({
   useEffect(() => {
     try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: open })); } catch {}
   }, [open]);
+
+  // Открытие формы по клику на 🔘 на карточке в ленте
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const ce = e as CustomEvent<any>;
+        const d = (ce && ce.detail) || {};
+        const tId = String(d.taskId || '');
+        const txt = String(d.text || '');
+        const gid = (typeof d.groupId === 'string' || d.groupId === null) ? d.groupId : null;
+        if (!tId) return;
+        // Проставляем контекст + преднастройку предзадачи «Сразу после выполнения»
+        setEdgeContext({ taskId: tId, text: txt, groupId: gid });
+        setPreCfg({
+          links: [{ taskId: tId }],
+          mode: 'AFTER_ALL_DONE',
+          startAt: null,
+          delayMinutes: null,
+          autoCancelOnAny: false,
+          plannedAssigneeChatId: null,
+        });
+        if (gid !== undefined) setGroupId(gid);
+        setOpen(true);
+        setStep(0);
+        try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: true })); } catch {}
+        focusText();
+      } catch {}
+    };
+    window.addEventListener('edge-pre-open', handler as EventListener);
+    return () => window.removeEventListener('edge-pre-open', handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // табы в пикере групп
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
@@ -707,6 +741,8 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
     setDeadlineAt(null);
     setAcceptConditionState('NONE');
     setRemindersDraft([]);
+    setPreCfg(null);
+    setEdgeContext(null);
     try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: false })); } catch {}
   };
   const back = () => {
@@ -859,6 +895,26 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
             {/* Контент */}
             {isSimpleMode ? (
               <>
+                {/* Прикреплённая сверху карточка из ленты (по клику на 🔘) */}
+                {edgeContext ? (
+                  <div style={{ border:'1px solid #1f2937', background:'#0b1220', color:'#e5e7eb', borderRadius:12, padding:10, marginBottom:10 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span title="Связь по задаче">🔘</span>
+                      <div style={{ fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {edgeContext.text}
+                      </div>
+                      <button
+                        onClick={() => { setEdgeContext(null); setPreCfg(null); }}
+                        title="Убрать связь"
+                        style={{ marginLeft:'auto', background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div style={{ fontSize:12, opacity:.8, marginTop:6 }}>после выполнения запустить:</div>
+                  </div>
+                ) : null}
+
                 <div style={{ display: 'grid', gap: 10, marginBottom: 10 }}>
                   {/* Весь бар: textarea/плеер сверху, вложения снизу */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>

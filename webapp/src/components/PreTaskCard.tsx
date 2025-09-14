@@ -57,6 +57,10 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle 
           <div>Ждёт: {getName(p.plannedAssigneeChatId) || 'не выбран'}</div>
         </div>
       </div>
+      {/* Right edge badge for pretask */}
+      <div style={{ position:'absolute', right: -6, top: 10, width: 22, height: 22, borderRadius: 999, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span title="Связи предзадачи">⚫</span>
+      </div>
     </button>
   );
 }

@@ -18,6 +18,9 @@ import { listPreTasks, type PreTaskDTO, getGroupMembers } from '../../api';
 import PreTaskCard from '../../components/PreTaskCard';
 import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
 import PreTaskEditModal from '../../components/PreTaskEditModal';
+// duplicate import removed
+import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
+import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
@@ -27,7 +30,7 @@ import LabelFilterWheel from '../../components/LabelFilterWheel';
 import StarBadge from '../../components/StarBadge';
 import PayoutPromptModal from '../../components/PayoutPromptModal';
 
-const LONG_PRESS_MS = 500;
+// const LONG_PRESS_MS = 500; // отключено: открываем быстрые действия по клику на статус
 
 function fmtShort(iso?: string | null): string {
   if (!iso) return '';
@@ -147,6 +150,7 @@ export default function HomePage({
   const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
   const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
   const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
+  const [manageForTask, setManageForTask] = useState<{ id: string } | null>(null);
 
   // выбор области
   const [scope, setScope] = useState<FeedScope>({ kind: 'all' });
@@ -180,6 +184,49 @@ export default function HomePage({
   const meChatId = String(
     WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || ''
   );
+
+  // Свайп вправо по карточке => быстрый запуск создания предзадачи (как по 🔘)
+  const swipeState = useRef<{ id: string | null; sx: number; sy: number } | null>(null);
+  const [swipeUi, setSwipeUi] = useState<{ id: string | null; dx: number }>({ id: null, dx: 0 });
+  const SWIPE_REVEAL = 120; // ширина «Запустить после» для фиксации
+  const SWIPE_MAX = 180; // максимум сдвига визуально
+  const SWIPE_Y = 40; // допустимый перекос по оси Y
+  const suppressClickRef = useRef<{ id: string; until: number } | null>(null);
+  const beginSwipe = (id: string, x: number, y: number) => {
+    swipeState.current = { id, sx: x, sy: y };
+    setSwipeUi({ id, dx: 0 });
+  };
+  const moveSwipe = (e: PointerEvent | TouchEvent, id: string) => {
+    const st = swipeState.current;
+    if (!st || st.id !== id) return;
+    let x = 0, y = 0;
+    if ((e as TouchEvent).touches && (e as TouchEvent).touches[0]) {
+      x = (e as TouchEvent).touches[0].clientX;
+      y = (e as TouchEvent).touches[0].clientY;
+    } else if ((e as PointerEvent).clientX != null) {
+      x = (e as PointerEvent).clientX;
+      y = (e as PointerEvent).clientY;
+    }
+    const dx = x - st.sx;
+    const dy = Math.abs(y - st.sy);
+    if (dy >= SWIPE_Y) return; // слишком большой вертикальный сдвиг — игнорируем
+    if (dx > 10) cancelLongPress();
+    const nx = Math.max(0, Math.min(dx, SWIPE_MAX));
+    setSwipeUi((prev) => (prev.id === id ? { id, dx: nx } : prev));
+  };
+  const endSwipe = (id?: string, payload?: { text: string; groupId: string | null }) => {
+    const cur = swipeUi;
+    if (id && cur.id === id && cur.dx >= SWIPE_REVEAL) {
+      cancelLongPress();
+      try {
+        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: id, text: payload?.text, groupId: payload?.groupId } }));
+        WebApp?.HapticFeedback?.impactOccurred?.('light');
+      } catch {}
+      suppressClickRef.current = { id, until: Date.now() + 600 };
+    }
+    swipeState.current = null;
+    setSwipeUi({ id: null, dx: 0 });
+  };
 
   const DEFAULT_STATUSES = ['Новые', 'В работе', 'Готово', 'Согласование', 'Ждёт'] as const;
 
@@ -405,15 +452,8 @@ export default function HomePage({
   const sliderRef = useRef<HTMLDivElement | null>(null);
   const isQuickBarOpen = openQBarId !== null;
 
-  const startLongPress = (taskId: string) => {
-    clearTimeout(lpTimer.current);
-    lpTimer.current = setTimeout(() => {
-      setOpenQBarId(taskId);
-      try {
-        WebApp?.HapticFeedback?.impactOccurred?.('light');
-      } catch {}
-    }, LONG_PRESS_MS);
-  };
+  // long-press отключён: быстрые действия открываются по клику на статус-бейдж
+  // const startLongPress = (_taskId: string) => {};
   const cancelLongPress = () => {
     clearTimeout(lpTimer.current);
   };
@@ -712,6 +752,37 @@ export default function HomePage({
                       <>
                       {injected}
                       <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto' }}>
+                        {/* Подложка для свайпа в "Все" */}
+                        {pg.key === 'all' && swipeUi.id === (t as any).id ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'flex-start',
+                              paddingLeft: 20,
+                              pointerEvents: 'none',
+                              zIndex: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                padding: '4px 10px',
+                                borderRadius: 999,
+                                border: '1px solid #c7f3d1',
+                                background: '#e7fbe9',
+                                color: '#0f5132',
+                                fontSize: 12,
+                                opacity: Math.min(1, swipeUi.dx / SWIPE_REVEAL),
+                                boxShadow: '0 2px 6px rgba(0,0,0,.06)'
+                              }}
+                            >
+                              Запустить после
+                            </span>
+                          </div>
+                        ) : null}
                         {opened && (
                           <StageQuickBar
                             anchorId={anchorId}
@@ -762,9 +833,16 @@ export default function HomePage({
                             WebkitUserSelect: 'none' as const,
                             msUserSelect: 'none' as const,
                             touchAction: 'manipulation',
-                            transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease',
+                            transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease, transform 160ms ease',
+                            position: 'relative',
+                            transform: (pg.key === 'all' && swipeUi.id === (t as any).id) ? `translateX(${Math.min(swipeUi.dx, 180)}px)` : 'translateX(0px)',
                           }}
                           onClick={() => {
+                            const sup = suppressClickRef.current;
+                            if (sup && sup.id === (t as any).id && sup.until > Date.now()) {
+                              suppressClickRef.current = null;
+                              return;
+                            }
                             if (!opened) {
                               onOpenTask(t.id);
                               try {
@@ -774,16 +852,45 @@ export default function HomePage({
                           }}
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            startLongPress(t.id);
+                            if (pg.key === 'all') beginSwipe(t.id, e.clientX, e.clientY);
                           }}
-                          onMouseUp={cancelLongPress}
-                          onMouseLeave={cancelLongPress}
-                          onTouchStart={() => startLongPress(t.id)}
-                          onTouchEnd={cancelLongPress}
-                          onTouchCancel={cancelLongPress}
+                          onMouseMove={(e) => { if (pg.key === 'all') moveSwipe(e as any, t.id); }}
+                          onMouseUp={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(t.id, { text: (t as any).text, groupId }); else endSwipe(); }}
+                          onMouseLeave={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(); }}
+                          onTouchStart={(e) => {
+                            try {
+                              const touch = (e.touches && e.touches[0]) || (e as any).touches?.[0];
+                              if (pg.key === 'all' && touch) beginSwipe(t.id, touch.clientX, touch.clientY);
+                            } catch {}
+                          }}
+                          onTouchMove={(e) => { if (pg.key === 'all') moveSwipe(e as any, t.id); }}
+                          onTouchEnd={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(t.id, { text: (t as any).text, groupId }); else endSwipe(); }}
+                          onTouchCancel={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(); }}
                           onContextMenu={(e) => e.preventDefault()}
                           onDragStart={(e) => e.preventDefault()}
                         >
+                          {/* Edge pre-task badge on task card */}
+                          {pg.key === 'all' ? (
+                            (() => {
+                              const preCountForTask = __preSorted.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String((t as any).id))).length;
+                              return (
+                                <div style={{ position:'absolute', right: 0, top: 0, bottom: 0 }}>
+                                  <EdgePreTaskBadge
+                                    kind="task"
+                                    count={preCountForTask}
+                                    onClick={() => {
+                                      if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
+                                      else {
+                                        try {
+                                          window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
+                                        } catch {}
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })()
+                          ) : null}
                           <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
                             {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
                               <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
@@ -800,6 +907,7 @@ export default function HomePage({
                             {badge && (
                               <span
                                 title={badge.text}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBarId(t.id); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
                                 style={{
                                   background: badge.bg,
                                   color: badge.fg,
@@ -808,6 +916,7 @@ export default function HomePage({
                                   borderRadius: 999,
                                   fontSize: 12,
                                   whiteSpace: 'nowrap',
+                                  cursor: 'pointer',
                                 }}
                               >
                                 {badge.text}
@@ -1153,6 +1262,19 @@ export default function HomePage({
 
       <PreTaskPreviewModal open={!!openPreTask} preTask={openPreTask} onClose={() => setOpenPreTask(null)} nameByChat={nameByChat} />
       <PreTaskEditModal open={!!editPreTask} chatId={chatId} preTask={editPreTask} onClose={()=>setEditPreTask(null)} onSaved={async ()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }} />
+      <TaskPreTaskLinkManager
+        open={!!manageForTask}
+        chatId={chatId}
+        taskId={manageForTask?.id || ''}
+        onClose={()=>setManageForTask(null)}
+        onAdd={()=>{
+          const t = filteredItems.find((x:any)=>x.id===manageForTask?.id);
+          const groupId = (()=>{ const cn = (t as any)?.column?.name || ''; const i = cn.indexOf('::'); return i>0? cn.slice(0,i): null })();
+          try { window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: manageForTask?.id, text: (t as any)?.text || '', groupId } })); } catch {}
+          setManageForTask(null);
+        }}
+        onChanged={async()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }}
+      />
 
     </div>
   );
