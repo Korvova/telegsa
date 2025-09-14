@@ -791,8 +791,25 @@ export default function HomePage({
                                 return (
                                   <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
                                     {children.map((cp:any) => (
-                                      <div key={`pchild-${cp.id}`}>
-                                        <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
+                                      <div key={`pchild-${cp.id}`} style={{ position:'relative' }}>
+                                        {pg.key==='all' && preSwipeUi.id === (cp as any).id ? (
+                                          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                            <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                          </div>
+                                        ) : null}
+                                        <div
+                                          style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === (cp as any).id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
+                                          onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe((cp as any).id, e.clientX, e.clientY); }}
+                                          onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, (cp as any).id); }}
+                                          onMouseUp={() => { if (pg.key==='all') endPreSwipe((cp as any).id, { text: (cp as any).text, groupId: (cp as any).groupId ?? null }); }}
+                                          onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                          onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe((cp as any).id, t.clientX, t.clientY); } catch {} }}
+                                          onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, (cp as any).id); }}
+                                          onTouchEnd={() => { if (pg.key==='all') endPreSwipe((cp as any).id, { text: (cp as any).text, groupId: (cp as any).groupId ?? null }); }}
+                                          onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                                        >
+                                          <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
+                                        </div>
                                       </div>
                                     ))}
                                   </div>
@@ -1160,15 +1177,32 @@ export default function HomePage({
                         return (
                           <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
                             {linked.map((p) => (
-                              <div key={(p as any).id} style={{ margin: '0 0' }}>
-                                    <PreTaskCard
-                                      p={p as any}
-                                      onOpen={(pp) => setOpenPreTask(pp)}
-                                      onEdit={(pp) => setEditPreTask(pp)}
-                                      nameByChat={nameByChat}
-                                      groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
-                                      tone="subtle"
-                                    />
+                              <div key={(p as any).id} style={{ position:'relative' }}>
+                                {pg.key==='all' && preSwipeUi.id === (p as any).id ? (
+                                  <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                    <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                  </div>
+                                ) : null}
+                                <div
+                                  style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === (p as any).id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
+                                  onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe((p as any).id, e.clientX, e.clientY); }}
+                                  onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, (p as any).id); }}
+                                  onMouseUp={() => { if (pg.key==='all') endPreSwipe((p as any).id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                                  onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                  onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe((p as any).id, t.clientX, t.clientY); } catch {} }}
+                                  onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, (p as any).id); }}
+                                  onTouchEnd={() => { if (pg.key==='all') endPreSwipe((p as any).id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                                  onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                                >
+                                  <PreTaskCard
+                                    p={p as any}
+                                    onOpen={(pp) => setOpenPreTask(pp)}
+                                    onEdit={(pp) => setEditPreTask(pp)}
+                                    nameByChat={nameByChat}
+                                    groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
+                                    tone="subtle"
+                                  />
+                                </div>
                               </div>
                             ))}
                           </div>
