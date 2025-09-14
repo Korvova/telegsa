@@ -190,6 +190,8 @@ export default function HomePage({
   // Свайп вправо по карточке => быстрый запуск создания предзадачи (как по 🔘)
   const swipeState = useRef<{ id: string | null; sx: number; sy: number } | null>(null);
   const [swipeUi, setSwipeUi] = useState<{ id: string | null; dx: number }>({ id: null, dx: 0 });
+  const preSwipeState = useRef<{ id: string | null; sx: number; sy: number } | null>(null);
+  const [preSwipeUi, setPreSwipeUi] = useState<{ id: string | null; dx: number }>({ id: null, dx: 0 });
   const SWIPE_REVEAL = 120; // ширина «Запустить после» для фиксации
   const SWIPE_MAX = 180; // максимум сдвига визуально
   const SWIPE_Y = 40; // допустимый перекос по оси Y
@@ -228,6 +230,41 @@ export default function HomePage({
     }
     swipeState.current = null;
     setSwipeUi({ id: null, dx: 0 });
+  };
+  const beginPreSwipe = (id: string, x: number, y: number) => {
+    preSwipeState.current = { id, sx: x, sy: y };
+    setPreSwipeUi({ id, dx: 0 });
+  };
+  const movePreSwipe = (e: PointerEvent | TouchEvent, id: string) => {
+    const st = preSwipeState.current;
+    if (!st || st.id !== id) return;
+    let x = 0, y = 0;
+    if ((e as TouchEvent).touches && (e as TouchEvent).touches[0]) {
+      x = (e as TouchEvent).touches[0].clientX;
+      y = (e as TouchEvent).touches[0].clientY;
+    } else if ((e as PointerEvent).clientX != null) {
+      x = (e as PointerEvent).clientX;
+      y = (e as PointerEvent).clientY;
+    }
+    const dx = x - st.sx;
+    const dy = Math.abs(y - st.sy);
+    if (dy >= SWIPE_Y) return;
+    if (dx > 10) cancelLongPress();
+    const nx = Math.max(0, Math.min(dx, SWIPE_MAX));
+    setPreSwipeUi((prev) => (prev.id === id ? { id, dx: nx } : prev));
+  };
+  const endPreSwipe = (id?: string, payload?: { text: string; groupId: string | null }) => {
+    const cur = preSwipeUi;
+    if (id && cur.id === id && cur.dx >= SWIPE_REVEAL) {
+      cancelLongPress();
+      try {
+        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { preTaskId: id, text: payload?.text, groupId: payload?.groupId } }));
+        WebApp?.HapticFeedback?.impactOccurred?.('light');
+      } catch {}
+      suppressClickRef.current = { id, until: Date.now() + 600 } as any;
+    }
+    preSwipeState.current = null;
+    setPreSwipeUi({ id: null, dx: 0 });
   };
 
   const DEFAULT_STATUSES = ['Новые', 'В работе', 'Готово', 'Согласование', 'Ждёт'] as const;
@@ -703,8 +740,50 @@ export default function HomePage({
                         const pTime = new Date(p.createdAt || p.updatedAt || 0).getTime();
                         if (pTime >= tTime) {
                           injected.push(
-                            <div key={`pre-${p.id}`} style={{ margin: '0 12px' }}>
-                        <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} />
+                            <div
+                              key={`pre-${p.id}`}
+                              style={{ margin: '0 12px', position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === p.id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
+                              onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(p.id, e.clientX, e.clientY); }}
+                              onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, p.id); }}
+                              onMouseUp={() => { if (pg.key==='all') endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                              onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                              onTouchStart={(e) => {
+                                try { const touch = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && touch) beginPreSwipe(p.id, touch.clientX, touch.clientY); } catch {}
+                              }}
+                              onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, p.id); }}
+                              onTouchEnd={() => { if (pg.key==='all') endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                              onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                            >
+                              <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} />
+                              {/* Полоска + внешний список дочерних предзадач для pretask */}
+                              {(() => {
+                                const key = `P:${p.id}`;
+                                const children = __preSorted.filter((x:any) => Array.isArray((x as any).links) && (x as any).links.some((l:any) => String(l.depPreTaskId || l.preTaskId || '') === String(p.id)));
+                                const cnt = children.length;
+                                if (!cnt) return null;
+                                const open = !!openAfter[key];
+                                return (
+                                  <>
+                                    <div style={{ marginTop: 6 }}>
+                                      <button
+                                        onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !open })); }}
+                                        style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                      >
+                                        Запустят после ({cnt}) {open ? '⬆' : '⬇'}
+                                      </button>
+                                    </div>
+                                {open && (
+                                  <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                                    {children.map((cp:any) => (
+                                      <div key={`pchild-${cp.id}`}>
+                                        <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           );
                           __preIdx++;
@@ -1030,11 +1109,12 @@ export default function HomePage({
                             const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
                             const count = linked.length;
                             if (count <= 0) return null;
-                            const isOpen = !!openAfter[id];
+                            const key = `T:${id}`;
+                            const isOpen = !!openAfter[key];
                             return (
                               <div style={{ marginTop: 6 }}>
                                 <button
-                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [id]: !isOpen })); }}
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !isOpen })); }}
                                   style={{
                                     width: '100%',
                                     textAlign: 'left',
@@ -1058,7 +1138,8 @@ export default function HomePage({
                       {/* Вне карточки: список предзадач под карточкой */}
                       {(() => {
                         const id = (t as any).id as string;
-                        const isOpen = !!openAfter[id];
+                        const key = `T:${id}`;
+                        const isOpen = !!openAfter[key];
                         if (!isOpen) return null;
                         const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
                         if (!linked.length) return null;
@@ -1096,7 +1177,7 @@ export default function HomePage({
               })()}
             </section>
           );
-        })}
+      })}
       </div>
 
       {/* Показать ещё */}

@@ -51,7 +51,7 @@ export default function CreateTaskFab({
 }: Props) {
   const [open, setOpen] = useState(false);
   // Контекст открытия из ленты (по клику на 🔘/⚫)
-  const [edgeContext, setEdgeContext] = useState<null | { taskId: string; text: string; groupId: string | null }>(null);
+  const [edgeContext, setEdgeContext] = useState<null | { kind: 'TASK' | 'PRETASK'; id: string; text: string; groupId: string | null }>(null);
 
   const isSimpleMode = useMemo(
     () => typeof defaultGroupId !== 'undefined',
@@ -181,27 +181,40 @@ export default function CreateTaskFab({
     try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: open })); } catch {}
   }, [open]);
 
-  // Открытие формы по клику на 🔘 на карточке в ленте
+  // Открытие формы по клику на 🔘/⚫ на карточке в ленте
   useEffect(() => {
     const handler = (e: Event) => {
       try {
         const ce = e as CustomEvent<any>;
         const d = (ce && ce.detail) || {};
-        const tId = String(d.taskId || '');
+        const tid = d?.taskId ? String(d.taskId) : '';
+        const pid = d?.preTaskId ? String(d.preTaskId) : '';
         const txt = String(d.text || '');
         const gid = (typeof d.groupId === 'string' || d.groupId === null) ? d.groupId : null;
-        if (!tId) return;
-        // Проставляем контекст + преднастройку предзадачи «Сразу после выполнения»
-        setEdgeContext({ taskId: tId, text: txt, groupId: gid });
-        setPreCfg({
-          links: [{ taskId: tId }],
-          mode: 'AFTER_ALL_DONE',
-          startAt: null,
-          delayMinutes: null,
-          autoCancelOnAny: false,
-          plannedAssigneeChatId: null,
-        });
-        if (gid !== undefined) setGroupId(gid);
+        if (!tid && !pid) return;
+        // Проставляем контекст + преднастройку «Сразу»
+        if (tid) {
+          setEdgeContext({ kind: 'TASK', id: tid, text: txt, groupId: gid });
+          setPreCfg({
+            links: [{ taskId: tid }],
+            mode: 'AFTER_ALL_DONE',
+            startAt: null,
+            delayMinutes: null,
+            autoCancelOnAny: false,
+            plannedAssigneeChatId: null,
+          });
+        } else {
+          setEdgeContext({ kind: 'PRETASK', id: pid, text: txt, groupId: gid });
+          setPreCfg({
+            links: [{ preTaskId: pid }],
+            mode: 'AFTER_ALL_DONE',
+            startAt: null,
+            delayMinutes: null,
+            autoCancelOnAny: false,
+            plannedAssigneeChatId: null,
+          });
+        }
+        if (gid !== undefined) setGroupId(gid ?? null);
         setOpen(true);
         setStep(0);
         try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: true })); } catch {}
@@ -899,10 +912,8 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                 {edgeContext ? (
                   <div style={{ border:'1px solid #1f2937', background:'#0b1220', color:'#e5e7eb', borderRadius:12, padding:10, marginBottom:10 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span title="Связь по задаче">🔘</span>
-                      <div style={{ fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {edgeContext.text}
-                      </div>
+                      <span title="Связь">{edgeContext.kind === 'PRETASK' ? '⚫' : '🔘'}</span>
+                      <div style={{ fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{edgeContext.text}</div>
                       <button
                         onClick={() => { setEdgeContext(null); setPreCfg(null); }}
                         title="Убрать связь"
