@@ -740,48 +740,62 @@ export default function HomePage({
                         const pTime = new Date(p.createdAt || p.updatedAt || 0).getTime();
                         if (pTime >= tTime) {
                           injected.push(
-                            <div
-                              key={`pre-${p.id}`}
-                              style={{ margin: '0 12px', position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === p.id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
-                              onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(p.id, e.clientX, e.clientY); }}
-                              onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, p.id); }}
-                              onMouseUp={() => { if (pg.key==='all') endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
-                              onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
-                              onTouchStart={(e) => {
-                                try { const touch = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && touch) beginPreSwipe(p.id, touch.clientX, touch.clientY); } catch {}
-                              }}
-                              onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, p.id); }}
-                              onTouchEnd={() => { if (pg.key==='all') endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
-                              onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
-                            >
-                              <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} />
-                              {/* Полоска + внешний список дочерних предзадач для pretask */}
+                            <div key={`pre-${p.id}`} style={{ position:'relative' }}>
+                              {/* Подложка для свайпа у предзадачи */}
+                              {pg.key==='all' && preSwipeUi.id === p.id ? (
+                                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                  <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                </div>
+                              ) : null}
+                              <div
+                                style={{ margin:'0 12px', position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === p.id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
+                                onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(p.id, e.clientX, e.clientY); }}
+                                onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, p.id); }}
+                                onMouseUp={() => { if (pg.key==='all') endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                                onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                onTouchStart={(e) => { try { const touch = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && touch) beginPreSwipe(p.id, touch.clientX, touch.clientY); } catch {} }}
+                                onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, p.id); }}
+                                onTouchEnd={() => { if (pg.key==='all') endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                                onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                              >
+                                {(() => {
+                                  const key = `P:${p.id}`;
+                                  const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
+                                  const cnt = children.length;
+                                  const footer = cnt ? (
+                                    <button
+                                      onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }}
+                                      style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                    >
+                                      Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
+                                    </button>
+                                  ) : null;
+                                  return (
+                                    <PreTaskCard
+                                      p={p}
+                                      onOpen={(pp) => setOpenPreTask(pp)}
+                                      onEdit={(pp)=>setEditPreTask(pp)}
+                                      nameByChat={nameByChat}
+                                      groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'}
+                                      footer={footer}
+                                    />
+                                  );
+                                })()}
+                              </div>
+                              {/* Внешний список дочерних предзадач */}
                               {(() => {
                                 const key = `P:${p.id}`;
-                                const children = __preSorted.filter((x:any) => Array.isArray((x as any).links) && (x as any).links.some((l:any) => String(l.depPreTaskId || l.preTaskId || '') === String(p.id)));
-                                const cnt = children.length;
-                                if (!cnt) return null;
-                                const open = !!openAfter[key];
+                                if (!openAfter[key]) return null;
+                                const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
+                                if (!children.length) return null;
                                 return (
-                                  <>
-                                    <div style={{ marginTop: 6 }}>
-                                      <button
-                                        onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !open })); }}
-                                        style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
-                                      >
-                                        Запустят после ({cnt}) {open ? '⬆' : '⬇'}
-                                      </button>
-                                    </div>
-                                {open && (
-                                  <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                                  <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
                                     {children.map((cp:any) => (
                                       <div key={`pchild-${cp.id}`}>
                                         <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} />
                                       </div>
                                     ))}
                                   </div>
-                                )}
-                                  </>
                                 );
                               })()}
                             </div>
@@ -1167,8 +1181,51 @@ export default function HomePage({
                 )}
                 {pg.key === 'all' && __preIdx < __preSorted.length && (
                   __preSorted.slice(__preIdx).map((p) => (
-                    <div key={`pre-tail-${p.id}`} style={{ margin: '0 12px' }}>
-                      <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} />
+                    <div key={`pre-tail-${p.id}`} style={{ position:'relative' }}>
+                      {/* Подложка для свайпа */}
+                      {preSwipeUi.id === p.id ? (
+                        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                          <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                        </div>
+                      ) : null}
+                      <div
+                        style={{ margin: '0 12px', position:'relative', transition:'transform 160ms ease', transform: (preSwipeUi.id === p.id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
+                        onMouseDown={(e) => beginPreSwipe(p.id, e.clientX, e.clientY)}
+                        onMouseMove={(e) => movePreSwipe(e as any, p.id)}
+                        onMouseUp={() => endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null })}
+                        onMouseLeave={() => endPreSwipe()}
+                        onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (t) beginPreSwipe(p.id, t.clientX, t.clientY); } catch {} }}
+                        onTouchMove={(e) => movePreSwipe(e as any, p.id)}
+                        onTouchEnd={() => endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null })}
+                        onTouchCancel={() => endPreSwipe()}
+                      >
+                        {(() => {
+                          const key = `P:${p.id}`;
+                          const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
+                          const cnt = children.length;
+                          const footer = cnt ? (
+                            <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</button>
+                          ) : null;
+                          return (
+                            <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} footer={footer} />
+                          );
+                        })()}
+                      </div>
+                      {(() => {
+                        const key = `P:${p.id}`;
+                        if (!openAfter[key]) return null;
+                        const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
+                        if (!children.length) return null;
+                        return (
+                          <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
+                            {children.map((cp:any) => (
+                              <div key={`ptail-child-${cp.id}`}>
+                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} />
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))
                 )}

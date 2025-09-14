@@ -1,6 +1,6 @@
 import type { PreTaskDTO } from '../api';
 
-export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null }) {
+export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode }) {
   const modeText = (() => {
     if (p.triggerMode === 'AFTER_ALL_DONE') return 'Сразу';
     if (p.triggerMode === 'DATE_PLUS') return `📅 ко времени: ${p.startAt ? new Date(p.startAt).toLocaleString() : ''}`;
@@ -56,6 +56,9 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle 
           <div>Ответственный: {getName(p.creatorChatId)}</div>
           <div>Ждёт: {getName(p.plannedAssigneeChatId) || 'не выбран'}</div>
         </div>
+        {footer ? (
+          <div style={{ marginTop: 6 }}>{footer}</div>
+        ) : null}
       </div>
       {/* Right edge badge for pretask */}
       <div style={{ position:'absolute', right: -6, top: 10, width: 22, height: 22, borderRadius: 999, display:'flex', alignItems:'center', justifyContent:'center' }}>
