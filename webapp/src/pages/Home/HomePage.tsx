@@ -1024,7 +1024,7 @@ export default function HomePage({
                             </span>
                           </div>
 
-                          {/* Внутри карточки: Полоска «Запустят после (N) ⬇/⬆» + список предзадач */}
+                          {/* Внутри карточки: Полоска «Запустят после (N) ⬇/⬆» */}
                           {(() => {
                             const id = (t as any).id as string;
                             const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
@@ -1050,26 +1050,34 @@ export default function HomePage({
                                 >
                                   Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
                                 </button>
-                                {isOpen && (
-                                  <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
-                                    {linked.map((p) => (
-                                      <div key={(p as any).id}>
-                                        <PreTaskCard
-                                          p={p as any}
-                                          onOpen={(pp) => setOpenPreTask(pp)}
-                                          onEdit={(pp) => setEditPreTask(pp)}
-                                          nameByChat={nameByChat}
-                                          groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
-                                        />
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                             );
                           })()}
                         </button>
                       </div>
+                      {/* Вне карточки: список предзадач под карточкой */}
+                      {(() => {
+                        const id = (t as any).id as string;
+                        const isOpen = !!openAfter[id];
+                        if (!isOpen) return null;
+                        const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
+                        if (!linked.length) return null;
+                        return (
+                          <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
+                            {linked.map((p) => (
+                              <div key={(p as any).id} style={{ margin: '0 0' }}>
+                                <PreTaskCard
+                                  p={p as any}
+                                  onOpen={(pp) => setOpenPreTask(pp)}
+                                  onEdit={(pp) => setEditPreTask(pp)}
+                                  nameByChat={nameByChat}
+                                  groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       </>
                     );
                   })
