@@ -1023,52 +1023,53 @@ export default function HomePage({
                               {new Date((t as any).updatedAt).toLocaleString()}
                             </span>
                           </div>
+
+                          {/* Внутри карточки: Полоска «Запустят после (N) ⬇/⬆» + список предзадач */}
+                          {(() => {
+                            const id = (t as any).id as string;
+                            const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
+                            const count = linked.length;
+                            if (count <= 0) return null;
+                            const isOpen = !!openAfter[id];
+                            return (
+                              <div style={{ marginTop: 6 }}>
+                                <button
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [id]: !isOpen })); }}
+                                  style={{
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: '6px 10px',
+                                    borderRadius: 10,
+                                    border: '1px solid #d1e7dd',
+                                    background: '#ecfdf5',
+                                    color: '#065f46',
+                                    fontSize: 12,
+                                    cursor: 'pointer',
+                                  }}
+                                  title={isOpen ? 'Свернуть список предзадач' : 'Показать предзадачи'}
+                                >
+                                  Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
+                                </button>
+                                {isOpen && (
+                                  <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
+                                    {linked.map((p) => (
+                                      <div key={(p as any).id}>
+                                        <PreTaskCard
+                                          p={p as any}
+                                          onOpen={(pp) => setOpenPreTask(pp)}
+                                          onEdit={(pp) => setEditPreTask(pp)}
+                                          nameByChat={nameByChat}
+                                          groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </button>
                       </div>
-                      {/* Полоска «Запустят после (N) ⬇/⬆» под карточкой + список предзадач */}
-                      {(() => {
-                        const id = (t as any).id as string;
-                        const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
-                        const count = linked.length;
-                        if (count <= 0) return null;
-                        const isOpen = !!openAfter[id];
-                        return (
-                          <div style={{ marginTop: 0 }}>
-                            <button
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [id]: !isOpen })); }}
-                              style={{
-                                width: '100%',
-                                textAlign: 'left',
-                                padding: '6px 10px',
-                                borderRadius: 10,
-                                border: '1px solid #d1e7dd',
-                                background: '#ecfdf5',
-                                color: '#065f46',
-                                fontSize: 12,
-                                cursor: 'pointer',
-                              }}
-                              title={isOpen ? 'Свернуть список предзадач' : 'Показать предзадачи'}
-                            >
-                              Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
-                            </button>
-                            {isOpen && (
-                              <div style={{ marginTop: 4, display: 'grid', gap: 8 }}>
-                                {linked.map((p) => (
-                                  <div key={(p as any).id}>
-                                    <PreTaskCard
-                                      p={p as any}
-                                      onOpen={(pp) => setOpenPreTask(pp)}
-                                      onEdit={(pp) => setEditPreTask(pp)}
-                                      nameByChat={nameByChat}
-                                      groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
                       </>
                     );
                   })
