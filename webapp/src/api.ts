@@ -916,3 +916,101 @@ export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; o
   const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/relations`);
   return r.json();
 }
+
+/* ---------- Pre-Tasks API ---------- */
+export type PreTaskDTO = {
+  id: string;
+  creatorChatId: string;
+  groupId?: string | null;
+  text: string;
+  payload?: any;
+  plannedAssigneeChatId?: string | null;
+  triggerMode: 'AFTER_ALL_DONE' | 'DATE_PLUS' | 'DELAY_AFTER' | 'AFTER_ALL_CANCELED';
+  startAt?: string | null;
+  delayMinutes?: number | null;
+  autoCancelOnAny?: boolean;
+  status: 'PREVIEW' | 'ARMED' | 'FIRED' | 'CANCELED' | 'FAILED';
+  targetTaskId?: string | null;
+  timezone?: string | null;
+  fireAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  links?: Array<{ id: string; taskId?: string | null; depPreTaskId?: string | null }>;
+};
+
+export async function createPreTask(params: {
+  chatId: string;
+  groupId?: string | null;
+  text: string;
+  plannedAssigneeChatId?: string | null;
+  triggerMode: 'AFTER_ALL_DONE' | 'DATE_PLUS' | 'DELAY_AFTER' | 'AFTER_ALL_CANCELED';
+  startAt?: string | null;
+  delayMinutes?: number | null;
+  autoCancelOnAny?: boolean;
+  timezone?: string | null;
+  links?: Array<{ taskId?: string; preTaskId?: string }>;
+  arm?: boolean;
+}) {
+  const r = await fetch(`${API_BASE}/pre-tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function getPreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}`);
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function updatePreTask(id: string, patch: Partial<PreTaskDTO>) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function setPreTaskLinks(id: string, links: Array<{ taskId?: string; preTaskId?: string }>) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/links`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ links }),
+  });
+  return r.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
+export async function armPreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/arm`, { method: 'POST' });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function cancelPreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function forceFirePreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/force-fire`, { method: 'POST' });
+  return r.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
+export async function listPreTasks(params: { chatId: string; groupId?: string | null; status?: string[] }) {
+  const sp = new URLSearchParams();
+  sp.set('chatId', params.chatId);
+  if (params.groupId) sp.set('groupId', params.groupId);
+  if (params.status?.length) sp.set('status', params.status.join(','));
+  const r = await fetch(`${API_BASE}/pre-tasks?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; preTasks: PreTaskDTO[] }>;
+}
+
+export async function deletePreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!r.ok) {
+    // try json
+    try { const j = await r.json(); return j as { ok: boolean; error?: string }; } catch { return { ok: false, error: `http_${r.status}` } as any; }
+  }
+  try { const j = await r.json(); return j as { ok: boolean; error?: string }; } catch { return { ok: true } as any; }
+}

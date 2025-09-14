@@ -1,5 +1,6 @@
 // webapp/src/components/CreateTaskFab.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import CameraCaptureModal from './CameraCaptureModal';
 import PostCreateActionsLauncher from './PostCreateActionsLauncher';
 import VoiceRecorder from './VoiceRecorder';
@@ -23,6 +24,15 @@ import {
   type GroupLabel,
   setTaskDeadline,
 } from '../api';
+
+type PreConfig = {
+  links: Array<{ taskId?: string; preTaskId?: string }>;
+  mode: 'AFTER_ALL_DONE' | 'DATE_PLUS' | 'DELAY_AFTER' | 'AFTER_ALL_CANCELED';
+  startAt?: string | null;
+  delayMinutes?: number | null;
+  autoCancelOnAny?: boolean;
+  plannedAssigneeChatId?: string | null;
+};
 
 type Props = {
   defaultGroupId?: string | null;
@@ -108,6 +118,7 @@ export default function CreateTaskFab({
   const [bountyAmount, setBountyAmount] = useState<number>(0);
   const [bountyRub, setBountyRub] = useState<number | null>(null);
   const [bountyLocked, setBountyLocked] = useState<boolean>(false);
+  const [preCfg, setPreCfg] = useState<PreConfig | null>(null);
 
   // server-side draft: lock panel if draft exists on server
   useEffect(() => {
@@ -243,6 +254,398 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
   } finally {
     setSttBusy(false);
   }
+}
+
+function PreTaskActionsLauncher({
+  label = '➤',
+  disabled,
+  style,
+  meChatId,
+  members = [],
+  onMakePreTask,
+}: {
+  label?: string;
+  disabled?: boolean;
+  style?: React.CSSProperties;
+  meChatId: string;
+  members?: MemberOption[];
+  onMakePreTask: (plannedAssigneeChatId: string | null) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [subView, setSubView] = useState<'root' | 'members'>('root');
+
+  function openSheet() {
+    if (disabled) return;
+    setOpen(true);
+    setSubView('root');
+  }
+  function closeSheet() {
+    if (busy) return;
+    setOpen(false);
+    setSubView('root');
+  }
+
+  async function runSafely(fn: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+      closeSheet();
+    } catch (e) {
+      console.error('[PreTaskActionsLauncher] error', e);
+      try { WebApp?.HapticFeedback?.notificationOccurred?.('error'); } catch {}
+      alert('Не удалось создать предзадачу.');
+    } finally { setBusy(false); }
+  }
+
+  const doAssignSelf = () => runSafely(async () => { await onMakePreTask(meChatId || null); });
+
+  const doAssignMember = (m: MemberOption) => runSafely(async () => { await onMakePreTask(m.chatId); });
+
+  const sheet = !open ? null : (
+    <div onClick={closeSheet} style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,.5)', display:'flex', alignItems:'flex-end', justifyContent:'center', padding:12 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ width:'100%', maxWidth:520, background:'#131a26', border:'1px solid #2a3346', borderRadius:16, padding:12, color:'#fff', boxShadow:'0 16px 50px rgba(0,0,0,.45)' }}>
+        {subView==='root' ? (
+          <>
+            <div style={{ fontSize:16, fontWeight:700, marginBottom:10 }}>Кого сделать ответственным?</div>
+            <button disabled={busy} style={styles.btn} onClick={doAssignSelf}>Сделать себя ответственным</button>
+            <button disabled={busy || members.length===0} style={styles.btn} onClick={()=>setSubView('members')}>Выбрать из группы</button>
+            <div style={{ fontSize:12, opacity:0.7, marginTop:8, textAlign:'center' }}>Предзадача запустится по условиям. Ответственный будет назначен при запуске.</div>
+            <button style={styles.closeBtn} onClick={closeSheet}>Закрыть</button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize:16, fontWeight:700, marginBottom:10 }}>Выберите участника группы</div>
+            <div style={{ maxHeight:320, overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+              {members.map(m => (
+                <div key={m.chatId} style={styles.row}>
+                  <div style={{ display:'flex', flexDirection:'column' }}>
+                    <div style={{ fontSize:15 }}>{m.name || m.chatId}</div>
+                    <div style={{ fontSize:12, opacity:0.7 }}>{m.chatId}</div>
+                  </div>
+                  <button disabled={busy} style={styles.smallBtn} onClick={()=>doAssignMember(m)}>Выбрать</button>
+                </div>
+              ))}
+              {members.length===0 && (<div style={{ opacity:0.7, textAlign:'center', padding:8 }}>В группе пока нет участников.</div>)}
+            </div>
+            <div style={{ display:'flex', gap:8, marginTop:12 }}>
+              <button style={styles.btn} onClick={()=>setSubView('root')}>Назад</button>
+              <button style={styles.closeBtn} onClick={closeSheet}>Закрыть</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <button disabled={disabled} onClick={openSheet} style={{ width:'100%', height:'100%', borderRadius:999, background: disabled ? '#2a3350' : '#2563eb', color:'#fff', border:'1px solid transparent', cursor: disabled ? 'default' : 'pointer', ...style }}>{label}</button>
+      {sheet ? createPortal(sheet, document.body) : null}
+    </>
+  );
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  btn: {
+    width: '100%',
+    padding: '10px 14px',
+    borderRadius: 12,
+    border: '1px solid #2a3346',
+    background: '#202840',
+    color: '#e8eaed',
+    cursor: 'pointer',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  smallBtn: {
+    padding: '6px 10px',
+    borderRadius: 10,
+    border: '1px solid #2a3346',
+    background: '#202840',
+    color: '#e8eaed',
+    cursor: 'pointer',
+  },
+  closeBtn: {
+    width: '100%',
+    padding: '10px 14px',
+    borderRadius: 12,
+    border: '1px solid #2a3346',
+    background: '#1f222b',
+    color: '#e8eaed',
+    cursor: 'pointer',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: 8,
+    borderRadius: 10,
+    border: '1px solid #2a3346',
+  },
+};
+
+function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, style }: {
+  chatId: string;
+  groupId: string | null;
+  value?: PreConfig | null;
+  onApplied: (cfg: PreConfig | null) => void;
+  style?: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  type LinkItem = { id: string; text: string; kind: 'TASK' | 'PRETASK'; status?: string };
+  const [items, setItems] = useState<LinkItem[]>([]);
+  const [selected, setSelected] = useState<Map<string, LinkItem>>(new Map());
+  const [q, setQ] = useState('');
+  const [labelFilterId, setLabelFilterId] = useState<string | null>(null);
+  const [taskLabelsCache, setTaskLabelsCache] = useState<Record<string, string[]>>({});
+  const [groupLabels, setGroupLabels] = useState<{ id: string; title: string }[]>([]);
+  const [groups, setGroups] = useState<{ id: string; title: string }[]>([]);
+  const [browseGroupId, setBrowseGroupId] = useState<string | null>(_parentGroupId ?? null);
+  const [mode, setMode] = useState<PreConfig['mode']>('AFTER_ALL_DONE');
+  const [startAt, setStartAt] = useState<string | null>(null);
+  const [delayInput, setDelayInput] = useState<string>('');
+  const [autoCancel, setAutoCancel] = useState<boolean>(false);
+
+  const [applied, setApplied] = useState<PreConfig | null>(null);
+  // синхронизируем снаружи (для стабильности между рендерами)
+  useEffect(() => {
+    setApplied(value ?? null);
+  }, [value]);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    let base = !s ? items : items.filter(it => it.text.toLowerCase().includes(s));
+    if (labelFilterId) {
+      base = base.filter(it => {
+        if (it.kind !== 'TASK') return true;
+        const lab = taskLabelsCache[it.id] || [];
+        return lab.includes(labelFilterId);
+      });
+    }
+    return base;
+  }, [q, items, labelFilterId, taskLabelsCache]);
+
+  function normStatus(raw: string) {
+    const s = String(raw || '');
+    const i = s.indexOf('::');
+    return i >= 0 ? s.slice(i + 2) : s;
+  }
+
+  async function load() {
+    setBusy(true);
+    try {
+      const api = await import('../api');
+      // load groups for browsing once
+      try {
+        const r = await api.listGroups(chatId);
+        const arr = (r as any)?.ok ? (r as any).groups : [];
+        setGroups(arr.map((g: any) => ({ id: g.id, title: g.title })));
+      } catch {}
+
+      const b = await api.fetchBoard(chatId, browseGroupId ?? undefined);
+      const cols = (b?.columns || []) as any[];
+      const tasks: LinkItem[] = cols.flatMap((c:any) => (c.tasks || []).map((t:any) => ({ id: String(t.id), text: String(t.text || ''), kind: 'TASK' as const, status: normStatus(String(c.name || '')) })));
+      let pret: LinkItem[] = [];
+      try {
+        const pr = await api.listPreTasks({ chatId, status: ['PREVIEW','ARMED'] });
+        if (pr?.ok && Array.isArray(pr.preTasks)) pret = pr.preTasks.map((p:any) => ({ id: String(p.id), text: String(p.text || ''), kind: 'PRETASK' as const, status: String(p.status || '') }));
+      } catch {}
+      setItems([ ...pret, ...tasks ]);
+      // labels of selected browse group for filter
+      if (browseGroupId) {
+        try { const gl = await (await import('../api')).getGroupLabels(browseGroupId); setGroupLabels(gl.map(l => ({ id: l.id, title: l.title }))); } catch {}
+      } else { setGroupLabels([]); }
+    } catch {}
+    setBusy(false);
+  }
+
+  useEffect(() => { if (open) load(); }, [open, browseGroupId]);
+  // preselect previously applied links when reopening
+  useEffect(() => {
+    if (!open) return;
+    if (value && value.links && value.links.length) {
+      const map = new Map<string, LinkItem>();
+      for (const l of value.links) {
+        if (l.taskId) {
+          const it = items.find(x => x.kind==='TASK' && x.id === l.taskId);
+          const key = `TASK:${String(l.taskId)}`;
+          map.set(key, it || { id: String(l.taskId), text: `(выбрана ранее) #${String(l.taskId).slice(0,6)}`, kind:'TASK', status: undefined });
+        } else if (l.preTaskId) {
+          const it = items.find(x => x.kind==='PRETASK' && x.id === l.preTaskId);
+          const key = `PRETASK:${String(l.preTaskId)}`;
+          map.set(key, it || { id: String(l.preTaskId), text: `⚫ (выбрана ранее) #${String(l.preTaskId).slice(0,6)}`, kind:'PRETASK', status: undefined });
+        }
+      }
+      if (map.size) setSelected(map);
+      setMode(value.mode);
+      setStartAt(value.startAt || null);
+      setDelayInput(typeof value.delayMinutes === 'number' ? String(Math.max(0, value.delayMinutes)) : '');
+      setAutoCancel(!!value.autoCancelOnAny);
+    }
+  }, [open, items, value]);
+
+  // when label filter changes — fetch labels for unknown tasks lazily
+  useEffect(() => {
+    if (!labelFilterId) return;
+    (async () => {
+      const need = items.filter(it => !(taskLabelsCache[it.id]));
+      if (!need.length) return;
+      try {
+        const api = await import('../api');
+        const entries: [string, string[]][] = [];
+        for (const it of need.slice(0, 100)) { // safeguard
+          try {
+            const ls = await api.getTaskLabels(it.id);
+            const ids = (ls || []).map((x:any)=>x.id).filter(Boolean);
+            entries.push([it.id, ids]);
+          } catch {}
+        }
+        setTaskLabelsCache(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+      } catch {}
+    })();
+  }, [labelFilterId, items]);
+
+  // Иконка должна отражать применённую конфигурацию
+  const icon = (value && value.links?.length) || (applied && applied.links?.length) ? '⚫' : '🔘';
+
+  function apply() {
+    const links = Array.from(selected.values()).map(v => (v.kind === 'TASK' ? { taskId: v.id } : { preTaskId: v.id }));
+    const cfg: PreConfig = {
+      links,
+      mode,
+      startAt: startAt || null,
+      delayMinutes: delayInput.trim()==='' ? null : Math.max(0, parseInt(delayInput,10) || 0),
+      autoCancelOnAny: autoCancel,
+    };
+    setApplied(cfg);
+    onApplied(cfg);
+    setOpen(false);
+  }
+
+  function clear() {
+    setSelected(new Map());
+    setApplied(null);
+    onApplied(null);
+  }
+
+  return (
+    <>
+      <button type="button" title={icon === '⚫' ? 'Изменить предзадачу' : 'Настроить предзадачу'} onClick={() => setOpen(true)} style={style}>{icon}</button>
+      {open && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setOpen(false)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: 'min(720px, 96vw)', maxHeight: '80vh', overflow: 'auto', background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 12, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Связанные задачи</div>
+              <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+              <input placeholder="Поиск по названию" value={q} onChange={e => setQ(e.target.value)} style={{ flex: 1, background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 8, padding: '8px 10px' }} />
+              {applied && (
+                <button onClick={clear} title="Сбросить предзадачу" style={{ borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', padding: '6px 10px', cursor: 'pointer' }}>Сбросить</button>
+              )}
+            </div>
+            <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+              <span style={{ fontSize:12, opacity:.8 }}>Группа:</span>
+              <select value={browseGroupId ?? ''} onChange={(e)=>setBrowseGroupId(e.target.value || null)} style={{ background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'4px 6px' }}>
+                <option value="">Моя группа</option>
+                {groups.map(g => (<option key={g.id} value={g.id}>{g.title}</option>))}
+              </select>
+              <span style={{ fontSize:12, opacity:.8 }}>Ярлык:</span>
+              <select value={labelFilterId ?? ''} onChange={(e)=>setLabelFilterId(e.target.value || null)} style={{ background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'4px 6px' }}>
+                <option value="">Все</option>
+                {groupLabels.map(l => (<option key={l.id} value={l.id}>{l.title}</option>))}
+              </select>
+              <input placeholder="Поиск…" value={q} onChange={e=>setQ(e.target.value)} style={{ flex:1, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'6px 8px' }} />
+            </div>
+            <div style={{ border: '1px solid #1f2937', borderRadius: 8, padding: 8, maxHeight: 280, overflow: 'auto', background: '#0f172a' }}>
+              {busy ? (
+                <div style={{ padding: 12, opacity: 0.7 }}>Загрузка…</div>
+              ) : (
+                filtered.map(it => {
+                  const key = `${it.kind}:${it.id}`;
+                  const statusText = it.kind === 'TASK' ? (it.status || '') : `⚫ ${it.status || ''}`;
+                  const color = (()=>{
+                    const s = (it.status || '').toLowerCase();
+                    if (s==='doing') return '#1e3a8a';
+                    if (s==='done') return '#2e7d32';
+                    if (s==='cancel') return '#b91c1c';
+                    if (s==='approval') return '#c2410c';
+                    if (s==='wait') return '#0369a1';
+                    return '#e5e7eb';
+                  })();
+                  return (
+                  <label key={key} style={{ display: 'flex', alignItems:'center', justifyContent:'space-between', padding: '6px 8px', cursor: 'pointer', gap:8 }}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(key)}
+                      onChange={(e) => {
+                        const s = new Map(selected);
+                        if (e.target.checked) s.set(key, it);
+                        else s.delete(key);
+                        setSelected(s);
+                      }}
+                      style={{ marginRight: 8 }}
+                    />
+                    <span style={{ flex:1, color }}>
+                      {it.kind === 'PRETASK' ? '⚫ ' : ''}
+                      {it.text.length > 100 ? (it.text.slice(0, 100) + '…') : it.text}
+                    </span>
+                    {statusText ? (<span style={{ fontSize:12, color }}>{statusText}</span>) : null}
+                  </label>
+                );})
+              )}
+            </div>
+            {selected.size > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12 }}>
+                Выбранные задачи: {Array.from(selected.entries()).map(([k,s]) => (
+                  <span key={k} style={{ marginRight: 12 }}>
+                    {s.kind === 'PRETASK' ? '⚫ ' : ''}{s.text.length > 30 ? (s.text.slice(0, 30) + '…') : s.text} <button onClick={() => { const m = new Map(selected); m.delete(k); setSelected(m); }} style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer' }}>(x)</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'grid', gap: 6 }}>
+                <label><input type="radio" name="prmode" checked={mode==='AFTER_ALL_DONE'} onChange={()=>setMode('AFTER_ALL_DONE')} /> ➡️ Сразу</label>
+                <label>
+                  <input type="radio" name="prmode" checked={mode==='DATE_PLUS'} onChange={()=>setMode('DATE_PLUS')} /> 📅 + выбранные
+                  {mode==='DATE_PLUS' && (
+                    <input type="datetime-local" value={startAt || ''} onChange={e => setStartAt(e.target.value || null)} style={{ marginLeft: 8, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'2px 6px' }} />
+                  )}
+                </label>
+                <label>
+                  <input type="radio" name="prmode" checked={mode==='DELAY_AFTER'} onChange={()=>setMode('DELAY_AFTER')} /> ⏰ Через X минут
+                  {mode==='DELAY_AFTER' && (
+                    <input type="text" inputMode="numeric" pattern="\\d*" value={delayInput} onChange={e => setDelayInput(e.target.value.replace(/\D/g,'').replace(/^0+(?=\d)/,''))} style={{ marginLeft: 8, width: 100, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'2px 6px' }} placeholder="минуты" />
+                  )}
+                </label>
+                <label><input type="radio" name="prmode" checked={mode==='AFTER_ALL_CANCELED'} onChange={()=>setMode('AFTER_ALL_CANCELED')} /> 🚫➡️ После отменены запуск</label>
+              </div>
+              {mode !== 'AFTER_ALL_CANCELED' && (
+                <label style={{ display: 'block', marginTop: 8 }}>
+                  <input type="checkbox" checked={autoCancel} onChange={e => setAutoCancel(e.target.checked)} /> 🚫 Отменить, если одна из выбранных отменена.
+                </label>
+              )}
+            </div>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setOpen(false)} style={{ borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', padding: '8px 12px', cursor: 'pointer' }}>Отмена</button>
+              <button disabled={!selected.size} onClick={apply} style={{ borderRadius: 8, border: '1px solid transparent', background: '#2563eb', color: '#fff', padding: '8px 12px', cursor: selected.size ? 'pointer' : 'not-allowed' }}>Применить</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 
@@ -587,6 +990,8 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                         📎
                       </button>
 
+                      {/* Предзадача (кнопка убрали отсюда; см. панель инструментов ниже) */}
+
                       {/* Кнопка справа (➤ / 🎙️) */}
                       <div
                         style={{
@@ -601,78 +1006,115 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                       >
                         <div ref={sendRef} style={{ width: '100%', height: '100%', pointerEvents: 'auto' }}>
                           {canSend ? (
-                            <PostCreateActionsLauncher
-                              label="➤"
-                              disabled={!canSend}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                borderRadius: 999,
-                                background: '#2563eb',
-                                color: '#fff',
-                                border: '1px solid transparent',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: 16,
-                              }}
-                              meChatId={chatId}
-                              members={membersAsOptions}
-                              onMake={async () => {
-                                const val = text.trim();
-                                const title = val || 'Голосовая заметка';
-                                const r = await createTask(chatId, title, groupId ?? undefined);
-                                if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
-                              const newTaskId = r.task.id;
-
-                                // Привязать выбранный ярлык
-                                if (groupId && selectedLabelId) {
-                                  try { await (await import('../api')).attachTaskLabels(newTaskId, chatId, [selectedLabelId]); } catch {}
-                                }
-
-                                // Привязать дедлайн
-                                if (deadlineAt) {
-                                  try { await (await import('../api')).setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {}
-                                }
-
-                                // Привязать условия приёма
-                                if (acceptCondition !== 'NONE') {
-                                  try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
-                                }
-
-                                // Зафиксировать сумму в ₽ на задаче — только если оплата подтверждена (bountyLocked)
-                                if (bountyLocked && bountyAmount > 0 && (bountyRub ?? null) !== null) {
-                                  try {
+                            <>
+                              {preCfg && preCfg.links?.length ? (
+                                <PreTaskActionsLauncher
+                                  label="➤"
+                                  meChatId={chatId}
+                                  members={membersAsOptions}
+                                  onMakePreTask={async (plannedAssigneeChatId) => {
+                                    const val = text.trim();
+                                    const title = val || 'Голосовая заметка';
                                     const api = await import('../api');
-                                    await api.setTaskBounty(newTaskId, chatId, Number(bountyRub));
-                                  } catch {}
-                                }
+                                    const resp = await api.createPreTask({
+                                      chatId,
+                                      groupId: groupId ?? null,
+                                      text: title,
+                                      plannedAssigneeChatId: plannedAssigneeChatId ?? null,
+                                      triggerMode: preCfg.mode,
+                                      startAt: preCfg.startAt ?? null,
+                                      delayMinutes: preCfg.delayMinutes ?? null,
+                                      autoCancelOnAny: preCfg.autoCancelOnAny ?? false,
+                                      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                      links: preCfg.links,
+                                      arm: true,
+                                    });
+                                    if (!resp?.ok) throw new Error(resp?.error || 'pretask_create_failed');
+                                    setText('');
+                                    setPreCfg(null);
+                                    onCreated?.();
+                                    closeModal();
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                  }}
+                                />
+                              ) : (
+                                <PostCreateActionsLauncher
+                                  label="➤"
+                                  disabled={!canSend}
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    borderRadius: 999,
+                                    background: '#2563eb',
+                                    color: '#fff',
+                                    border: '1px solid transparent',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: 16,
+                                  }}
+                                  meChatId={chatId}
+                                  members={membersAsOptions}
+                                  onMake={async () => {
+                                    const val = text.trim();
+                                    const title = val || 'Голосовая заметка';
+                                    const r = await createTask(chatId, title, groupId ?? undefined);
+                                    if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
+                                    const newTaskId = r.task.id;
 
-                                // Оплата теперь происходит на этапе выбора суммы (авто-запуск)
+                                    // Привязать выбранный ярлык
+                                    if (groupId && selectedLabelId) {
+                                      try { await (await import('../api')).attachTaskLabels(newTaskId, chatId, [selectedLabelId]); } catch {}
+                                    }
 
-                                if (pendingFiles.length) {
-                                  for (const f of pendingFiles) {
-                                    try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
-                                  }
-                                }
+                                    // Привязать дедлайн
+                                    if (deadlineAt) {
+                                      try { await (await import('../api')).setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {}
+                                    }
 
-                                // Создать запланированные напоминания
-                                if (remindersDraft.length) {
-                                  for (const rm of remindersDraft) {
-                                    try { await createTaskReminder(newTaskId, { createdBy: chatId, target: rm.target, fireAt: rm.fireAtIso }); } catch {}
-                                  }
-                                }
+                                    // Привязать условия приёма
+                                    if (acceptCondition !== 'NONE') {
+                                      try { await (await import('../api')).setAcceptCondition(newTaskId, chatId, acceptCondition as any); } catch {}
+                                    }
 
-                                WebApp?.HapticFeedback?.notificationOccurred?.('success');
-                                // после отправки — если до этого была предоплата, снимаем фиксацию и сбрасываем драфт
-                                try { if (bountyLocked) { setBountyLocked(false); await fetch('/telegsar-api/bounty/draft/clear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId }) }); } } catch {}
-                                onCreated?.();
-                                closeModal();
+                                    // Зафиксировать сумму в ₽ на задаче — только если оплата подтверждена (bountyLocked)
+                                    if (bountyLocked && bountyAmount > 0 && (bountyRub ?? null) !== null) {
+                                      try {
+                                        const api = await import('../api');
+                                        await api.setTaskBounty(newTaskId, chatId, Number(bountyRub));
+                                      } catch {}
+                                    }
 
-                                return { taskId: newTaskId, taskTitle: title };
-                              }}
-                            />
+                                    // Оплата теперь происходит на этапе выбора суммы (авто-запуск)
+
+                                    if (pendingFiles.length) {
+                                      for (const f of pendingFiles) {
+                                        try { await uploadTaskMedia(newTaskId, chatId, f); } catch {}
+                                      }
+                                    }
+
+                                    // Создать запланированные напоминания
+                                    if (remindersDraft.length) {
+                                      for (const rm of remindersDraft) {
+                                        try { await createTaskReminder(newTaskId, { createdBy: chatId, target: rm.target, fireAt: rm.fireAtIso }); } catch {}
+                                      }
+                                    }
+
+                                    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                                    // после отправки — если до этого была предоплата, снимаем фиксацию и сбрасываем драфт
+                                    try { if (bountyLocked) { setBountyLocked(false); await fetch('/telegsar-api/bounty/draft/clear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId }) }); } } catch {}
+                                    onCreated?.();
+                                    closeModal();
+
+                                    return { taskId: newTaskId, taskTitle: title };
+                                  }}
+                                />
+                              )}
+                            </>
                           ) : (
                             <VoiceRecorder
                               maxSeconds={30}
@@ -754,6 +1196,24 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
                           color: '#e8eaed', cursor: 'pointer',
                         }}
                       >⏰</button>
+
+                      {/* 🔘 / ⚫ Предзадача — как просили в панельке с 📑🖼️📸🚩☝️⏰ */}
+                      <PreTaskToggle
+                        chatId={chatId}
+                        groupId={groupId ?? null}
+                        value={preCfg}
+                        onApplied={(cfg) => { setPreCfg(cfg); setToolsOpen(true); focusText(); }}
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 10,
+                          border: '1px solid #2a3346',
+                          background: '#202840',
+                          color: '#e8eaed',
+                          cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      />
 
                   </div>
                   )}
@@ -982,6 +1442,15 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
 
                       <input ref={fileAnyRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
                       <input ref={filePhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
+
+                      {/* 🔘/⚫ в панельке шага 0 */}
+                      <PreTaskToggle
+                        chatId={chatId}
+                        groupId={groupId ?? null}
+                        value={preCfg}
+                        onApplied={(cfg) => { setPreCfg(cfg); focusText(); }}
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
+                      />
                     </div>
                     )}
 
@@ -1196,7 +1665,7 @@ async function handleTranscribe(lang: 'ru' | 'en' = 'ru') {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
               <button
-                onClick={() => { setPickerOpen(false); focusText(); }}
+                onClick={() => { setPickerOpen(false); setToolsOpen(true); focusText(); }}
                 style={{
                   padding: '8px 12px',
                   borderRadius: 10,

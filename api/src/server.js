@@ -14,7 +14,7 @@ import { deadlineRouter } from './routes/deadline.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { assignRouter } from './routes/assign.js';  
 import { eventsRouter } from './routes/events.js';
-import { initReminderScheduler, scheduleRemindersForEvent } from './scheduler.js';
+import { initReminderScheduler, scheduleRemindersForEvent, initPreTaskScheduler, reevaluatePreTasksByTaskId } from './scheduler.js';
 
 import processRouter from './routes/process.js';
 
@@ -26,6 +26,7 @@ import { likesRouter } from './routes/likes.js';
 import { watchersRouter } from './routes/watchers.js';
 import { walletTonRouter } from './routes/wallet-ton.js';
 import { remindersRouter } from './routes/reminders.js';
+import { preTasksRouter } from './routes/pretasks.js';
 
 
 import { execa } from 'execa';
@@ -104,6 +105,7 @@ async function sendTaskNoticeServer(task, text) {
 
 
 initReminderScheduler({ prisma, tg }).catch(console.error);
+initPreTaskScheduler({ prisma, tg }).catch(console.error);
 
 
 
@@ -393,6 +395,7 @@ app.use(starsRouter);
 app.use(likesRouter);
 app.use(watchersRouter({ prisma }));
 app.use(remindersRouter({ prisma, tg }));
+app.use(preTasksRouter({ prisma, tg }));
 app.use(walletTonRouter());
 // условия приёмки задач
 app.use(acceptRouter);
@@ -1171,6 +1174,8 @@ app.patch('/tasks/:id/move', async (req, res) => {
     })().catch(()=>{});
 
     res.json({ ok: true, task: result });
+    // reevaluate pretasks depending on this task (async, non-blocking)
+    ;(async () => { try { await reevaluatePreTasksByTaskId(prisma, tg, taskId); } catch {} })();
   } catch (e) {
     console.error('PATCH /tasks/:id/move error:', e);
     res.status(500).json({ ok: false });
@@ -2001,6 +2006,8 @@ app.post('/tasks/:id/complete', async (req, res) => {
     })().catch(() => { /* noop */ });
 
     res.json({ ok: true, task: updated });
+    // reevaluate pretasks depending on this task (async)
+    ;(async () => { try { await reevaluatePreTasksByTaskId(prisma, tg, id); } catch {} })();
   } catch (e) {
     console.error('POST /tasks/:id/complete error:', e);
     res.status(500).json({ ok: false, error: 'internal' });
@@ -2139,6 +2146,8 @@ app.post('/tasks/:id/reopen', async (req, res) => {
     });
 
     res.json({ ok: true, task: updated });
+    // reevaluate pretasks depending on this task (async)
+    ;(async () => { try { await reevaluatePreTasksByTaskId(prisma, tg, id); } catch {} })();
   } catch (e) {
     console.error('POST /tasks/:id/reopen error:', e);
     res.status(500).json({ ok: false, error: 'internal' });

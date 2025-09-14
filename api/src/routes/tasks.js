@@ -1,5 +1,6 @@
 // routes/tasks.js
 import { Router } from 'express';
+import { reevaluatePreTasksByTaskId } from '../scheduler.js';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -347,6 +348,9 @@ router.delete('/:id', async (req, res) => {
         data: { order: { decrement: 1 } },
       });
     });
+
+    // reevaluate pretasks depending on this task (async, non-blocking)
+    ;(async () => { try { await reevaluatePreTasksByTaskId(prisma, tg, id); } catch {} })();
 
     return res.json({ ok: true, groupId });
   } catch (e) {

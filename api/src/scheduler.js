@@ -39,6 +39,7 @@ const log = (...args) => console.log('[reminders]', ...args);
 
 const keyEvent = (id) => `ER:${id}`;
 const keyTask  = (id) => `TR:${id}`;
+const keyPre   = (id) => `PR:${id}`; // PreTask job key
 
 /* ===== отправка одного напоминания ===== */
 async function fireReminder({ prisma, tg }, r) {
@@ -307,4 +308,277 @@ export function cancelTaskReminder(reminderId) {
   const job = jobs.get(k);
   if (job) job.cancel();
   jobs.delete(k);
+}
+
+/* ===== PreTask support ===== */
+
+function parsePhaseFromColumnName(name = '') {
+  const sep = '::';
+  const i = String(name).indexOf(sep);
+  return i > 0 ? String(name).slice(i + sep.length) : String(name);
+}
+
+async function getTaskPhase(prisma, taskId) {
+  try {
+    const t = await prisma.task.findUnique({ where: { id: String(taskId) } });
+    if (!t) return 'Cancel'; // удалённую трактуем как отменённую
+    const col = await prisma.column.findUnique({ where: { id: t.columnId } });
+    if (!col) return 'Cancel';
+    return parsePhaseFromColumnName(col.name || '');
+  } catch {
+    return 'Cancel';
+  }
+}
+
+async function depStateForPreTask(prisma, dep) {
+  // dep is a PreTask row
+  if (!dep) return { done: false, canceled: true };
+  if (String(dep.status || '') === 'CANCELED') return { done: false, canceled: true };
+  if (dep.targetTaskId) {
+    const phase = await getTaskPhase(prisma, dep.targetTaskId);
+    return { done: phase === 'Done', canceled: phase === 'Cancel' };
+  }
+  return { done: false, canceled: false };
+}
+
+async function depStateForTask(prisma, taskId) {
+  const phase = await getTaskPhase(prisma, taskId);
+  return { done: phase === 'Done', canceled: phase === 'Cancel' };
+}
+
+async function computeDepsSummary(prisma, preTaskId) {
+  const row = await prisma.preTask.findUnique({
+    where: { id: String(preTaskId) },
+    include: { links: true },
+  });
+  if (!row) return null;
+
+  const states = [];
+  for (const l of row.links) {
+    if (l.taskId) states.push(await depStateForTask(prisma, l.taskId));
+    else if (l.depPreTaskId) states.push(await depStateForPreTask(prisma, await prisma.preTask.findUnique({ where: { id: String(l.depPreTaskId) } })));
+  }
+  if (states.length === 0) return { row, allDone: false, anyCanceled: false, allCanceled: false };
+
+  const allDone = states.every(s => s.done);
+  const anyCanceled = states.some(s => s.canceled);
+  const allCanceled = states.every(s => s.canceled);
+  return { row, allDone, anyCanceled, allCanceled };
+}
+
+async function resolveBoardForPreTask(prisma, pre) {
+  // returns { boardChatId, group, groupId }
+  const groupId = pre.groupId ? String(pre.groupId) : null;
+  if (!groupId) return { boardChatId: String(pre.creatorChatId), group: null, groupId: null };
+  const g = await prisma.group.findUnique({ where: { id: groupId } });
+  if (!g) return { boardChatId: String(pre.creatorChatId), group: null, groupId: null };
+  return { boardChatId: String(g.ownerChatId), group: g, groupId };
+}
+
+async function isMemberOfGroup(prisma, groupId, chatId) {
+  if (!groupId || !chatId) return false;
+  try {
+    const g = await prisma.group.findUnique({ where: { id: String(groupId) } });
+    if (!g) return false;
+    if (String(g.ownerChatId) === String(chatId)) return true;
+    const m = await prisma.groupMember.findFirst({ where: { groupId: String(groupId), chatId: String(chatId) } });
+    return !!m;
+  } catch { return false; }
+}
+
+function preMiniAppLink(taskId) {
+  const bot = process.env.BOT_USERNAME || process.env.TG_BOT_USERNAME || 'telegsar_bot';
+  return `https://t.me/${bot}?startapp=task_${encodeURIComponent(taskId)}`;
+}
+
+async function notifyAssigneeFallback({ prisma, tg }, pre, task) {
+  try {
+    const txt = `Запустилась задача\n${task.text}\n\nОтсвенный вы, не смогли подключить планируемого.`;
+    const markup = { inline_keyboard: [[{ text: 'Открыть задачу', url: preMiniAppLink(task.id) }]] };
+    const to = String(pre.creatorChatId || '');
+    if (!to) return;
+    await tg('sendMessage', { chat_id: to, text: txt, disable_web_page_preview: true, reply_markup: markup });
+  } catch {}
+}
+
+async function createRealTaskForPre({ prisma, tg }, pre, { canceledImmediate = false } = {}) {
+  // resolve board
+  const { boardChatId, group, groupId } = await resolveBoardForPreTask(prisma, pre);
+
+  // ensure columns exist and pick target column
+  const sep = '::';
+  const nameWithGroup = (gid, plain) => gid ? `${gid}${sep}${plain}` : plain;
+  async function ensureDefaultColumns(chatId, gid = null) {
+    const whereDefault = gid ? { chatId, name: { startsWith: `${gid}${sep}` } } : { chatId, name: { not: { contains: sep } } };
+    const existing = await prisma.column.findMany({ where: whereDefault, orderBy: { order: 'asc' } });
+    if (existing.length) return existing;
+    const base = [
+      nameWithGroup(gid, 'Inbox'),
+      nameWithGroup(gid, 'Doing'),
+      nameWithGroup(gid, 'Done'),
+      nameWithGroup(gid, 'Cancel'),
+      nameWithGroup(gid, 'Approval'),
+      nameWithGroup(gid, 'Wait'),
+    ];
+    const created = await prisma.$transaction(
+      base.map((nm, i) => prisma.column.create({ data: { chatId: boardChatId, name: nm, order: i } }))
+    );
+    return created;
+  }
+
+  await ensureDefaultColumns(boardChatId, groupId);
+  const targetPhase = canceledImmediate ? 'Cancel' : 'Inbox';
+  const targetName = nameWithGroup(groupId, targetPhase);
+  const targetColumn = await prisma.column.findFirst({ where: { chatId: boardChatId, name: targetName } });
+  if (!targetColumn) throw new Error('target_column_not_found');
+
+  const last = await prisma.task.findFirst({ where: { columnId: targetColumn.id }, orderBy: { order: 'desc' }, select: { order: true } });
+  const nextOrder = (last?.order ?? -1) + 1;
+
+  // planned assignee availability
+  let assignee = null;
+  if (pre.plannedAssigneeChatId) {
+    const ok = groupId ? await isMemberOfGroup(prisma, groupId, pre.plannedAssigneeChatId) : true;
+    if (ok) assignee = String(pre.plannedAssigneeChatId);
+  }
+
+  const created = await prisma.task.create({
+    data: {
+      chatId: boardChatId,
+      text: pre.text || 'Без названия',
+      order: nextOrder,
+      columnId: targetColumn.id,
+      createdByChatId: String(pre.creatorChatId || boardChatId),
+      assigneeChatId: assignee,
+      fromProcess: false,
+    },
+  });
+
+  // fallback if assignee not set but planned was specified
+  if (!assignee && pre.plannedAssigneeChatId) {
+    await notifyAssigneeFallback({ prisma, tg }, pre, created);
+  }
+
+  // Общее уведомление о запуске задачи (в TG-группе или DM автору)
+  try {
+    const { group } = await resolveBoardForPreTask(prisma, pre);
+    const openUrl = preMiniAppLink(created.id);
+    const text = `🚀 Запустилась задача\n${created.text}`;
+    const markup = { inline_keyboard: [[{ text: 'Открыть задачу', url: openUrl }]] };
+    if (group && group.isTelegramGroup && group.tgChatId) {
+      await tg('sendMessage', { chat_id: String(group.tgChatId), text, disable_web_page_preview: true, reply_markup: markup });
+    } else if (await canDM(prisma, String(pre.creatorChatId))) {
+      await tg('sendMessage', { chat_id: String(pre.creatorChatId), text, disable_web_page_preview: true, reply_markup: markup });
+    }
+  } catch {}
+
+  return created;
+}
+
+async function markPreTaskFired(prisma, preId, taskId, { canceled = false } = {}) {
+  const newStatus = canceled ? 'CANCELED' : 'FIRED';
+  await prisma.preTask.update({ where: { id: String(preId) }, data: { status: newStatus, targetTaskId: String(taskId), fireAt: new Date() } });
+}
+
+async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = false } = {}) {
+  const summary = await computeDepsSummary(prisma, preId);
+  if (!summary) return false;
+  const { row } = summary;
+  if (String(row.status || '') === 'FIRED' || String(row.status || '') === 'CANCELED') return true; // already finalized
+
+  // For DATE_PLUS / DELAY_AFTER we should ensure preconditions still hold as of now
+  if (row.triggerMode === 'AFTER_ALL_CANCELED') {
+    const { allCanceled } = summary;
+    if (!allCanceled) return false;
+  } else if (row.triggerMode === 'AFTER_ALL_DONE' || row.triggerMode === 'DATE_PLUS' || row.triggerMode === 'DELAY_AFTER') {
+    const { allDone, anyCanceled } = summary;
+    if (row.autoCancelOnAny && anyCanceled) {
+      const created = await createRealTaskForPre({ prisma, tg }, row, { canceledImmediate: true });
+      await markPreTaskFired(prisma, row.id, created.id, { canceled: true });
+      return true;
+    }
+    if (!allDone) return false;
+  }
+
+  const created = await createRealTaskForPre({ prisma, tg }, row, { canceledImmediate: canceledImmediate });
+  await markPreTaskFired(prisma, row.id, created.id, { canceled: canceledImmediate });
+  return true;
+}
+
+function planPreTaskAt({ prisma, tg }, preId, when) {
+  const k = keyPre(preId);
+  const existed = jobs.get(k);
+  if (existed) existed.cancel(); jobs.delete(k);
+
+  const d = new Date(when);
+  const now = new Date();
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return false;
+  if (d <= now) { attemptFirePreTask({ prisma, tg }, preId).catch(()=>{}); return true; }
+  const job = schedule.scheduleJob(d, () => attemptFirePreTask({ prisma, tg }, preId));
+  jobs.set(k, job);
+  log('scheduled PR', preId, 'at', d.toISOString());
+  return true;
+}
+
+export async function evaluatePreTask(prisma, tg, preId) {
+  const s = await computeDepsSummary(prisma, preId);
+  if (!s) return false;
+  const { row, allDone, anyCanceled, allCanceled } = s;
+  const k = keyPre(preId);
+  jobs.get(k)?.cancel(); jobs.delete(k); // очистим предыдущие
+
+  if (row.triggerMode === 'AFTER_ALL_CANCELED') {
+    if (allCanceled) return attemptFirePreTask({ prisma, tg }, preId);
+    return false;
+  }
+
+  if (row.autoCancelOnAny && anyCanceled) {
+    // создаём сразу, но со статусом отмена
+    return attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate: true });
+  }
+
+  if (row.triggerMode === 'AFTER_ALL_DONE') {
+    if (allDone) return attemptFirePreTask({ prisma, tg }, preId);
+    return false;
+  }
+
+  if (row.triggerMode === 'DATE_PLUS') {
+    if (!row.startAt) return false; // неверная настройка
+    if (!allDone) return false; // ждем условий
+    await prisma.preTask.update({ where: { id: row.id }, data: { fireAt: new Date(row.startAt) } });
+    return planPreTaskAt({ prisma, tg }, preId, row.startAt);
+  }
+
+  if (row.triggerMode === 'DELAY_AFTER') {
+    if (!allDone) return false;
+    const minutes = Number(row.delayMinutes || 0);
+    const when = new Date(Date.now() + Math.max(0, minutes) * 60_000);
+    await prisma.preTask.update({ where: { id: row.id }, data: { fireAt: when } });
+    return planPreTaskAt({ prisma, tg }, preId, when);
+  }
+
+  return false;
+}
+
+export async function reevaluatePreTasksByTaskId(prisma, tg, taskId) {
+  const links = await prisma.preTaskLink.findMany({ where: { taskId: String(taskId) }, select: { preTaskId: true } });
+  const set = new Set(links.map(l => String(l.preTaskId)));
+  // также — те, кто зависят от предзадачи, у которой targetTaskId === taskId
+  const deps = await prisma.preTask.findMany({ where: { targetTaskId: String(taskId) }, select: { id: true } });
+  if (deps.length) {
+    const chainLinks = await prisma.preTaskLink.findMany({ where: { depPreTaskId: { in: deps.map(d => d.id) } }, select: { preTaskId: true } });
+    chainLinks.forEach(l => set.add(String(l.preTaskId)));
+  }
+  for (const id of set) await evaluatePreTask(prisma, tg, id).catch(()=>{});
+}
+
+export async function initPreTaskScheduler({ prisma, tg }) {
+  const now = new Date();
+  // планируем будущие fireAt для ARMED
+  const future = await prisma.preTask.findMany({ where: { status: 'ARMED', fireAt: { gt: now } } });
+  future.forEach(p => planPreTaskAt({ prisma, tg }, p.id, p.fireAt));
+  // просроченные — попробуем запустить
+  const overdue = await prisma.preTask.findMany({ where: { status: 'ARMED', fireAt: { lte: now } } });
+  overdue.forEach(p => attemptFirePreTask({ prisma, tg }, p.id));
+  log('init pre-tasks planned:', future.length, 'overdue:', overdue.length);
 }

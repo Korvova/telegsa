@@ -14,6 +14,10 @@ import {
   fetchBoard,
   moveTask,
 } from '../../api';
+import { listPreTasks, type PreTaskDTO, getGroupMembers } from '../../api';
+import PreTaskCard from '../../components/PreTaskCard';
+import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
+import PreTaskEditModal from '../../components/PreTaskEditModal';
 import StageQuickBar from '../../components/StageQuickBar';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
@@ -138,6 +142,11 @@ export default function HomePage({
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [preTasks, setPreTasks] = useState<PreTaskDTO[]>([]);
+  const [openPreTask, setOpenPreTask] = useState<PreTaskDTO | null>(null);
+  const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
+  const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
+  const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
 
   // выбор области
   const [scope, setScope] = useState<FeedScope>({ kind: 'all' });
@@ -195,6 +204,10 @@ export default function HomePage({
           setOffset(r.nextOffset);
           setHasMore(r.hasMore);
         }
+        try {
+          const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] });
+          if (alive && pr.ok) setPreTasks(pr.preTasks || []);
+        } catch {}
       } finally {
         if (alive) setLoading(false);
       }
@@ -204,6 +217,39 @@ export default function HomePage({
       alive = false;
     };
   }, [chatId, search, reloadKey]);
+
+  // подтянуть имена для предзадач (owner + members групп)
+  useEffect(() => {
+    (async () => {
+      try {
+        const groupIds = Array.from(new Set(preTasks.map(p => String(p.groupId || '')).filter(Boolean)));
+        const map: Record<string, string> = {};
+        for (const gid of groupIds) {
+          try {
+            const r = await getGroupMembers(gid);
+            if (r?.owner) map[String(r.owner.chatId)] = r.owner.name || String(r.owner.chatId);
+            for (const m of r.members || []) {
+              map[String(m.chatId)] = m.name || String(m.chatId);
+            }
+          } catch {}
+        }
+        // сам пользователь
+        map[String(chatId)] = map[String(chatId)] || 'Я';
+        setNameByChat(map);
+      } catch {}
+    })();
+    // build group title map
+    (async () => {
+      try {
+        const r = await listGroups(chatId);
+        if ((r as any)?.ok) {
+          const map: Record<string, string> = {};
+          for (const g of (r as any).groups || []) map[String(g.id)] = g.title;
+          setGroupTitleById(map);
+        }
+      } catch {}
+    })();
+  }, [preTasks, chatId]);
 
   // Показ модалки для ответственного, если задача в Done и есть невыплаченное вознаграждение (без скрытия до оплаты)
   useEffect(() => {
@@ -596,9 +642,33 @@ export default function HomePage({
                 )}
               </div>
 
+              {(() => {
+                let __preIdx = 0;
+                const __preSorted = [...preTasks].sort((a, b) => {
+                  const ta = new Date(a.createdAt || a.updatedAt || 0).getTime();
+                  const tb = new Date(b.createdAt || b.updatedAt || 0).getTime();
+                  return tb - ta;
+                });
+                return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {pageItems.length ? (
                   pageItems.map((t) => {
+                    const injected: any[] = [];
+                    if (pg.key === 'all') {
+                      const tTime = new Date((t as any).createdAt || (t as any).updatedAt || 0).getTime();
+                      while (__preIdx < __preSorted.length) {
+                        const p = __preSorted[__preIdx];
+                        const pTime = new Date(p.createdAt || p.updatedAt || 0).getTime();
+                        if (pTime >= tTime) {
+                          injected.push(
+                            <div key={`pre-${p.id}`} style={{ margin: '0 12px' }}>
+                        <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} />
+                            </div>
+                          );
+                          __preIdx++;
+                        } else break;
+                      }
+                    }
                     const ph = phaseOf(t);
                     const { bg: cardBg, brd: cardBrd, chip: groupChipBg } = colorsForPhase(ph);
                     const eventTypeRaw = String(
@@ -639,6 +709,8 @@ export default function HomePage({
                     const anchorId = `task-card-${pg.key}-${t.id}`;
 
                     return (
+                      <>
+                      {injected}
                       <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto' }}>
                         {opened && (
                           <StageQuickBar
@@ -842,12 +914,22 @@ export default function HomePage({
                           </div>
                         </button>
                       </div>
+                      </>
                     );
                   })
                 ) : (
                   <div style={{ opacity: 0.6, padding: '12px' }}>Нет задач</div>
                 )}
+                {pg.key === 'all' && __preIdx < __preSorted.length && (
+                  __preSorted.slice(__preIdx).map((p) => (
+                    <div key={`pre-tail-${p.id}`} style={{ margin: '0 12px' }}>
+                      <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} />
+                    </div>
+                  ))
+                )}
               </div>
+                );
+              })()}
             </section>
           );
         })}
@@ -1068,6 +1150,9 @@ export default function HomePage({
           } catch {}
         }}
       />
+
+      <PreTaskPreviewModal open={!!openPreTask} preTask={openPreTask} onClose={() => setOpenPreTask(null)} nameByChat={nameByChat} />
+      <PreTaskEditModal open={!!editPreTask} chatId={chatId} preTask={editPreTask} onClose={()=>setEditPreTask(null)} onSaved={async ()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }} />
 
     </div>
   );

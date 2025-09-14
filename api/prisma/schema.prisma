@@ -127,6 +127,9 @@ model Task {
   // Напоминания по задачам (отдельно от EventReminder)
   taskReminders TaskReminder[]
 
+  // Ссылки предзадач, которые зависят от этой задачи
+  preTaskLinks PreTaskLink[]
+
   @@index([chatId])
   @@index([columnId, order])
   @@index([createdByChatId])
@@ -501,6 +504,86 @@ model TaskLabel {
   label GroupLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
 
   @@id([taskId, labelId])
+}
+
+/**
+ * -------------------- PRE-TASKS (предзадачи) --------------------
+ * Предзадача — это «превью» задачи, которая запускается при выполнении условий.
+ * Поддерживает зависимости на обычные задачи И другие предзадачи (цепочки).
+ */
+
+/// Режимы запуска предзадачи
+enum PreTaskTriggerMode {
+  AFTER_ALL_DONE        // запустить, когда все выбранные перешли в Done
+  DATE_PLUS             // не раньше startAt и только после Done всех
+  DELAY_AFTER           // через N минут после Done всех
+  AFTER_ALL_CANCELED    // запустить, когда все выбранные отменены
+}
+
+/// Статус предзадачи
+enum PreTaskStatus {
+  PREVIEW
+  ARMED
+  FIRED
+  CANCELED
+  FAILED
+}
+
+model PreTask {
+  id                 String              @id @default(cuid())
+
+  // кто создал и где
+  creatorChatId      String
+  groupId            String?
+
+  // содержимое будущей задачи (минимум — текст)
+  text               String
+  payload            Json?
+
+  // роли
+  plannedAssigneeChatId String?
+
+  // режим запуска
+  triggerMode        PreTaskTriggerMode
+  startAt            DateTime?
+  delayMinutes       Int?
+
+  // Поведение при отмене одной из зависимостей (если включён чекбокс)
+  autoCancelOnAny    Boolean             @default(false)
+
+  // служебные поля
+  status             PreTaskStatus       @default(PREVIEW)
+  targetTaskId       String?             // id созданной реальной задачи (после FIRED)
+  timezone           String?
+  fireAt             DateTime?           // вычисленный момент запуска (для DATE_PLUS/DELAY_AFTER)
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  // связи
+  links              PreTaskLink[] @relation("PreTask_Owner")
+  usedInLinks        PreTaskLink[] @relation("PreTask_Dependency")
+
+  @@index([creatorChatId])
+  @@index([groupId])
+  @@index([status])
+}
+
+/// Связи предзадачи с зависимостями: либо на обычную задачу, либо на другую предзадачу
+model PreTaskLink {
+  id          String   @id @default(cuid())
+  preTaskId   String
+  taskId      String?  // зависимость на Task
+  depPreTaskId String? // зависимость на другую PreTask
+  createdAt   DateTime @default(now())
+
+  preTask     PreTask  @relation("PreTask_Owner", fields: [preTaskId], references: [id], onDelete: Cascade)
+  task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  depPreTask  PreTask? @relation("PreTask_Dependency", fields: [depPreTaskId], references: [id], onDelete: Cascade)
+
+  @@index([preTaskId])
+  @@index([taskId])
+  @@index([depPreTaskId])
 }
 
 model TaskRelation {
