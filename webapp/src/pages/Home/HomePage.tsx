@@ -792,7 +792,7 @@ export default function HomePage({
                                   <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
                                     {children.map((cp:any) => (
                                       <div key={`pchild-${cp.id}`}>
-                                        <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} />
+                                        <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
                                       </div>
                                     ))}
                                   </div>
@@ -1161,13 +1161,14 @@ export default function HomePage({
                           <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
                             {linked.map((p) => (
                               <div key={(p as any).id} style={{ margin: '0 0' }}>
-                                <PreTaskCard
-                                  p={p as any}
-                                  onOpen={(pp) => setOpenPreTask(pp)}
-                                  onEdit={(pp) => setEditPreTask(pp)}
-                                  nameByChat={nameByChat}
-                                  groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
-                                />
+                                    <PreTaskCard
+                                      p={p as any}
+                                      onOpen={(pp) => setOpenPreTask(pp)}
+                                      onEdit={(pp) => setEditPreTask(pp)}
+                                      nameByChat={nameByChat}
+                                      groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
+                                      tone="subtle"
+                                    />
                               </div>
                             ))}
                           </div>
@@ -1220,7 +1221,7 @@ export default function HomePage({
                           <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
                             {children.map((cp:any) => (
                               <div key={`ptail-child-${cp.id}`}>
-                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} />
+                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
                               </div>
                             ))}
                           </div>
