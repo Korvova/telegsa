@@ -175,6 +175,8 @@ export default function HomePage({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [payoutPrompt, setPayoutPrompt] = useState<{ id: string; rub: number } | null>(null);
+  // раскрытие списка предзадач под карточкой
+  const [openAfter, setOpenAfter] = useState<Record<string, boolean>>({});
 
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
@@ -446,18 +448,18 @@ export default function HomePage({
     setItems((prev) => (prev.map((it) => (it.id === id ? ({ ...it, ...patch } as any) : it))));
   };
 
-  // QUICK BAR
-  const [openQBarId, setOpenQBarId] = useState<string | null>(null);
+  // QUICK BAR (храним id задачи и ключ страницы, чтобы не дублировать в нескольких секциях)
+  const [openQBar, setOpenQBar] = useState<{ id: string; page: PageKey } | null>(null);
   const lpTimer = useRef<any>(null);
   const sliderRef = useRef<HTMLDivElement | null>(null);
-  const isQuickBarOpen = openQBarId !== null;
+  const isQuickBarOpen = openQBar !== null;
 
   // long-press отключён: быстрые действия открываются по клику на статус-бейдж
   // const startLongPress = (_taskId: string) => {};
   const cancelLongPress = () => {
     clearTimeout(lpTimer.current);
   };
-  const closeQBar = () => setOpenQBarId(null);
+  const closeQBar = () => setOpenQBar(null);
 
   // загрузка ярлыков группы (для колеса)
   async function ensureGroupLabels(groupId: string): Promise<GroupLabel[]> {
@@ -738,7 +740,7 @@ export default function HomePage({
                       const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
                       return (signOverdue ? `просрочено: ${short}` : `осталось: ${short}`);
                     })();
-                    const opened = openQBarId === t.id;
+                    const opened = openQBar?.id === t.id && openQBar?.page === pg.key;
                     const currentPhase = ph;
                     const groupId = (t as any)?.groupId ?? null;
                   const badge = badgeForPhase(currentPhase);
@@ -783,7 +785,7 @@ export default function HomePage({
                             </span>
                           </div>
                         ) : null}
-                        {opened && (
+                        {(openQBar?.id === t.id && openQBar?.page === pg.key) && (
                           <StageQuickBar
                             anchorId={anchorId}
                             taskId={t.id}
@@ -795,7 +797,7 @@ export default function HomePage({
                             onRequestClose={closeQBar}
                             onComplete={async () => {
                               if ((t as any).acceptCondition === 'PHOTO') {
-                                setOpenQBarId(null);
+                                setOpenQBar(null);
                                 setCompletePrompt({ id: t.id });
                                 return false;
                               }
@@ -809,7 +811,7 @@ export default function HomePage({
                                   }
                                 } catch {}
                                 finally {
-                                  setOpenQBarId(null);
+                                  setOpenQBar(null);
                                 }
                                 return false;
                               }
@@ -843,7 +845,7 @@ export default function HomePage({
                               suppressClickRef.current = null;
                               return;
                             }
-                            if (!opened) {
+                            if (!(openQBar?.id === t.id && openQBar?.page === pg.key)) {
                               onOpenTask(t.id);
                               try {
                                 WebApp?.HapticFeedback?.impactOccurred?.('light');
@@ -907,7 +909,7 @@ export default function HomePage({
                             {badge && (
                               <span
                                 title={badge.text}
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBarId(t.id); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
                                 style={{
                                   background: badge.bg,
                                   color: badge.fg,
@@ -1023,6 +1025,58 @@ export default function HomePage({
                           </div>
                         </button>
                       </div>
+                      {/* Полоска «Запустят после (N) ⬇/⬆» под карточкой + список предзадач */}
+                      {(() => {
+                        const id = (t as any).id as string;
+                        const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
+                        const count = linked.length;
+                        if (count <= 0) return null;
+                        const isOpen = !!openAfter[id];
+                        return (
+                          <div style={{ marginTop: 6 }}>
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [id]: !isOpen })); }}
+                              style={{
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '6px 10px',
+                                borderRadius: 10,
+                                border: '1px solid #d1e7dd',
+                                background: '#ecfdf5',
+                                color: '#065f46',
+                                fontSize: 12,
+                                cursor: 'pointer',
+                              }}
+                              title={isOpen ? 'Свернуть список предзадач' : 'Показать предзадачи'}
+                            >
+                              Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
+                            </button>
+                            {isOpen && (
+                              <div style={{ marginTop: 6, border: '1px solid #d1e7dd', borderRadius: 10, background: '#f0fdf4', padding: 8, display: 'grid', gap: 6 }}>
+                                {linked.map((p) => (
+                                  <button
+                                    key={(p as any).id}
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenPreTask(p); }}
+                                    style={{
+                                      textAlign: 'left',
+                                      padding: '6px 8px',
+                                      borderRadius: 8,
+                                      border: '1px solid #cfe2ff',
+                                      background: '#eaf2ff',
+                                      color: '#0f172a',
+                                      cursor: 'pointer',
+                                      fontSize: 13,
+                                    }}
+                                    title={(p as any).text || ''}
+                                  >
+                                    ⚫ {(p as any).text}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       </>
                     );
                   })
