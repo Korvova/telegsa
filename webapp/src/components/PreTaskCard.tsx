@@ -1,6 +1,6 @@
 import type { PreTaskDTO } from '../api';
 
-export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal' }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle' }) {
+export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean }) {
   const modeText = (() => {
     if (p.triggerMode === 'AFTER_ALL_DONE') return 'Сразу';
     if (p.triggerMode === 'DATE_PLUS') return `📅 ко времени: ${p.startAt ? new Date(p.startAt).toLocaleString() : ''}`;
@@ -15,7 +15,7 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
   const cnt = Array.isArray((p as any).links) ? (p as any).links.length : 0;
   const isSubtle = tone === 'subtle';
   const cardBg = isSubtle ? '#0f172a' : '#eef2ff';
-  const cardBrd = isSubtle ? '#2a3346' : '#e5e7eb';
+  const cardBrd = isSubtle ? (emphasis ? '#e5e7eb' : '#2a3346') : '#e5e7eb';
   const cardFg = isSubtle ? '#e8eaed' : '#0f1216';
 
   return (
