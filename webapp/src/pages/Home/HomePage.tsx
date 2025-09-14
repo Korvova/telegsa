@@ -305,6 +305,20 @@ export default function HomePage({
     };
   }, [chatId, search, reloadKey]);
 
+  // Оптимистичное добавление предзадачи без ожидания перезагрузки
+  useEffect(() => {
+    const h = (e: Event) => {
+      const p = (e as CustomEvent<any>)?.detail;
+      if (!p || !p.id) return;
+      setPreTasks((prev) => {
+        if (prev.some((x:any) => String((x as any).id) === String(p.id))) return prev;
+        return [p as any, ...prev];
+      });
+    };
+    window.addEventListener('pre-task-created', h as EventListener);
+    return () => window.removeEventListener('pre-task-created', h as EventListener);
+  }, []);
+
   // подтянуть имена для предзадач (owner + members групп)
   useEffect(() => {
     (async () => {
@@ -1185,7 +1199,7 @@ export default function HomePage({
                                   </div>
                                 ) : null}
                                 <div
-                                  style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String((p as any).id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: ((linked.length - idx) as number), boxShadow: (idx === linked.length - 1) ? 'none' : '0 6px 0 rgba(147,197,253,.35)' }}
+                                  style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String((p as any).id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: ((linked.length - idx) as number) }}
                                   onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String((p as any).id), e.clientX, e.clientY); }}
                                   onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String((p as any).id)); }}
                                   onMouseUp={() => { if (pg.key==='all') endPreSwipe(String((p as any).id), { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
@@ -1212,6 +1226,7 @@ export default function HomePage({
                                         tone="subtle"
                                         footer={footer}
                                         emphasis={cnt>0}
+                                        style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
                                       />
                                     );
                                   })()}
@@ -1230,8 +1245,8 @@ export default function HomePage({
                                               <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
                                             </div>
                                           ) : null}
-                                          <div
-                                            style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx), boxShadow: (idx === children.length - 1) ? 'none' : '0 6px 0 rgba(147,197,253,.35)' }}
+                                        <div
+                                          style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
                                             onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
                                             onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(cp.id)); }}
                                             onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
@@ -1249,7 +1264,7 @@ export default function HomePage({
                                                 <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</button>
                                               ) : null;
                                               return (
-                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} />
+                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
                                               );
                                             })()}
                                           </div>
@@ -1260,9 +1275,9 @@ export default function HomePage({
                                             if (!grand.length) return null;
                                             return (
                                               <div style={{ marginTop:6, display:'grid', gap:8 }}>
-                                                {grand.map((gg:any) => (
+                                                {grand.map((gg:any, gidx:number) => (
                                                   <div key={`plink-gchild-${gg.id}`} style={{ position:'relative' }}>
-                                                    <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
+                                                    <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
                                                   </div>
                                                 ))}
                                               </div>

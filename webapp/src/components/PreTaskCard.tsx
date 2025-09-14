@@ -1,6 +1,6 @@
 import type { PreTaskDTO } from '../api';
 
-export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean }) {
+export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false, style }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean; style?: React.CSSProperties }) {
   const modeText = (() => {
     if (p.triggerMode === 'AFTER_ALL_DONE') return 'Сразу';
     if (p.triggerMode === 'DATE_PLUS') return `📅 ко времени: ${p.startAt ? new Date(p.startAt).toLocaleString() : ''}`;
@@ -34,6 +34,7 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
         width: '100%',
         textAlign: 'left',
         cursor: 'pointer',
+        ...(style || {}),
       }}
       title={p.text}
     >

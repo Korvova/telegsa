@@ -1097,6 +1097,7 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                                       arm: true,
                                     });
                                     if (!resp?.ok) throw new Error(resp?.error || 'pretask_create_failed');
+                                    try { window.dispatchEvent(new CustomEvent('pre-task-created', { detail: resp?.preTask || null })); } catch {}
                                     setText('');
                                     setPreCfg(null);
                                     onCreated?.();
