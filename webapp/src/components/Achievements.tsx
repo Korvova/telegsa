@@ -132,7 +132,7 @@ export function pickRank(eaglesScore: number): { current: RankDef; next: RankDef
   return { current, next };
 }
 
-export function AchievementsBar({ items, meChatId }: { items: TaskFeedItem[]; meChatId: string }) {
+export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskFeedItem[]; meChatId: string; reloadToken?: number }) {
   const [serverStats, setServerStats] = useState<RatingStats | null>(null);
   useEffect(() => {
     let alive = true;
@@ -144,7 +144,7 @@ export function AchievementsBar({ items, meChatId }: { items: TaskFeedItem[]; me
       } catch {}
     })();
     return () => { alive = false; };
-  }, [meChatId, items.length]);
+  }, [meChatId, reloadToken]);
 
   const local = useMemo(() => computeAchievements(items, meChatId), [items, meChatId]);
   const stats: AchStats = serverStats ? {

@@ -820,7 +820,7 @@ export default function HomePage({
                 {/* Очивки рядом с «Все» */}
                 {pg.key === 'all' ? (
                   <div style={{ marginLeft: 8 }}>
-                    <AchievementsBar items={items} meChatId={meChatId} />
+                    <AchievementsBar items={items} meChatId={meChatId} reloadToken={reloadKey} />
                   </div>
                 ) : null}
 
