@@ -89,6 +89,7 @@ router.post('/', async (req, res) => {
         text: String(title).trim(),
         order: nextOrder,
         columnId: inboxId,
+        createdByChatId: caller,
         type: 'EVENT',
         startAt: new Date(startAt),
         endAt: new Date(endAt),
