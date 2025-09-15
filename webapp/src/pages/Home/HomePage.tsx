@@ -23,6 +23,7 @@ import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
 import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
 import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
+import { listGroups as apiListGroups, fetchBoard as apiFetchBoard, type Column as BoardColumn } from '../../api';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
 import type { StageKey } from '../../components/StageScroller';
@@ -207,6 +208,83 @@ export default function HomePage({
   const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
   const [manageForTask, setManageForTask] = useState<{ id: string } | null>(null);
   const [achFilter, setAchFilter] = useState<AchFilterKey>('none');
+  const [achItems, setAchItems] = useState<TaskFeedItem[] | null>(null);
+  const meChatId = String(
+    WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || ''
+  );
+
+  // Build dedicated view for achievements filter by scanning all boards (personal + groups)
+  // ВАЖНО: объявление ниже хука useChatId, поэтому переносим ниже его вызова
+  // этот эффект объявлен позже после useChatId
+  useEffect(() => {
+    if (achFilter === 'none') { setAchItems(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const me = String(meChatId);
+        const normalize = (name: string) => {
+          const i = name.indexOf('::');
+          return i >= 0 ? { base: name.slice(i + 2), groupId: name.slice(0, i) } : { base: name, groupId: null as string | null };
+        };
+        const cols: BoardColumn[] = [];
+        const def = await apiFetchBoard(me).catch(() => null as any);
+        if (def && (def as any).columns) cols.push(...((def as any).columns as BoardColumn[]));
+        const gs = await apiListGroups(me).catch(() => ({ ok:false, groups: [] } as any));
+        const groups = (gs && (gs as any).groups) || [];
+        const gTitle = new Map<string, string>();
+        for (const g of groups) gTitle.set(String(g.id), String(g.title || ''));
+        for (const g of groups) {
+          const b = await apiFetchBoard(me, String(g.id)).catch(() => null as any);
+          if (b && (b as any).columns) cols.push(...((b as any).columns as BoardColumn[]));
+        }
+
+        const items: TaskFeedItem[] = [];
+        for (const c of cols) {
+          const { base, groupId } = normalize(String(c.name));
+          const status = String(base);
+          const isDone = status.toLowerCase() === 'done';
+          const isCancel = status.toLowerCase() === 'cancel';
+          const isActive = !isDone && !isCancel;
+          for (const t of c.tasks || []) {
+            const creatorMe = String((t as any).createdByChatId || '') === me;
+            const assigneeMe = String((t as any).assigneeChatId || '') === me;
+            const assigneeOther = (t as any).assigneeChatId && !assigneeMe;
+            const match = (
+              achFilter === 'acorns' ? (creatorMe && !isDone)
+              : achFilter === 'seedlings' ? (isDone && creatorMe && assigneeMe)
+              : achFilter === 'eagles' ? (isDone && creatorMe && !!assigneeOther)
+              : achFilter === 'loadBlack' ? (isActive && assigneeMe && !creatorMe)
+              : achFilter === 'rockets' ? (isDone && assigneeMe && !creatorMe)
+              : true
+            );
+            if (!match) continue;
+            items.push({
+              id: String((t as any).id),
+              text: String((t as any).text || ''),
+              createdAt: String((t as any).createdAt || new Date().toISOString()),
+              updatedAt: String((t as any).updatedAt || new Date().toISOString()),
+              deadlineAt: (t as any).deadlineAt || null,
+              acceptCondition: (t as any).acceptCondition || 'NONE',
+              bountyStars: (t as any).bountyStars || 0,
+              bountyStatus: (t as any).bountyStatus || 'NONE',
+              status,
+              groupId: groupId,
+              groupTitle: groupId ? (gTitle.get(String(groupId)) || 'Без группы') : 'Моя группа',
+              isTelegramGroup: false,
+              creatorChatId: String((t as any).createdByChatId || (t as any).chatId || ''),
+              creatorName: '',
+              assigneeChatId: (t as any).assigneeChatId ? String((t as any).assigneeChatId) : null,
+              assigneeName: (t as any).assigneeName || null,
+              fromProcess: !!(t as any).fromProcess,
+              taskType: (t as any).type || 'TASK',
+            } as TaskFeedItem);
+          }
+        }
+        if (alive) setAchItems(items);
+      } catch { if (alive) setAchItems([]); }
+    })();
+    return () => { alive = false; };
+  }, [achFilter, meChatId, reloadKey]);
 
   // выбор области
   const [scope, setScope] = useState<FeedScope>({ kind: 'all' });
@@ -239,9 +317,7 @@ export default function HomePage({
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
 
-  const meChatId = String(
-    WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || ''
-  );
+  // meChatId уже объявлен выше
 
   // Свайп вправо по карточке => быстрый запуск создания предзадачи (как по 🔘)
   const swipeState = useRef<{ id: string | null; sx: number; sy: number } | null>(null);
@@ -828,7 +904,8 @@ export default function HomePage({
         }}
       >
         {PAGES.map((pg) => {
-          const pageItems = filteredItems.filter((t: any) => {
+          const baseList = achFilter !== 'none' && pg.key === 'all' && achItems ? achItems : filteredItems;
+          const pageItems = baseList.filter((t: any) => {
             if (pg.key === 'all') return true;
             return String(phaseOf(t)) === pg.key;
           });
