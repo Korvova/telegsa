@@ -168,6 +168,10 @@ model User {
   tonWalletApp  String?
   tonVerifiedAt DateTime?
   tonVerifyNonce String?
+  // Rank/Rating snapshot (optional, for caching or manual overrides)
+  rankScore   Int      @default(0)   // итоговые очки 🦅/score
+  rankLevel   String?               // слаг/икон-уровень (например, "squirrel", "eagle")
+  rankUpdatedAt DateTime?           // когда обновлялся снапшот
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

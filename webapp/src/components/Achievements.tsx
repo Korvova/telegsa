@@ -1,7 +1,7 @@
 // webapp/src/components/Achievements.tsx
 import { useEffect, useMemo, useState } from 'react';
 import type { TaskFeedItem } from '../api';
-import { getMyRating, getMyAcorns, getMyCreatedStats, countCreatedTasks, type RatingStats } from '../api';
+import { listGroups, fetchBoard, type Column } from '../api';
 import OverlayModal from './OverlayModal';
 import AchievementsRulesModal from './AchievementsRulesModal';
 
@@ -132,56 +132,93 @@ export function pickRank(eaglesScore: number): { current: RankDef; next: RankDef
   return { current, next };
 }
 
-export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskFeedItem[]; meChatId: string; reloadToken?: number }) {
-  const [serverStats, setServerStats] = useState<RatingStats | null>(null);
+export type AchFilterKey = 'none' | 'acorns' | 'seedlings' | 'eagles' | 'loadBlack' | 'rockets';
+
+export function AchievementsBar({
+  items,
+  meChatId,
+  reloadToken,
+  onFilter,
+}: {
+  items: TaskFeedItem[];
+  meChatId: string;
+  reloadToken?: number;
+  onFilter?: (key: AchFilterKey) => void;
+}) {
+  const [serverStats, setServerStats] = useState<AchStats | null>(null);
   const itemsSig = useMemo(() => items.map((t) => `${t.id}:${String(t.status||'')}:${String(t.assigneeChatId||'')}`).join('|'), [items]);
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         if (!meChatId) return;
-        // try primary /tasks/created/count (prod-safe), then extra stats
-        const [createdActive, r, a, cs] = await Promise.all([
-          countCreatedTasks(meChatId, 'active').catch(()=>({ ok:false, count: undefined } as { ok: boolean; count?: number })),
-          getMyRating(meChatId).catch(()=>({ ok:false } as any)),
-          getMyAcorns(meChatId).catch(()=>({ ok:false } as { ok: boolean; count?: number })),
-          getMyCreatedStats(meChatId).catch(()=>({ ok:false } as any)),
-        ]);
-        if (alive && r?.ok && r.stats) {
-          const st = r.stats as RatingStats;
-          if (createdActive && (createdActive as any).ok && typeof (createdActive as any).count === 'number') st.acorns = (createdActive as any).count as number;
-          else if (cs?.ok && typeof cs.active === 'number') st.acorns = cs.active;
-          else if (a?.ok && typeof a.count === 'number') st.acorns = a.count; // fallback
-          setServerStats(st);
-        } else if (alive && (((createdActive as any)?.ok) || cs?.ok || a?.ok)) {
-          setServerStats({
-            acorns: (((createdActive as any)?.count) ?? (cs as any)?.active ?? (a as any)?.count ?? 0) as number,
-            seedlings: 0, seedlingsRemainder: 0, eaglesBase: 0, eaglesFromSeedlings: 0, eagles: 0, phoenix: 0,
-            loadBlack: 0, loadRed: 0, loadRedInt: 0, rockets: 0, rocketsAfterPenalty: 0, bombs: 0,
-          });
+        // Client-side full compute over all boards (no server-only rating routes)
+        const isBase = (name: string) => {
+          const i = name.indexOf('::');
+          return (i >= 0 ? name.slice(i + 2) : name).toLowerCase();
+        };
+        const allCols: Column[] = [];
+        const def = await fetchBoard(meChatId).catch(() => null as any);
+        if (def && (def as any).columns) allCols.push(...((def as any).columns as Column[]));
+        const gs = await listGroups(meChatId).catch(() => ({ ok:false, groups: [] } as any));
+        const groups = (gs && (gs as any).groups) || [];
+        for (const g of groups) {
+          const b = await fetchBoard(meChatId, String(g.id)).catch(() => null as any);
+          if (b && (b as any).columns) allCols.push(...((b as any).columns as Column[]));
         }
+        const now = Date.now();
+        let acorns = 0, seedlings = 0, eaglesBase = 0, rockets = 0, loadBlack = 0, bombs = 0;
+        for (const c of allCols) {
+          const base = isBase(String(c.name));
+          const done = base === 'done';
+          const cancel = base === 'cancel';
+          const active = !done && !cancel;
+          for (const t of c.tasks || []) {
+            const creator = String((t as any).createdByChatId || '');
+            const assignee = (t as any).assigneeChatId ? String((t as any).assigneeChatId) : '';
+            const mine = creator === String(meChatId);
+            if (mine) acorns += 1; // total поставленные мной
+            if (mine && done && assignee === String(meChatId)) seedlings += 1;
+            if (mine && done && assignee && assignee !== String(meChatId)) eaglesBase += 1;
+            if (!mine && done && assignee === String(meChatId)) rockets += 1;
+            if (!mine && active && assignee === String(meChatId)) loadBlack += 1;
+            const dl = (t as any).deadlineAt ? Date.parse(String((t as any).deadlineAt)) : NaN;
+            if (!Number.isNaN(dl) && dl < now && active && assignee === String(meChatId)) bombs += 1;
+          }
+        }
+        const eaglesFromSeedlings = Math.floor(seedlings / 100);
+        let eagles = eaglesBase + eaglesFromSeedlings;
+        const loadRed = loadBlack > 100 ? loadBlack / 100 : 0;
+        const loadRedInt = Math.floor(loadRed);
+        eagles = Math.max(0, eagles - loadRedInt);
+        eagles = Math.max(0, eagles - bombs);
+        const rocketsAfterPenalty = Math.max(0, rockets - bombs);
+        const phoenix = eagles >= 100 ? Math.floor(eagles / 100) : 0;
+        const st: AchStats = {
+          acorns,
+          seedlings,
+          seedlingsRemainder: seedlings % 100,
+          eaglesBase,
+          eagles,
+          eaglesFromSeedlings,
+          phoenix,
+          loadBlack,
+          loadRed,
+          loadRedInt,
+          rockets,
+          rocketsAfterPenalty,
+          bombs,
+        };
+        if (alive) setServerStats(st);
       } catch {}
     })();
     return () => { alive = false; };
   }, [meChatId, reloadToken, itemsSig]);
 
   const local = useMemo(() => computeAchievements(items, meChatId), [items, meChatId]);
-  const stats: AchStats = serverStats ? {
-    acorns: (serverStats as any).acornsActive ?? serverStats.acorns,
-    seedlings: serverStats.seedlings,
-    seedlingsRemainder: serverStats.seedlingsRemainder,
-    eaglesBase: serverStats.eaglesBase,
-    eagles: serverStats.eagles,
-    eaglesFromSeedlings: serverStats.eaglesFromSeedlings,
-    phoenix: serverStats.phoenix,
-    loadBlack: serverStats.loadBlack,
-    loadRed: serverStats.loadRed,
-    loadRedInt: serverStats.loadRedInt,
-    rockets: serverStats.rockets,
-    rocketsAfterPenalty: serverStats.rocketsAfterPenalty,
-    bombs: serverStats.bombs,
-  } : local;
-  const [open, setOpen] = useState(false);
+  const stats: AchStats = serverStats || local;
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const parts: string[] = [];
   if (stats.acorns > 0) parts.push(`${stats.acorns}🌰`);
@@ -201,24 +238,40 @@ export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskF
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title="Показать правила рейтинга"
-        style={{
-          background: '#101626',
-          color: '#e8eaed',
-          border: '1px solid #2a3346',
-          borderRadius: 999,
-          padding: '4px 10px',
-          fontSize: 12,
-          whiteSpace: 'nowrap',
-          cursor: 'pointer',
-        }}
-      >
-        {parts.join(' | ')}
-      </button>
+      <div style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+        <button
+          onClick={() => setDetailOpen(true)}
+          title="Подробная статистика"
+          style={{
+            background: '#101626',
+            color: '#e8eaed',
+            border: '1px solid #2a3346',
+            borderRadius: 999,
+            padding: '4px 10px',
+            fontSize: 12,
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+          }}
+        >
+          {parts.join(' | ')}
+        </button>
+        <button
+          onClick={() => setRulesOpen(true)}
+          title="Пояснение"
+          style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:14 }}
+        >
+          (i)
+        </button>
+      </div>
 
-      <AchievementsRulesModal open={open} onClose={() => setOpen(false)} />
+      <AchievementsRulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      {detailOpen && (
+        <AchievementsDetailModal
+          stats={stats}
+          onClose={() => setDetailOpen(false)}
+          onPick={(k) => { setDetailOpen(false); onFilter && onFilter(k); }}
+        />
+      )}
     </>
   );
 }
@@ -240,6 +293,38 @@ export function RankBadgeButton({ items, meChatId }: { items: TaskFeedItem[]; me
       </button>
       {open && <RankModal open={open} onClose={() => setOpen(false)} stats={stats} />}
     </>
+  );
+}
+
+function ItemRow({ icon, label, count, onClick }: { icon: string; label: string; count: number; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background:'transparent', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:10, padding:'8px 10px', cursor:'pointer', textAlign:'left' }}
+    >
+      <span style={{ fontSize:18 }}>{icon}</span>
+      <span style={{ flex:1 }}>{label}</span>
+      <b>{count}</b>
+    </button>
+  );
+}
+
+function AchievementsDetailModal({ stats, onClose, onPick }: { stats: AchStats; onClose: () => void; onPick: (k: AchFilterKey) => void }) {
+  return (
+    <OverlayModal open={true} onClose={onClose} maxWidth={580}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+        <div style={{ fontWeight:800, fontSize:16 }}>Очивки — детали</div>
+        <div style={{ marginLeft:'auto' }} />
+        <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:18 }}>✖</button>
+      </div>
+      <div style={{ display:'grid', gap:8 }}>
+        <ItemRow icon="🌰" label="Мои поставленные (всего)" count={stats.acorns} onClick={() => onPick('acorns')} />
+        <ItemRow icon="🌱" label="Собственные выполненные (я поставил и сделал)" count={stats.seedlings} onClick={() => onPick('seedlings')} />
+        <ItemRow icon="🦅" label="Выполнили другие (я поставил)" count={stats.eaglesBase} onClick={() => onPick('eagles')} />
+        <ItemRow icon="⚫" label="Нагрузка (на меня, поставил другой)" count={stats.loadBlack} onClick={() => onPick('loadBlack')} />
+        <ItemRow icon="🚀" label="Я выполнил (поставил другой)" count={stats.rockets} onClick={() => onPick('rockets')} />
+      </div>
+    </OverlayModal>
   );
 }
 

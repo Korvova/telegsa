@@ -1097,7 +1097,11 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                                       arm: true,
                                     });
                                     if (!resp?.ok) throw new Error(resp?.error || 'pretask_create_failed');
-                                    try { window.dispatchEvent(new CustomEvent('pre-task-created', { detail: resp?.preTask || null })); } catch {}
+                                    try {
+                                      const parentsTask = (preCfg.links || []).filter((l:any)=>l.taskId).map((l:any)=>String(l.taskId));
+                                      const parentsPre = (preCfg.links || []).filter((l:any)=>l.preTaskId).map((l:any)=>String(l.preTaskId));
+                                      window.dispatchEvent(new CustomEvent('pre-task-created', { detail: { preTask: (resp as any)?.preTask || null, parentTaskIds: parentsTask, parentPreTaskIds: parentsPre } }));
+                                    } catch {}
                                     setText('');
                                     setPreCfg(null);
                                     onCreated?.();

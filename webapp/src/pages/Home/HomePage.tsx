@@ -22,7 +22,7 @@ import PreTaskEditModal from '../../components/PreTaskEditModal';
 import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
 import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
-import { AchievementsBar, RankBadgeButton } from '../../components/Achievements';
+import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
 import type { StageKey } from '../../components/StageScroller';
@@ -206,6 +206,7 @@ export default function HomePage({
   const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
   const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
   const [manageForTask, setManageForTask] = useState<{ id: string } | null>(null);
+  const [achFilter, setAchFilter] = useState<AchFilterKey>('none');
 
   // выбор области
   const [scope, setScope] = useState<FeedScope>({ kind: 'all' });
@@ -570,12 +571,38 @@ export default function HomePage({
 
   // базовая фильтрация + по ярлыку
   const filteredItems = useMemo(() => {
-    const base = items.filter((t: any) => {
+    const baseScoped = items.filter((t: any) => {
       if (scope.kind === 'all') return true;
       return String(t.groupId || '') === String(scope.groupId);
     });
 
-    if (!(scope.kind === 'group') || !selectedLabel) return base;
+    const base = baseScoped;
+    if (!(scope.kind === 'group') || !selectedLabel) {
+      // apply achievements filter even without label
+      const withAch = base.filter((t: any) => {
+        const phase = String(phaseOf(t)).toLowerCase();
+        const done = phase === 'done';
+        const cancel = phase === 'cancel';
+        const active = !done && !cancel;
+        const creatorMe = String((t as any).creatorChatId || '') === String(meChatId);
+        const assigneeMe = String((t as any).assigneeChatId || '') === String(meChatId);
+        switch (achFilter) {
+          case 'acorns':
+            return creatorMe; // total
+          case 'seedlings':
+            return done && creatorMe && assigneeMe;
+          case 'eagles':
+            return done && creatorMe && !assigneeMe && !!(t as any).assigneeChatId === false ? false : (done && creatorMe && String((t as any).assigneeChatId || '') !== String(meChatId) && !!(t as any).assigneeChatId);
+          case 'loadBlack':
+            return active && assigneeMe && !creatorMe;
+          case 'rockets':
+            return done && assigneeMe && !creatorMe;
+          default:
+            return true;
+        }
+      });
+      return withAch;
+    }
 
     const matchTitle = selectedLabel.title.trim().toLowerCase();
     const hasLabel = (t: any) => {
@@ -595,8 +622,31 @@ export default function HomePage({
       return false;
     };
 
-    return base.filter(hasLabel);
-  }, [items, scope, selectedLabel, labelsByTask]);
+    const byLabel = base.filter(hasLabel);
+    const withAch = byLabel.filter((t: any) => {
+      const phase = String(phaseOf(t)).toLowerCase();
+      const done = phase === 'done';
+      const cancel = phase === 'cancel';
+      const active = !done && !cancel;
+      const creatorMe = String((t as any).creatorChatId || '') === String(meChatId);
+      const assigneeMe = String((t as any).assigneeChatId || '') === String(meChatId);
+      switch (achFilter) {
+        case 'acorns':
+          return creatorMe;
+        case 'seedlings':
+          return done && creatorMe && assigneeMe;
+        case 'eagles':
+          return done && creatorMe && String((t as any).assigneeChatId || '') !== String(meChatId) && !!(t as any).assigneeChatId;
+        case 'loadBlack':
+          return active && assigneeMe && !creatorMe;
+        case 'rockets':
+          return done && assigneeMe && !creatorMe;
+        default:
+          return true;
+      }
+    });
+    return withAch;
+  }, [items, scope, selectedLabel, labelsByTask, achFilter, meChatId]);
 
   // локальный патч только выбранного айтема
   const patchItem = (id: string, patch: Partial<TaskFeedItem> & Record<string, any>) => {
@@ -819,8 +869,22 @@ export default function HomePage({
 
                 {/* Очивки рядом с «Все» */}
                 {pg.key === 'all' ? (
-                  <div style={{ marginLeft: 8 }}>
-                    <AchievementsBar items={items} meChatId={meChatId} reloadToken={reloadKey} />
+                  <div style={{ marginLeft: 8, display:'inline-flex', alignItems:'center', gap:6 }}>
+                    <AchievementsBar
+                      items={items}
+                      meChatId={meChatId}
+                      reloadToken={reloadKey}
+                      onFilter={(k) => setAchFilter(k)}
+                    />
+                    {achFilter !== 'none' && (
+                      <button
+                        onClick={() => setAchFilter('none')}
+                        title="Сбросить фильтр"
+                        style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:12 }}
+                      >
+                        ✕ фильтр
+                      </button>
+                    )}
                   </div>
                 ) : null}
 
