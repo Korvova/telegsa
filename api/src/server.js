@@ -27,6 +27,7 @@ import { watchersRouter } from './routes/watchers.js';
 import { walletTonRouter } from './routes/wallet-ton.js';
 import { remindersRouter } from './routes/reminders.js';
 import { preTasksRouter } from './routes/pretasks.js';
+import { rankRouter } from './routes/rank.js';
 import { ratingRouter } from './routes/rating.js';
 
 
@@ -405,6 +406,7 @@ app.use(deadlineRouter);
 
 // Рейтинг и прокачка
 app.use(ratingRouter);
+app.use(rankRouter);
 
 /* ---------- Мероприятия ---------- */
 

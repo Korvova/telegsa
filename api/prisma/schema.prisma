@@ -47,6 +47,26 @@ enum EventRole {
   PARTICIPANT
 }
 
+// Rank enum for users
+enum UserRank {
+  ANT
+  FISH
+  SCORPION
+  SQUIRREL
+  CAT
+  DOG
+  WOLF
+  BEAR
+  EAGLE
+  HORSE
+  DRAGON
+  SHARK
+  ELEPHANT
+  TREX
+  TIGER
+  LION
+}
+
 /**
  * -------------------- TASKS --------------------
  */
@@ -168,6 +188,8 @@ model User {
   tonWalletApp  String?
   tonVerifiedAt DateTime?
   tonVerifyNonce String?
+  // Rank snapshot
+  rank        UserRank @default(ANT)
   // Rank/Rating snapshot (optional, for caching or manual overrides)
   rankScore   Int      @default(0)   // итоговые очки 🦅/score
   rankLevel   String?               // слаг/икон-уровень (например, "squirrel", "eagle")

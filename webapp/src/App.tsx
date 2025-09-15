@@ -56,6 +56,7 @@ import { CSS } from '@dnd-kit/utilities';
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 import SettingsStars from './SettingsStars';
+import SettingsRank from './components/SettingsRank';
 
 /* ---------------- helpers ---------------- */
 function useChatId() {
@@ -1298,6 +1299,9 @@ setPersistSeedSession(false);
 
               {/* Звёзды — сводка и способ получения (SBP) */}
               <SettingsStars chatId={chatId} />
+
+              {/* Ранг пользователя */}
+              <SettingsRank chatId={chatId} />
 
               {/* тут можно добавить другие пункты настроек позже */}
             </div>
