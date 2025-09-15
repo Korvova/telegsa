@@ -126,8 +126,9 @@ router.get('/me/rating', async (req, res) => {
 
     const now = new Date();
 
-    const [acorns, seedlings, eaglesBase, rockets, loadBlack, bombs] = await Promise.all([
+    const [acornsTotal, acornsActive, seedlings, eaglesBase, rockets, loadBlack, bombs] = await Promise.all([
       prisma.task.count({ where: { ...creatorIsMe(me) } }),
+      prisma.task.count({ where: { AND: [creatorIsMe(me), activeFilter()] } }),
       prisma.task.count({ where: { AND: [doneFilter(), creatorIsMe(me), { assigneeChatId: me }] } }),
       prisma.task.count({ where: { AND: [doneFilter(), creatorIsMe(me), { assigneeChatId: { not: null } }, { assigneeChatId: { not: me } }] } }),
       prisma.task.count({ where: { AND: [doneFilter(), { assigneeChatId: me }, creatorIsNotMe(me)] } }),
@@ -152,7 +153,8 @@ router.get('/me/rating', async (req, res) => {
     res.json({
       ok: true,
       stats: {
-        acorns,
+        acorns: acornsTotal,
+        acornsActive,
         seedlings,
         seedlingsRemainder,
         eaglesBase,
@@ -181,10 +183,29 @@ router.get('/me/acorns', async (req, res) => {
   try {
     const me = String(req.query.chatId || '').trim();
     if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
-    const count = await prisma.task.count({ where: { createdByChatId: me } });
+    const count = await prisma.task.count({ where: creatorIsMe(me) });
     res.json({ ok: true, count });
   } catch (e) {
     console.error('GET /me/acorns error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// Created-by-me stats split by status (Done/Cancel/Active)
+router.get('/me/created-stats', async (req, res) => {
+  try {
+    const me = String(req.query.chatId || '').trim();
+    if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const whereCreator = creatorIsMe(me);
+    const [total, done, cancel] = await Promise.all([
+      prisma.task.count({ where: whereCreator }),
+      prisma.task.count({ where: { AND: [whereCreator, doneFilter()] } }),
+      prisma.task.count({ where: { AND: [whereCreator, { OR: [...CANCEL_FILTER] }] } }),
+    ]);
+    const active = Math.max(0, total - done - cancel);
+    res.json({ ok: true, total, done, cancel, active });
+  } catch (e) {
+    console.error('GET /me/created-stats error:', e);
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });

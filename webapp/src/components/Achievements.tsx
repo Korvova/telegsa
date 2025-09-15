@@ -1,7 +1,7 @@
 // webapp/src/components/Achievements.tsx
 import { useEffect, useMemo, useState } from 'react';
 import type { TaskFeedItem } from '../api';
-import { getMyRating, getMyAcorns, type RatingStats } from '../api';
+import { getMyRating, getMyAcorns, getMyCreatedStats, countCreatedTasks, type RatingStats } from '../api';
 import OverlayModal from './OverlayModal';
 import AchievementsRulesModal from './AchievementsRulesModal';
 
@@ -134,19 +134,28 @@ export function pickRank(eaglesScore: number): { current: RankDef; next: RankDef
 
 export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskFeedItem[]; meChatId: string; reloadToken?: number }) {
   const [serverStats, setServerStats] = useState<RatingStats | null>(null);
+  const itemsSig = useMemo(() => items.map((t) => `${t.id}:${String(t.status||'')}:${String(t.assigneeChatId||'')}`).join('|'), [items]);
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         if (!meChatId) return;
-        const [r, a] = await Promise.all([getMyRating(meChatId), getMyAcorns(meChatId)]);
+        // try primary /tasks/created/count (prod-safe), then extra stats
+        const [createdActive, r, a, cs] = await Promise.all([
+          countCreatedTasks(meChatId, 'active').catch(()=>({ ok:false, count: undefined } as { ok: boolean; count?: number })),
+          getMyRating(meChatId).catch(()=>({ ok:false } as any)),
+          getMyAcorns(meChatId).catch(()=>({ ok:false } as { ok: boolean; count?: number })),
+          getMyCreatedStats(meChatId).catch(()=>({ ok:false } as any)),
+        ]);
         if (alive && r?.ok && r.stats) {
           const st = r.stats as RatingStats;
-          if (a?.ok && typeof a.count === 'number') st.acorns = a.count;
+          if (createdActive && (createdActive as any).ok && typeof (createdActive as any).count === 'number') st.acorns = (createdActive as any).count as number;
+          else if (cs?.ok && typeof cs.active === 'number') st.acorns = cs.active;
+          else if (a?.ok && typeof a.count === 'number') st.acorns = a.count; // fallback
           setServerStats(st);
-        } else if (alive && a?.ok && typeof a.count === 'number') {
+        } else if (alive && (((createdActive as any)?.ok) || cs?.ok || a?.ok)) {
           setServerStats({
-            acorns: a.count,
+            acorns: (((createdActive as any)?.count) ?? (cs as any)?.active ?? (a as any)?.count ?? 0) as number,
             seedlings: 0, seedlingsRemainder: 0, eaglesBase: 0, eaglesFromSeedlings: 0, eagles: 0, phoenix: 0,
             loadBlack: 0, loadRed: 0, loadRedInt: 0, rockets: 0, rocketsAfterPenalty: 0, bombs: 0,
           });
@@ -154,11 +163,11 @@ export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskF
       } catch {}
     })();
     return () => { alive = false; };
-  }, [meChatId, reloadToken]);
+  }, [meChatId, reloadToken, itemsSig]);
 
   const local = useMemo(() => computeAchievements(items, meChatId), [items, meChatId]);
   const stats: AchStats = serverStats ? {
-    acorns: serverStats.acorns,
+    acorns: (serverStats as any).acornsActive ?? serverStats.acorns,
     seedlings: serverStats.seedlings,
     seedlingsRemainder: serverStats.seedlingsRemainder,
     eaglesBase: serverStats.eaglesBase,
@@ -176,7 +185,7 @@ export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskF
 
   const parts: string[] = [];
   if (stats.acorns > 0) parts.push(`${stats.acorns}🌰`);
-  if (stats.seedlingsRemainder > 0) parts.push(`${stats.seedlingsRemainder}🌱`);
+  if (stats.seedlings > 0) parts.push(`${stats.seedlings}🌱`);
 
   if (stats.phoenix > 0) parts.push(`${stats.phoenix} 🐦‍🔥`);
   else if (stats.eagles > 0) parts.push(`${stats.eagles} 🦅`);

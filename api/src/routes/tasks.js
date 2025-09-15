@@ -8,6 +8,25 @@ const router = Router();
 
 const GROUP_SEP = '::';
 
+// Status filters (column-name based)
+const DONE_FILTER = [
+  { column: { name: { equals: 'Done' } } },
+  { column: { name: { endsWith: '::Done' } } },
+];
+const CANCEL_FILTER = [
+  { column: { name: { equals: 'Cancel' } } },
+  { column: { name: { endsWith: '::Cancel' } } },
+];
+
+function creatorIsMe(me) {
+  return {
+    OR: [
+      { createdByChatId: String(me) },
+      { AND: [{ createdByChatId: null }, { chatId: String(me) }] },
+    ],
+  };
+}
+
 // --- Telegram helper (локально для этого файла) ---
 async function tg(method, payload) {
   const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
@@ -562,5 +581,27 @@ const items = tasks.map(t => {
   }
 });
 
+
+// GET /tasks/created/count?chatId=ME&mode=active|total|done|cancel
+router.get('/created/count', async (req, res) => {
+  try {
+    const me = String(req.query.chatId || '').trim();
+    const mode = String(req.query.mode || 'active').toLowerCase();
+    if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    const byMe = creatorIsMe(me);
+    let where = byMe;
+    if (mode === 'active') where = { AND: [byMe, { NOT: { OR: [...DONE_FILTER, ...CANCEL_FILTER] } }] };
+    else if (mode === 'done') where = { AND: [byMe, { OR: [...DONE_FILTER] }] };
+    else if (mode === 'cancel') where = { AND: [byMe, { OR: [...CANCEL_FILTER] }] };
+    // else total
+
+    const count = await prisma.task.count({ where });
+    res.json({ ok: true, count });
+  } catch (e) {
+    console.error('GET /tasks/created/count error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
 
 export { router as tasksRouter };

@@ -733,6 +733,23 @@ export async function getMyAcorns(chatId: string): Promise<{ ok: boolean; count?
   return j;
 }
 
+export async function getMyCreatedStats(chatId: string): Promise<{ ok: boolean; total?: number; done?: number; cancel?: number; active?: number }> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/me/created-stats?chatId=${encodeURIComponent(chatId)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
+// Reliable endpoint under /tasks namespace (works on prod proxy)
+export async function countCreatedTasks(chatId: string, mode: 'active'|'total'|'done'|'cancel' = 'active'):
+  Promise<{ ok: boolean; count?: number }>
+{
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/tasks/created/count?chatId=${encodeURIComponent(chatId)}&mode=${encodeURIComponent(mode)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
 
 
 
