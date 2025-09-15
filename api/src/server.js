@@ -27,6 +27,7 @@ import { watchersRouter } from './routes/watchers.js';
 import { walletTonRouter } from './routes/wallet-ton.js';
 import { remindersRouter } from './routes/reminders.js';
 import { preTasksRouter } from './routes/pretasks.js';
+import { ratingRouter } from './routes/rating.js';
 
 
 import { execa } from 'execa';
@@ -401,6 +402,9 @@ app.use(walletTonRouter());
 app.use(acceptRouter);
 // дедлайны (отдельный роутер, но в пространстве /tasks)
 app.use(deadlineRouter);
+
+// Рейтинг и прокачка
+app.use(ratingRouter);
 
 /* ---------- Мероприятия ---------- */
 

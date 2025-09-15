@@ -22,6 +22,7 @@ import PreTaskEditModal from '../../components/PreTaskEditModal';
 import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
 import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
+import { AchievementsBar, RankBadgeButton } from '../../components/Achievements';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
 import type { StageKey } from '../../components/StageScroller';
@@ -146,6 +147,60 @@ export default function HomePage({
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [preTasks, setPreTasks] = useState<PreTaskDTO[]>([]);
+  // Эфемерные дети (сразу после создания, до того как links «дописались» на сервере)
+  const [ephemeralChildren, setEphemeralChildren] = useState<Record<string, any[]>>({});
+  // debug helpers for after-stripe
+  const logChildrenForTask = (tid: string) => {
+    try {
+      const t = items.find((x:any)=> String(x.id)===String(tid));
+      const ttext = String((t as any)?.text || '');
+      let firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===String(tid));
+      if (!firedOfTask.length && ttext) firedOfTask = preTasks.filter((p:any)=> String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+      const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+      const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===String(tid)));
+      const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+      const uniq = new Set<string>();
+      for (const x of direct) uniq.add(String((x as any).id));
+      for (const x of viaFired) uniq.add(String((x as any).id));
+      console.log('[AFTER_STRIPE_TASK]', {
+        taskId: String(tid),
+        text: ttext,
+        firedIds: Array.from(firedIds),
+        directIds: direct.map((x:any)=>String(x.id)),
+        viaFiredIds: viaFired.map((x:any)=>String(x.id)),
+        total: uniq.size,
+      });
+    } catch (e) { console.log('[AFTER_STRIPE_TASK][ERR]', e); }
+  };
+  const logChildrenForPre = (pid: string) => {
+    try {
+      const children = preTasks.filter((x:any) => String(x.id)!==String(pid) && Array.isArray((x as any).links) && (x as any).links.some((l:any)=> String((l as any).depPreTaskId || (l as any).preTaskId || '')===String(pid)));
+      console.log('[AFTER_STRIPE_PRE]', { preId: String(pid), childIds: children.map((x:any)=>String(x.id)), count: children.length });
+    } catch (e) { console.log('[AFTER_STRIPE_PRE][ERR]', e); }
+  };
+  // общая подгрузка предзадач (в т.ч. FIRED)
+  const refreshPreTasks = async () => {
+    try {
+      const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED','FIRED'] });
+      if ((pr as any)?.ok) setPreTasks((pr as any).preTasks || []);
+    } catch {}
+  };
+
+  // Точечно подтянуть один preTask (актуализировать links)
+  const ensurePreTaskFresh = async (pid: string) => {
+    try {
+      const api = await import('../../api');
+      const full = await api.getPreTask(String(pid));
+      const p = (full as any)?.preTask;
+      if (p && p.id) {
+        setPreTasks((prev) => {
+          const map = new Map(prev.map((x:any)=>[String(x.id), x]));
+          map.set(String(p.id), p as any);
+          return Array.from(map.values());
+        });
+      }
+    } catch {}
+  };
   const [openPreTask, setOpenPreTask] = useState<PreTaskDTO | null>(null);
   const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
   const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
@@ -292,7 +347,7 @@ export default function HomePage({
           setHasMore(r.hasMore);
         }
         try {
-          const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] });
+          const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED','FIRED'] });
           if (alive && pr.ok) setPreTasks(pr.preTasks || []);
         } catch {}
       } finally {
@@ -305,19 +360,67 @@ export default function HomePage({
     };
   }, [chatId, search, reloadKey]);
 
-  // Оптимистичное добавление предзадачи без ожидания перезагрузки
+  // После создания предзадачи — быстро перезагрузим список, чтобы подтянуть корректные связи (links)
   useEffect(() => {
-    const h = (e: Event) => {
-      const p = (e as CustomEvent<any>)?.detail;
-      if (!p || !p.id) return;
-      setPreTasks((prev) => {
-        if (prev.some((x:any) => String((x as any).id) === String(p.id))) return prev;
-        return [p as any, ...prev];
-      });
+    const h = async (e: Event) => {
+      const detailAny: any = (e as any)?.detail || null;
+      const pre = (detailAny && detailAny.preTask) || detailAny;
+      const parentTaskIds: string[] = (detailAny && detailAny.parentTaskIds) || [];
+      const parentPreTaskIds: string[] = (detailAny && detailAny.parentPreTaskIds) || [];
+      try { console.log('[EVENT] pre-task-created', detailAny); } catch {}
+      // 1) обновим общий список
+      await refreshPreTasks();
+      // 2) если известно id новой предзадачи — подтянем её полностью и раскроем родителя
+      try {
+        const nid = String(pre?.id || '');
+        if (nid) {
+          const api = await import('../../api');
+          const full = await api.getPreTask(nid);
+          const p = (full as any)?.preTask;
+          if (p && Array.isArray((p as any).links)) {
+            let parentIds: string[] = (p as any).links
+              .map((l:any)=> String((l as any).depPreTaskId || (l as any).preTaskId || ''))
+              .filter(Boolean);
+            // дополним родителями из payload события
+            parentIds = Array.from(new Set([...parentIds, ...parentPreTaskIds]));
+            // сохраним эфемерных детей для мгновенного отображения
+            if (parentIds.length) {
+              setEphemeralChildren(prev => {
+                const next: Record<string, any[]> = { ...prev };
+                for (const pid of parentIds) {
+                  const arr = next[String(pid)] || [];
+                  // если такого id ещё нет — добавим
+                  if (!arr.some((x:any)=> String((x as any).id)===String(p.id))) next[String(pid)] = [p, ...arr];
+                }
+                return next;
+              });
+            }
+            if (parentIds.length) {
+              setOpenAfter(prev => {
+                const next = { ...prev } as any;
+                for (const pid of parentIds) next[`P:${pid}`] = true;
+                return next;
+              });
+              // точечно освежим каждого родителя
+              for (const pid of parentIds) { try { await ensurePreTaskFresh(pid); } catch {} }
+            }
+            // раскрыть и для parent-task, если были переданы
+            if (Array.isArray(parentTaskIds) && parentTaskIds.length) {
+              setOpenAfter(prev => {
+                const next = { ...prev } as any;
+                for (const tid of parentTaskIds) next[`T:${tid}`] = true;
+                return next;
+              });
+            }
+          }
+        }
+      } catch {}
+      // 3) повторная подгрузка через небольшой лаг — на случай отложенной записи связей
+      setTimeout(() => { refreshPreTasks(); }, 800);
     };
     window.addEventListener('pre-task-created', h as EventListener);
     return () => window.removeEventListener('pre-task-created', h as EventListener);
-  }, []);
+  }, [chatId]);
 
   // подтянуть имена для предзадач (owner + members групп)
   useEffect(() => {
@@ -630,6 +733,8 @@ export default function HomePage({
           {scope.kind === 'group' ? currentGroupTitle || 'Выбрана группа' : 'Выбрать группу'}
         </button>
         <div style={{ marginLeft: 'auto' }} />
+        {/* Текущий ранг рядом с 🔎 */}
+        <RankBadgeButton items={items} meChatId={meChatId} />
         <button
           onClick={() => setSearchOpen((v) => !v)}
           style={{ background: 'transparent', border: 'none', color: '#c7d2fe', cursor: 'pointer', fontSize: 18 }}
@@ -712,6 +817,13 @@ export default function HomePage({
                   {pg.label}
                 </span>
 
+                {/* Очивки рядом с «Все» */}
+                {pg.key === 'all' ? (
+                  <div style={{ marginLeft: 8 }}>
+                    <AchievementsBar items={items} meChatId={meChatId} />
+                  </div>
+                ) : null}
+
                 {scope.kind === 'group' && (
                   <button
                     onClick={async () => {
@@ -737,105 +849,12 @@ export default function HomePage({
               </div>
 
               {(() => {
-                let __preIdx = 0;
-                const __preSorted = [...preTasks].sort((a, b) => {
-                  const ta = new Date(a.createdAt || a.updatedAt || 0).getTime();
-                  const tb = new Date(b.createdAt || b.updatedAt || 0).getTime();
-                  return tb - ta;
-                });
                 return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {pageItems.length ? (
                   pageItems.map((t) => {
                     const injected: any[] = [];
-                    if (pg.key === 'all') {
-                      const tTime = new Date((t as any).createdAt || (t as any).updatedAt || 0).getTime();
-                      while (__preIdx < __preSorted.length) {
-                        const p = __preSorted[__preIdx];
-                        const pTime = new Date(p.createdAt || p.updatedAt || 0).getTime();
-                        if (pTime >= tTime) {
-                          injected.push(
-                            <div key={`pre-${p.id}`} style={{ position:'relative' }}>
-                              {/* Подложка для свайпа у предзадачи */}
-                              {pg.key==='all' && preSwipeUi.id === String(p.id) ? (
-                                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
-                                  <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
-                                </div>
-                              ) : null}
-                              <div
-                                style={{ margin:'0 12px', position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(p.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
-                                onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(p.id), e.clientX, e.clientY); }}
-                                onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(p.id)); }}
-                                onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(p.id), { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
-                                onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
-                                onTouchStart={(e) => { try { const touch = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && touch) beginPreSwipe(String(p.id), touch.clientX, touch.clientY); } catch {} }}
-                                onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(p.id)); }}
-                                onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(p.id), { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
-                                onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
-                              >
-                                {(() => {
-                                  const key = `P:${p.id}`;
-                                  const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
-                                  const cnt = children.length;
-                                  const footer = cnt ? (
-                                    <button
-                                      onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }}
-                                      style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
-                                    >
-                                      Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
-                                    </button>
-                                  ) : null;
-                                  return (
-                                    <PreTaskCard
-                                      p={p}
-                                      onOpen={(pp) => setOpenPreTask(pp)}
-                                      onEdit={(pp)=>setEditPreTask(pp)}
-                                      nameByChat={nameByChat}
-                                      groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'}
-                                      footer={footer}
-                                    />
-                                  );
-                                })()}
-                              </div>
-                              {/* Внешний список дочерних предзадач */}
-                              {(() => {
-                                const key = `P:${p.id}`;
-                                if (!openAfter[key]) return null;
-                                const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
-                                if (!children.length) return null;
-                                return (
-                                  <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
-                                    {children.map((cp:any) => (
-                                      <div key={`pchild-${cp.id}`} style={{ position:'relative' }}>
-                                        {pg.key==='all' && preSwipeUi.id === (cp as any).id ? (
-                                          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
-                                            <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
-                                          </div>
-                                        ) : null}
-                                        <div
-                                          style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === (cp as any).id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
-                                          onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe((cp as any).id, e.clientX, e.clientY); }}
-                                          onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, (cp as any).id); }}
-                                          onMouseUp={() => { if (pg.key==='all') endPreSwipe((cp as any).id, { text: (cp as any).text, groupId: (cp as any).groupId ?? null }); }}
-                                          onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
-                                          onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe((cp as any).id, t.clientX, t.clientY); } catch {} }}
-                                          onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, (cp as any).id); }}
-                                          onTouchEnd={() => { if (pg.key==='all') endPreSwipe((cp as any).id, { text: (cp as any).text, groupId: (cp as any).groupId ?? null }); }}
-                                          onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
-                                        >
-                                          <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          );
-                          __preIdx++;
-                        } else break;
-                      }
-                    }
+                    // Предзадачи не показываем в ленте сами по себе — только в раскрывающихся списках
                     const ph = phaseOf(t);
                     const { bg: cardBg, brd: cardBrd, chip: groupChipBg } = colorsForPhase(ph);
                     const eventTypeRaw = String(
@@ -999,7 +1018,22 @@ export default function HomePage({
                           {/* Edge pre-task badge on task card */}
                           {pg.key === 'all' ? (
                             (() => {
-                              const preCountForTask = __preSorted.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String((t as any).id))).length;
+                              // Считаем предзадачи для задачи: прямые (links.taskId == task.id)
+                              // и «унаследованные» от FIRED-предзадачи (children, у которых links.depPreTaskId == fired.id с fired.targetTaskId == task.id)
+                              const tid = String((t as any).id);
+                              const ttext = String((t as any).text || '');
+                              let firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===tid);
+                              // Fallback: иногда backend может не проставить targetTaskId — попробуем сопоставить по тексту
+                              if (!firedOfTask.length) {
+                                firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'') === ttext);
+                              }
+                              const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                              const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===tid));
+                              const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                              const uniq = new Set<string>();
+                              for (const x of direct) uniq.add(String((x as any).id));
+                              for (const x of viaFired) uniq.add(String((x as any).id));
+                              const preCountForTask = uniq.size;
                               return (
                                 <div style={{ position:'absolute', right: 0, top: 0, bottom: 0 }}>
                                   <EdgePreTaskBadge
@@ -1152,15 +1186,37 @@ export default function HomePage({
                           {/* Внутри карточки: Полоска «Запустят после (N) ⬇/⬆» */}
                           {(() => {
                             const id = (t as any).id as string;
-                            const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
+                            // Прямые претаски + претаски, привязанные к FIRED-родителю этой задачи
+                            const firedOfTask = (() => {
+                              const base = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===String(id));
+                              if (base.length) return base;
+                              const t = pageItems.find((x:any)=> String(x.id)===String(id));
+                              const ttext = String((t as any)?.text || '');
+                              return preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+                            })();
+                            const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                            const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===String(id)));
+                            const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                            const map = new Map<string, any>();
+                            for (const x of direct) map.set(String((x as any).id), x);
+                            for (const x of viaFired) map.set(String((x as any).id), x);
+                            const linked = Array.from(map.values());
                             const count = linked.length;
                             if (count <= 0) return null;
                             const key = `T:${id}`;
                             const isOpen = !!openAfter[key];
                             return (
                               <div style={{ marginTop: 6 }}>
-                                <button
-                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !isOpen })); }}
+                                <div
+                                  role="button"
+                                  onClick={async (e) => {
+                                    e.preventDefault(); e.stopPropagation();
+                                    setOpenAfter(prev => ({ ...prev, [key]: !isOpen }));
+                                    try { logChildrenForTask(String(id)); } catch {}
+                                    if (!isOpen) { // раскрываем — убедимся, что предзадачи актуальны
+                                      await refreshPreTasks();
+                                    }
+                                  }}
                                   style={{
                                     width: '100%',
                                     textAlign: 'left',
@@ -1175,7 +1231,7 @@ export default function HomePage({
                                   title={isOpen ? 'Свернуть список предзадач' : 'Показать предзадачи'}
                                 >
                                   Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
-                                </button>
+                                </div>
                               </div>
                             );
                           })()}
@@ -1187,7 +1243,21 @@ export default function HomePage({
                         const key = `T:${id}`;
                         const isOpen = !!openAfter[key];
                         if (!isOpen) return null;
-                        const linked = preTasks.filter(p => Array.isArray((p as any).links) && (p as any).links.some((l:any) => String(l.taskId||'') === String(id)));
+                        // Собираем детей: прямые + через FIRED-предзадачи (родителя задачи)
+                        const firedOfTask = (() => {
+                          const base = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===String(id));
+                          if (base.length) return base;
+                          const t = items.find((x:any)=> String(x.id)===String(id));
+                          const ttext = String((t as any)?.text || '');
+                          return preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+                        })();
+                        const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                        const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===String(id)));
+                        const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                        const map = new Map<string, any>();
+                        for (const x of direct) map.set(String((x as any).id), x);
+                        for (const x of viaFired) map.set(String((x as any).id), x);
+                        const linked = Array.from(map.values());
                         if (!linked.length) return null;
                         return (
                           <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
@@ -1214,7 +1284,7 @@ export default function HomePage({
                                     const children = preTasks.filter(x => String((x as any).id) !== String((p as any).id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String((p as any).id)));
                                     const cnt = children.length;
                                     const footer = cnt ? (
-                                      <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</button>
+                                      <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
                                     ) : null;
                                     return (
                                       <PreTaskCard
@@ -1237,7 +1307,7 @@ export default function HomePage({
                                   const children = preTasks.filter(x => String((x as any).id) !== String((p as any).id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String((p as any).id)));
                                   if (!children.length) return null;
                                   return (
-                                    <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                                    <div style={{ marginTop:4, display:'grid', gap:2 }}>
                                       {children.map((cp:any, idx:number) => (
                                         <div key={`plink-child-${cp.id}`} style={{ position:'relative' }}>
                                           {pg.key==='all' && preSwipeUi.id === String(cp.id) ? (
@@ -1245,8 +1315,8 @@ export default function HomePage({
                                               <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
                                             </div>
                                           ) : null}
-                                        <div
-                                          style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                          <div
+                                            style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
                                             onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
                                             onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(cp.id)); }}
                                             onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
@@ -1258,26 +1328,53 @@ export default function HomePage({
                                           >
                                             {(() => {
                                               const childKey = `P:${String(cp.id)}`;
-                                              const grand = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id)));
+                                              const baseGrand = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id)));
+                                              const eph = ephemeralChildren[String(cp.id)] || [];
+                                              const mapg = new Map<string, any>();
+                                              for (const g of baseGrand) mapg.set(String((g as any).id), g);
+                                              for (const g of eph) mapg.set(String((g as any).id), g);
+                                              const grand = Array.from(mapg.values());
                                               const cnt2 = grand.length;
                                               const foot2 = cnt2 ? (
-                                                <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</button>
+                                                <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</div>
                                               ) : null;
                                               return (
-                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
                                               );
                                             })()}
                                           </div>
                                           {(() => {
                                             const childKey = `P:${String(cp.id)}`;
                                             if (!openAfter[childKey]) return null;
-                                            const grand = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id)));
+                                            const baseGrand = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id)));
+                                            const eph = ephemeralChildren[String(cp.id)] || [];
+                                            const mapg = new Map<string, any>();
+                                            for (const g of baseGrand) mapg.set(String((g as any).id), g);
+                                            for (const g of eph) mapg.set(String((g as any).id), g);
+                                            const grand = Array.from(mapg.values());
                                             if (!grand.length) return null;
                                             return (
-                                              <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                                              <div style={{ marginTop:4, display:'grid', gap:2 }}>
                                                 {grand.map((gg:any, gidx:number) => (
                                                   <div key={`plink-gchild-${gg.id}`} style={{ position:'relative' }}>
-                                                    <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                    {pg.key==='all' && preSwipeUi.id === String(gg.id) ? (
+                                                      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                                        <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                                      </div>
+                                                    ) : null}
+                                                    <div
+                                                      style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(gg.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (grand.length - gidx) }}
+                                                      onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(gg.id), e.clientX, e.clientY); }}
+                                                      onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(gg.id)); }}
+                                                      onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
+                                                      onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                                      onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe(String(gg.id), t.clientX, t.clientY); } catch {} }}
+                                                      onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(gg.id)); }}
+                                                      onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
+                                                      onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                                                    >
+                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                    </div>
                                                   </div>
                                                 ))}
                                               </div>
@@ -1299,56 +1396,7 @@ export default function HomePage({
                 ) : (
                   <div style={{ opacity: 0.6, padding: '12px' }}>Нет задач</div>
                 )}
-                {pg.key === 'all' && __preIdx < __preSorted.length && (
-                  __preSorted.slice(__preIdx).map((p) => (
-                    <div key={`pre-tail-${p.id}`} style={{ position:'relative' }}>
-                      {/* Подложка для свайпа */}
-                      {preSwipeUi.id === p.id ? (
-                        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
-                          <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
-                        </div>
-                      ) : null}
-                      <div
-                        style={{ margin: '0 12px', position:'relative', transition:'transform 160ms ease', transform: (preSwipeUi.id === p.id) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)' }}
-                        onMouseDown={(e) => beginPreSwipe(p.id, e.clientX, e.clientY)}
-                        onMouseMove={(e) => movePreSwipe(e as any, p.id)}
-                        onMouseUp={() => endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null })}
-                        onMouseLeave={() => endPreSwipe()}
-                        onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (t) beginPreSwipe(p.id, t.clientX, t.clientY); } catch {} }}
-                        onTouchMove={(e) => movePreSwipe(e as any, p.id)}
-                        onTouchEnd={() => endPreSwipe(p.id, { text: (p as any).text, groupId: (p as any).groupId ?? null })}
-                        onTouchCancel={() => endPreSwipe()}
-                      >
-                        {(() => {
-                          const key = `P:${p.id}`;
-                          const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
-                          const cnt = children.length;
-                          const footer = cnt ? (
-                            <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</button>
-                          ) : null;
-                          return (
-                            <PreTaskCard p={p} onOpen={(pp) => setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={p.groupId ? (groupTitleById[String(p.groupId)] || null) : 'Моя группа'} footer={footer} />
-                          );
-                        })()}
-                      </div>
-                      {(() => {
-                        const key = `P:${p.id}`;
-                        if (!openAfter[key]) return null;
-                        const children = __preSorted.filter((x:any) => String(x.id) !== String(p.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(p.id)));
-                        if (!children.length) return null;
-                        return (
-                          <div style={{ margin:'6px 12px 0', display:'grid', gap:8 }}>
-                            {children.map((cp:any) => (
-                              <div key={`ptail-child-${cp.id}`}>
-                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" />
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ))
-                )}
+                
               </div>
                 );
               })()}
