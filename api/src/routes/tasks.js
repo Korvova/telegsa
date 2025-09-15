@@ -469,7 +469,7 @@ router.get('/feed', async (req, res) => {
     if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
 
     const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
-    const limit  = Math.min(50, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
+    const limit  = Math.min(500, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
 
     const tasks = await prisma.task.findMany({
       where: {

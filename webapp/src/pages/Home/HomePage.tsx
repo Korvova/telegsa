@@ -757,7 +757,7 @@ export default function HomePage({
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
       {/* Хедер: Все | <группа>  🔎 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button
           onClick={() => {
             setScope({ kind: 'all' });
@@ -844,7 +844,7 @@ export default function HomePage({
                   position: 'sticky',
                   top: 0,
                   zIndex: 2,
-                  padding: '6px 12px 8px',
+                padding: '6px 8px 8px',
                   background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
                   backdropFilter: 'blur(2px)',
                   display: 'flex',
