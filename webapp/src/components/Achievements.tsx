@@ -132,7 +132,7 @@ export function pickRank(eaglesScore: number): { current: RankDef; next: RankDef
   return { current, next };
 }
 
-export type AchFilterKey = 'none' | 'acorns' | 'seedlings' | 'eagles' | 'loadBlack' | 'rockets';
+export type AchFilterKey = 'none' | 'acorns' | 'seedlings' | 'eagles' | 'loadBlack' | 'rockets' | 'bombs';
 
 export function AchievementsBar({
   items,
@@ -324,6 +324,7 @@ function AchievementsDetailModal({ stats, onClose, onPick }: { stats: AchStats; 
         <ItemRow icon="🦅" label="Выполнили другие (я поставил)" count={stats.eaglesBase} onClick={() => onPick('eagles')} />
         <ItemRow icon="⚫" label="Нагрузка (на меня, поставил другой)" count={stats.loadBlack} onClick={() => onPick('loadBlack')} />
         <ItemRow icon="🚀" label="Я выполнил (поставил другой)" count={stats.rockets} onClick={() => onPick('rockets')} />
+        <ItemRow icon="💣" label="Просрочки (мои активные с дедлайном)" count={stats.bombs} onClick={() => onPick('bombs')} />
       </div>
     </OverlayModal>
   );

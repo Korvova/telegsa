@@ -674,6 +674,10 @@ export default function HomePage({
             return active && assigneeMe && !creatorMe;
           case 'rockets':
             return done && assigneeMe && !creatorMe;
+          case 'bombs': {
+            const dl = (t as any).deadlineAt ? Date.parse(String((t as any).deadlineAt)) : NaN;
+            return active && assigneeMe && !Number.isNaN(dl) && dl < Date.now();
+          }
           default:
             return true;
         }
@@ -718,6 +722,10 @@ export default function HomePage({
           return active && assigneeMe && !creatorMe;
         case 'rockets':
           return done && assigneeMe && !creatorMe;
+        case 'bombs': {
+          const dl = (t as any).deadlineAt ? Date.parse(String((t as any).deadlineAt)) : NaN;
+          return active && assigneeMe && !Number.isNaN(dl) && dl < Date.now();
+        }
         default:
           return true;
       }
