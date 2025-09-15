@@ -1,7 +1,7 @@
 // webapp/src/components/Achievements.tsx
 import { useEffect, useMemo, useState } from 'react';
 import type { TaskFeedItem } from '../api';
-import { getMyRating, type RatingStats } from '../api';
+import { getMyRating, getMyAcorns, type RatingStats } from '../api';
 import OverlayModal from './OverlayModal';
 import AchievementsRulesModal from './AchievementsRulesModal';
 
@@ -139,8 +139,18 @@ export function AchievementsBar({ items, meChatId, reloadToken }: { items: TaskF
     (async () => {
       try {
         if (!meChatId) return;
-        const r = await getMyRating(meChatId);
-        if (alive && r?.ok && r.stats) setServerStats(r.stats as RatingStats);
+        const [r, a] = await Promise.all([getMyRating(meChatId), getMyAcorns(meChatId)]);
+        if (alive && r?.ok && r.stats) {
+          const st = r.stats as RatingStats;
+          if (a?.ok && typeof a.count === 'number') st.acorns = a.count;
+          setServerStats(st);
+        } else if (alive && a?.ok && typeof a.count === 'number') {
+          setServerStats({
+            acorns: a.count,
+            seedlings: 0, seedlingsRemainder: 0, eaglesBase: 0, eaglesFromSeedlings: 0, eagles: 0, phoenix: 0,
+            loadBlack: 0, loadRed: 0, loadRedInt: 0, rockets: 0, rocketsAfterPenalty: 0, bombs: 0,
+          });
+        }
       } catch {}
     })();
     return () => { alive = false; };

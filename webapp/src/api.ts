@@ -726,6 +726,13 @@ export async function getMyRating(chatId: string): Promise<{
   return j;
 }
 
+export async function getMyAcorns(chatId: string): Promise<{ ok: boolean; count?: number }> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/me/acorns?chatId=${encodeURIComponent(chatId)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
 
 
 

@@ -176,5 +176,17 @@ router.get('/me/rating', async (req, res) => {
   }
 });
 
-export { router as ratingRouter };
+// Lightweight: total tasks created by user across all boards (strict by createdByChatId)
+router.get('/me/acorns', async (req, res) => {
+  try {
+    const me = String(req.query.chatId || '').trim();
+    if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const count = await prisma.task.count({ where: { createdByChatId: me } });
+    res.json({ ok: true, count });
+  } catch (e) {
+    console.error('GET /me/acorns error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
 
+export { router as ratingRouter };
