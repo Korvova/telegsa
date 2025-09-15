@@ -1,6 +1,7 @@
 // webapp/src/components/Achievements.tsx
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { TaskFeedItem } from '../api';
+import { getMyRating, type RatingStats } from '../api';
 import OverlayModal from './OverlayModal';
 import AchievementsRulesModal from './AchievementsRulesModal';
 
@@ -132,7 +133,35 @@ export function pickRank(eaglesScore: number): { current: RankDef; next: RankDef
 }
 
 export function AchievementsBar({ items, meChatId }: { items: TaskFeedItem[]; meChatId: string }) {
-  const stats = useMemo(() => computeAchievements(items, meChatId), [items, meChatId]);
+  const [serverStats, setServerStats] = useState<RatingStats | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!meChatId) return;
+        const r = await getMyRating(meChatId);
+        if (alive && r?.ok && r.stats) setServerStats(r.stats as RatingStats);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [meChatId, items.length]);
+
+  const local = useMemo(() => computeAchievements(items, meChatId), [items, meChatId]);
+  const stats: AchStats = serverStats ? {
+    acorns: serverStats.acorns,
+    seedlings: serverStats.seedlings,
+    seedlingsRemainder: serverStats.seedlingsRemainder,
+    eaglesBase: serverStats.eaglesBase,
+    eagles: serverStats.eagles,
+    eaglesFromSeedlings: serverStats.eaglesFromSeedlings,
+    phoenix: serverStats.phoenix,
+    loadBlack: serverStats.loadBlack,
+    loadRed: serverStats.loadRed,
+    loadRedInt: serverStats.loadRedInt,
+    rockets: serverStats.rockets,
+    rocketsAfterPenalty: serverStats.rocketsAfterPenalty,
+    bombs: serverStats.bombs,
+  } : local;
   const [open, setOpen] = useState(false);
 
   const parts: string[] = [];

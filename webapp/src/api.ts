@@ -696,6 +696,36 @@ export async function transcribeVoice(file: File, lang = 'ru'): Promise<{ ok: bo
   return res.json();
 }
 
+// ==== Rating API ====
+export type RatingStats = {
+  acorns: number;
+  seedlings: number;
+  seedlingsRemainder: number;
+  eaglesBase: number;
+  eaglesFromSeedlings: number;
+  eagles: number;
+  loadBlack: number;
+  loadRed: number;
+  loadRedInt: number;
+  bombs: number;
+  rockets: number;
+  rocketsAfterPenalty: number;
+  phoenix: number;
+};
+
+export async function getMyRating(chatId: string): Promise<{
+  ok: boolean;
+  stats?: RatingStats;
+  score?: number;
+  rank?: { current: { threshold: number; icon: string; title: string }; next: { threshold: number; icon: string; title: string } | null };
+  features?: Record<string, any>;
+}> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/me/rating?chatId=${encodeURIComponent(chatId)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
 
 
 
