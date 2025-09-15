@@ -332,6 +332,7 @@ export default function HomePage({
     const load = async () => {
       setLoading(true);
       try {
+        const hardLimit = achFilter === 'none' ? 30 : 500;
         const r = await listMyFeed({
           chatId,
           role: 'all',
@@ -339,7 +340,7 @@ export default function HomePage({
           q: search.trim(),
           sort: 'updated_desc',
           offset: 0,
-          limit: 30,
+          limit: hardLimit,
         });
         if (!alive) return;
         if (r.ok) {
@@ -359,7 +360,7 @@ export default function HomePage({
     return () => {
       alive = false;
     };
-  }, [chatId, search, reloadKey]);
+  }, [chatId, search, reloadKey, achFilter]);
 
   // После создания предзадачи — быстро перезагрузим список, чтобы подтянуть корректные связи (links)
   useEffect(() => {
@@ -588,11 +589,11 @@ export default function HomePage({
         const assigneeMe = String((t as any).assigneeChatId || '') === String(meChatId);
         switch (achFilter) {
           case 'acorns':
-            return creatorMe; // total
+            return creatorMe && !done; // исключаем Done
           case 'seedlings':
             return done && creatorMe && assigneeMe;
           case 'eagles':
-            return done && creatorMe && !assigneeMe && !!(t as any).assigneeChatId === false ? false : (done && creatorMe && String((t as any).assigneeChatId || '') !== String(meChatId) && !!(t as any).assigneeChatId);
+            return done && creatorMe && String((t as any).assigneeChatId || '') !== String(meChatId) && !!(t as any).assigneeChatId;
           case 'loadBlack':
             return active && assigneeMe && !creatorMe;
           case 'rockets':
@@ -632,7 +633,7 @@ export default function HomePage({
       const assigneeMe = String((t as any).assigneeChatId || '') === String(meChatId);
       switch (achFilter) {
         case 'acorns':
-          return creatorMe;
+          return creatorMe && !done; // исключаем Done
         case 'seedlings':
           return done && creatorMe && assigneeMe;
         case 'eagles':
@@ -869,7 +870,7 @@ export default function HomePage({
 
                 {/* Очивки рядом с «Все» */}
                 {pg.key === 'all' ? (
-                  <div style={{ marginLeft: 8, display:'inline-flex', alignItems:'center', gap:6 }}>
+                  <div style={{ marginLeft: 4, display:'inline-flex', alignItems:'center', gap:6 }}>
                     <AchievementsBar
                       items={items}
                       meChatId={meChatId}

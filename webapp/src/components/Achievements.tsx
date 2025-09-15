@@ -167,7 +167,7 @@ export function AchievementsBar({
           if (b && (b as any).columns) allCols.push(...((b as any).columns as Column[]));
         }
         const now = Date.now();
-        let acorns = 0, seedlings = 0, eaglesBase = 0, rockets = 0, loadBlack = 0, bombs = 0;
+        let acornsTotal = 0, seedlings = 0, eaglesBase = 0, rockets = 0, loadBlack = 0, bombs = 0;
         for (const c of allCols) {
           const base = isBase(String(c.name));
           const done = base === 'done';
@@ -177,7 +177,7 @@ export function AchievementsBar({
             const creator = String((t as any).createdByChatId || '');
             const assignee = (t as any).assigneeChatId ? String((t as any).assigneeChatId) : '';
             const mine = creator === String(meChatId);
-            if (mine) acorns += 1; // total поставленные мной
+            if (mine) acornsTotal += 1; // total поставленные мной
             if (mine && done && assignee === String(meChatId)) seedlings += 1;
             if (mine && done && assignee && assignee !== String(meChatId)) eaglesBase += 1;
             if (!mine && done && assignee === String(meChatId)) rockets += 1;
@@ -194,8 +194,9 @@ export function AchievementsBar({
         eagles = Math.max(0, eagles - bombs);
         const rocketsAfterPenalty = Math.max(0, rockets - bombs);
         const phoenix = eagles >= 100 ? Math.floor(eagles / 100) : 0;
+        const acornsDisplay = Math.max(0, acornsTotal - seedlings); // 🌰 = total − 🌱
         const st: AchStats = {
-          acorns,
+          acorns: acornsDisplay,
           seedlings,
           seedlingsRemainder: seedlings % 100,
           eaglesBase,
@@ -224,8 +225,8 @@ export function AchievementsBar({
   if (stats.acorns > 0) parts.push(`${stats.acorns}🌰`);
   if (stats.seedlings > 0) parts.push(`${stats.seedlings}🌱`);
 
-  if (stats.phoenix > 0) parts.push(`${stats.phoenix} 🐦‍🔥`);
-  else if (stats.eagles > 0) parts.push(`${stats.eagles} 🦅`);
+  // Показываем 🦅 как базовые «выполнили другие», чтобы совпадало с фильтром
+  if (stats.eaglesBase > 0) parts.push(`${stats.eaglesBase} 🦅`);
 
   if (stats.loadBlack > 0) {
     if (stats.loadBlack > 100) parts.push(`${(stats.loadBlack / 100).toFixed(1)}🔴`);
@@ -318,7 +319,7 @@ function AchievementsDetailModal({ stats, onClose, onPick }: { stats: AchStats; 
         <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:18 }}>✖</button>
       </div>
       <div style={{ display:'grid', gap:8 }}>
-        <ItemRow icon="🌰" label="Мои поставленные (всего)" count={stats.acorns} onClick={() => onPick('acorns')} />
+        <ItemRow icon="🌰" label="Мои поставленные (без Done)" count={stats.acorns} onClick={() => onPick('acorns')} />
         <ItemRow icon="🌱" label="Собственные выполненные (я поставил и сделал)" count={stats.seedlings} onClick={() => onPick('seedlings')} />
         <ItemRow icon="🦅" label="Выполнили другие (я поставил)" count={stats.eaglesBase} onClick={() => onPick('eagles')} />
         <ItemRow icon="⚫" label="Нагрузка (на меня, поставил другой)" count={stats.loadBlack} onClick={() => onPick('loadBlack')} />
