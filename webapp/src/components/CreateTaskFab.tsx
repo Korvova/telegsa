@@ -24,6 +24,9 @@ import {
   type GroupLabel,
   setTaskDeadline,
   type TaskMedia,
+  fetchBoard,
+  moveTask,
+  API_BASE,
 } from '../api';
 
 type PreConfig = {
@@ -53,6 +56,7 @@ export default function CreateTaskFab({
   const [open, setOpen] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
   const isEdit = !!editTaskId;
+  const [editOrigGroupId, setEditOrigGroupId] = useState<string | null>(null);
   // Контекст открытия из ленты (по клику на 🔘/⚫)
   const [edgeContext, setEdgeContext] = useState<null | { kind: 'TASK' | 'PRETASK'; id: string; text: string; groupId: string | null }>(null);
 
@@ -153,6 +157,7 @@ export default function CreateTaskFab({
         setEditTaskId(taskId);
         setText(String(d.text || ''));
         setGroupId((d.groupId ?? null) as string | null);
+        setEditOrigGroupId((d.groupId ?? null) as string | null);
         setDeadlineAt(d.deadlineAt || null);
         // bounty: treat as rub for UI
         const amt = Number(d.bountyStars || 0);
@@ -1161,23 +1166,18 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                                   try { await api.setTaskDeadline(editTaskId, chatId, deadlineAt); } catch {}
                                   // accept condition
                                   try { await api.setAcceptCondition(editTaskId, chatId, acceptCondition as any); } catch {}
-                                  // labels (only if selected)
+                                  // labels (only if selected). Replace set.
                                   try {
                                     const cur = await api.getTaskLabels(editTaskId).catch(() => [] as any);
                                     const curIds: string[] = Array.isArray(cur) ? cur.map((l:any)=>String(l.id)) : [];
                                     if (groupId) {
                                       if (selectedLabelId) {
-                                        // ensure selected present
                                         try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
-                                        // remove others
                                         for (const lid of curIds) if (lid !== selectedLabelId) {
                                           try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {}
                                         }
                                       } else {
-                                        // remove all
-                                        for (const lid of curIds) {
-                                          try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {}
-                                        }
+                                        for (const lid of curIds) { try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {} }
                                       }
                                     }
                                   } catch {}
@@ -1202,8 +1202,31 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                                       try { await uploadTaskMedia(editTaskId, chatId, f); } catch {}
                                     }
                                   }
+                                  // group change: if changed, move to Inbox of target group
                                   try {
-                                    window.dispatchEvent(new CustomEvent('task-patched', { detail: { id: editTaskId, text: val, deadlineAt, bountyStars: bountyRub ?? undefined } }));
+                                    if (groupId !== editOrigGroupId) {
+                                      const b = await fetchBoard(chatId, groupId ?? undefined).catch(()=>null as any);
+                                      const cols = (b && (b as any).columns) || [];
+                                      const inbox = cols.find((c:any) => {
+                                        const nm = String(c.name||'');
+                                        const i = nm.indexOf('::');
+                                        const status = i>=0 ? nm.slice(i+2) : nm;
+                                        return status === 'Inbox';
+                                      }) || cols[0];
+                                      if (inbox) { try { await moveTask(editTaskId, String(inbox.id), 0); } catch {} }
+                                    }
+                                  } catch {}
+
+                                  try {
+                                    const selected = groupLabels.find(l => l.id === (selectedLabelId||''));
+                                    const patchOut: any = { id: editTaskId, text: val, deadlineAt, bountyStars: bountyRub ?? undefined };
+                                    if (groupId !== editOrigGroupId) {
+                                      const gTitle = groupId ? (groups.find(g=>g.id===groupId)?.title || 'Без группы') : 'Моя группа';
+                                      patchOut.groupId = groupId ?? null;
+                                      patchOut.groupTitle = gTitle;
+                                    }
+                                    patchOut.labels = selected ? [{ id: selected.id, title: selected.title }] : [];
+                                    window.dispatchEvent(new CustomEvent('task-patched', { detail: patchOut }));
                                   } catch {}
                                   try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
                                   closeModal();
@@ -1683,8 +1706,33 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                     ) : null}
 
                     {existingMedia.length ? (
-                      <div style={{ fontSize: 12, opacity: 0.85 }}>
-                        Прикреплено (в задаче): {existingMedia.map((m) => m.fileName || (m.url ? m.url.split('/').pop() || 'файл' : 'файл')).join(', ')}
+                      <div style={{ fontSize: 12, opacity: 0.95 }}>
+                        <div style={{ marginBottom: 4 }}>Прикреплено (в задаче):</div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {existingMedia.slice(0, 6).map((m, idx) => {
+                            const href = `${API_BASE}${m.url}`;
+                            if (m.kind === 'photo') {
+                              return (
+                                <a key={`${m.id}_${idx}`} href={href} target="_blank" rel="noreferrer"
+                                   style={{ display:'inline-block', width: 56, height: 56, borderRadius: 8, overflow:'hidden', border:'1px solid #2a3346' }}>
+                                  <img src={href} alt={m.fileName || 'photo'} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                                </a>
+                              );
+                            }
+                            const label = m.fileName || (m.url ? m.url.split('/').pop() || 'файл' : 'файл');
+                            const icon = m.kind === 'voice' ? '🎵' : '📄';
+                            return (
+                              <a key={`${m.id}_${idx}`} href={href} target="_blank" rel="noreferrer"
+                                 style={{ display:'inline-flex', alignItems:'center', gap:6, border:'1px solid #2a3346', background:'#1b2030', color:'#e8eaed', borderRadius:999, padding:'2px 8px' }}>
+                                <span>{icon}</span>
+                                <span style={{ maxWidth: 120, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</span>
+                              </a>
+                            );
+                          })}
+                          {existingMedia.length > 6 && (
+                            <span style={{ display:'inline-flex', alignItems:'center', gap:6, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed', borderRadius:999, padding:'2px 8px' }}>+{existingMedia.length - 6} ещё</span>
+                          )}
+                        </div>
                       </div>
                     ) : null}
                     {pendingFiles.length ? (
@@ -1792,8 +1840,30 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                             try { await uploadTaskMedia(editTaskId, chatId, f); } catch {}
                           }
                         }
+                        // group move if changed
                         try {
-                          window.dispatchEvent(new CustomEvent('task-patched', { detail: { id: editTaskId, text: val, deadlineAt, bountyStars: bountyRub ?? undefined } }));
+                          if (groupId !== editOrigGroupId) {
+                            const b = await fetchBoard(chatId, groupId ?? undefined).catch(()=>null as any);
+                            const cols = (b && (b as any).columns) || [];
+                            const inbox = cols.find((c:any) => {
+                              const nm = String(c.name||'');
+                              const i = nm.indexOf('::');
+                              const status = i>=0 ? nm.slice(i+2) : nm;
+                              return status === 'Inbox';
+                            }) || cols[0];
+                            if (inbox) { try { await moveTask(editTaskId, String(inbox.id), 0); } catch {} }
+                          }
+                        } catch {}
+                        try {
+                          const selected = groupLabels.find(l => l.id === (selectedLabelId||''));
+                          const patchOut: any = { id: editTaskId, text: val, deadlineAt, bountyStars: bountyRub ?? undefined };
+                          if (groupId !== editOrigGroupId) {
+                            const gTitle = groupId ? (groups.find(g=>g.id===groupId)?.title || 'Без группы') : 'Моя группа';
+                            patchOut.groupId = groupId ?? null;
+                            patchOut.groupTitle = gTitle;
+                          }
+                          patchOut.labels = selected ? [{ id: selected.id, title: selected.title }] : [];
+                          window.dispatchEvent(new CustomEvent('task-patched', { detail: patchOut }));
                         } catch {}
                         try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
                         closeModal();
