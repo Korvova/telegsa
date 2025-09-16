@@ -30,25 +30,24 @@ export default function LongPressOutline({
     const el = document.getElementById(targetId);
     if (!el) return;
 
-    const onDown = (e: any) => {
-      try { e.preventDefault(); } catch {}
-      const isPrimary = e.isPrimary !== false; // treat mouse/touch as primary
-      if (!isPrimary) return;
+    const onDown = (e: PointerEvent) => {
+      // не блокируем скролл: не вызываем preventDefault и вешаем passive listeners
+      if (!e.isPrimary) return;
       const r = el.getBoundingClientRect();
       setRect(r);
       setProgress(0);
       setActive(true);
       const t = performance.now();
-      const x = (e.touches ? e.touches[0]?.clientX : e.clientX) ?? r.left;
-      const y = (e.touches ? e.touches[0]?.clientY : e.clientY) ?? r.top;
+      const x = e.clientX ?? r.left;
+      const y = e.clientY ?? r.top;
       startRef.current = { t, x, y };
       pointerIdRef.current = e.pointerId ?? null;
       step();
     };
-    const onMove = (e: any) => {
+    const onMove = (e: PointerEvent) => {
       if (!startRef.current || !active) return;
-      const x = (e.touches ? e.touches[0]?.clientX : e.clientX) ?? startRef.current.x;
-      const y = (e.touches ? e.touches[0]?.clientY : e.clientY) ?? startRef.current.y;
+      const x = e.clientX ?? startRef.current.x;
+      const y = e.clientY ?? startRef.current.y;
       const dx = Math.abs(x - startRef.current.x);
       const dy = Math.abs(y - startRef.current.y);
       if (dx > cancelMovePx || dy > cancelMovePx) cancel();
@@ -56,19 +55,12 @@ export default function LongPressOutline({
     const onUp = () => cancel();
     const onLeave = () => cancel();
 
-    // Attach listeners (pointer + mouse + touch for safety)
-    el.addEventListener('pointerdown', onDown, { passive: false });
-    el.addEventListener('pointermove', onMove, { passive: true });
-    el.addEventListener('pointerup', onUp, { passive: true });
-    el.addEventListener('pointercancel', onUp, { passive: true });
-    el.addEventListener('mouseleave', onLeave, { passive: true });
-    el.addEventListener('touchstart', onDown, { passive: false });
-    el.addEventListener('touchmove', onMove, { passive: true });
-    el.addEventListener('touchend', onUp, { passive: true });
-    el.addEventListener('touchcancel', onUp, { passive: true });
-    el.addEventListener('mousedown', onDown, { passive: false });
-    el.addEventListener('mousemove', onMove, { passive: true });
-    el.addEventListener('mouseup', onUp, { passive: true });
+    // Attach only pointer events (cross-browser), passive to keep scroll working
+    el.addEventListener('pointerdown', onDown as any, { passive: true });
+    el.addEventListener('pointermove', onMove as any, { passive: true });
+    el.addEventListener('pointerup', onUp as any, { passive: true });
+    el.addEventListener('pointercancel', onUp as any, { passive: true });
+    el.addEventListener('mouseleave', onLeave as any, { passive: true });
 
     return () => {
       el.removeEventListener('pointerdown', onDown as any);
@@ -76,16 +68,9 @@ export default function LongPressOutline({
       el.removeEventListener('pointerup', onUp as any);
       el.removeEventListener('pointercancel', onUp as any);
       el.removeEventListener('mouseleave', onLeave as any);
-      el.removeEventListener('touchstart', onDown as any);
-      el.removeEventListener('touchmove', onMove as any);
-      el.removeEventListener('touchend', onUp as any);
-      el.removeEventListener('touchcancel', onUp as any);
-      el.removeEventListener('mousedown', onDown as any);
-      el.removeEventListener('mousemove', onMove as any);
-      el.removeEventListener('mouseup', onUp as any);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId]);
+  }, [targetId, active, cancelMovePx]);
 
   const cancel = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
