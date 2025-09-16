@@ -8,17 +8,35 @@ type Props = {
   taskId: string;
   taskText: string;
   meChatId: string;
+  animateFromAnchorId?: string;
 };
 
-export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, meChatId }: Props) {
+export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, meChatId, animateFromAnchorId }: Props) {
   const [items, setItems] = useState<TaskComment[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [ghost, setGhost] = useState<null | { style: React.CSSProperties }>(null);
+  const [headerHidden, setHeaderHidden] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    // entry animation from card to header
+    if (animateFromAnchorId) {
+      const el = document.getElementById(animateFromAnchorId);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const target = { top: 10, left: 12, width: Math.max(10, window.innerWidth - 24) };
+        setHeaderHidden(true);
+        setGhost({ style: { position: 'fixed', top: r.top, left: r.left, width: r.width, zIndex: 2001, transition: 'all 240ms ease', pointerEvents: 'none' } });
+        // next frame animate
+        requestAnimationFrame(() => {
+          setGhost({ style: { position: 'fixed', top: target.top, left: target.left, width: target.width, zIndex: 2001, transition: 'all 240ms ease', pointerEvents: 'none' } });
+          setTimeout(() => { setGhost(null); setHeaderHidden(false); }, 260);
+        });
+      }
+    }
     let alive = true;
     const load = async () => {
       try {
@@ -60,6 +78,20 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
     } finally { setBusy(false); }
   };
 
+  const closeWithAnim = () => {
+    if (!animateFromAnchorId) return onClose();
+    const el = document.getElementById(animateFromAnchorId);
+    if (!el) { onClose(); return; }
+    const r = el.getBoundingClientRect();
+    const start = { top: 10, left: 12, width: Math.max(10, window.innerWidth - 24) };
+    setHeaderHidden(true);
+    setGhost({ style: { position: 'fixed', top: start.top, left: start.left, width: start.width, zIndex: 2001, transition: 'all 240ms ease', pointerEvents: 'none' } });
+    requestAnimationFrame(() => {
+      setGhost({ style: { position: 'fixed', top: r.top, left: r.left, width: r.width, zIndex: 2001, transition: 'all 240ms ease', pointerEvents: 'none' } });
+      setTimeout(() => { setGhost(null); onClose(); }, 260);
+    });
+  };
+
   if (!open) return null;
 
   return (
@@ -67,9 +99,18 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
       className="comments-overlay"
       style={{ position: 'fixed', inset: 0, zIndex: 2000, background: '#0f1216', display: 'flex', flexDirection: 'column' }}
     >
+      {/* flying ghost for animation */}
+      {ghost ? (
+        <div style={ghost.style}>
+          <div style={{ background: '#121722', border: '1px solid #2a3346', borderRadius: 16, padding: 12, color: '#e8eaed' }}>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Задача</div>
+            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{taskText}</div>
+          </div>
+        </div>
+      ) : null}
       {/* Header: pinned task card */}
       <div style={{ padding: 10, borderBottom: '1px solid #2a3346', background: '#0f1216', position: 'sticky', top: 0, zIndex: 1 }}>
-        <div style={{ background: '#121722', border: '1px solid #2a3346', borderRadius: 16, padding: 12, color: '#e8eaed' }}>
+        <div style={{ background: '#121722', border: '1px solid #2a3346', borderRadius: 16, padding: 12, color: '#e8eaed', opacity: headerHidden ? 0 : 1, transition: 'opacity 120ms ease' }}>
           <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>Задача</div>
           <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{taskText}</div>
         </div>
@@ -104,7 +145,7 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
       <div style={{ position: 'sticky', bottom: 0, background: '#0f1216', padding: 10, borderTop: '1px solid #2a3346' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
-            onClick={onClose}
+            onClick={closeWithAnim}
             title="Назад"
             style={{ padding: '10px 12px', borderRadius: 12, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', cursor: 'pointer' }}
           >
@@ -132,4 +173,3 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
     </div>
   );
 }
-

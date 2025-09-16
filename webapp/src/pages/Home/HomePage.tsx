@@ -319,7 +319,7 @@ export default function HomePage({
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
-  const [openComments, setOpenComments] = useState<{ id: string; text: string } | null>(null);
+  const [openComments, setOpenComments] = useState<{ id: string; text: string; anchorId: string } | null>(null);
 
   // meChatId уже объявлен выше
 
@@ -1409,7 +1409,7 @@ export default function HomePage({
                                 count={cCount}
                                 // ширина ровно как у карточки
                                 style={{ width: '100%' }}
-                                onClick={() => setOpenComments({ id: t.id, text: (t as any).text || '' })}
+                                onClick={() => setOpenComments({ id: t.id, text: (t as any).text || '', anchorId })}
                               />
                           </div>
                         ) : null}
@@ -1823,6 +1823,7 @@ export default function HomePage({
         taskId={openComments?.id || ''}
         taskText={openComments?.text || ''}
         meChatId={meChatId}
+        animateFromAnchorId={openComments?.anchorId}
       />
 
     </div>
