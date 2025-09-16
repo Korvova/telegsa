@@ -321,7 +321,7 @@ export default function HomePage({
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
   const [openComments, setOpenComments] = useState<{ id: string; text: string; anchorId: string } | null>(null);
-  const [lpModal, setLpModal] = useState(false);
+  // const [lpModal, setLpModal] = useState(false); // deprecated demo modal
 
   // meChatId уже объявлен выше
 
@@ -743,6 +743,20 @@ export default function HomePage({
   const patchItem = (id: string, patch: Partial<TaskFeedItem> & Record<string, any>) => {
     setItems((prev) => (prev.map((it) => (it.id === id ? ({ ...it, ...patch } as any) : it))));
   };
+
+  // принять внешние патчи (например, после редактирования через FAB)
+  useEffect(() => {
+    const onPatched = (e: any) => {
+      try {
+        const d = (e && e.detail) || {};
+        const id = String(d.id || '');
+        if (!id) return;
+        patchItem(id, d);
+      } catch {}
+    };
+    window.addEventListener('task-patched', onPatched as any);
+    return () => window.removeEventListener('task-patched', onPatched as any);
+  }, []);
 
   // QUICK BAR (храним id задачи и ключ страницы, чтобы не дублировать в нескольких секциях)
   const [openQBar, setOpenQBar] = useState<{ id: string; page: PageKey } | null>(null);
@@ -1181,7 +1195,19 @@ export default function HomePage({
                             // 1 секунда удержания с яркой неоновой обводкой
                             durationMs={1000}
                             radius={hasComments ? 0 : 16}
-                            onComplete={() => setLpModal(true)}
+                            onComplete={() => {
+                              try {
+                                const detail = {
+                                  taskId: t.id,
+                                  text: (t as any).text || '',
+                                  groupId,
+                                  deadlineAt: (t as any).deadlineAt || null,
+                                  bountyStars: (t as any).bountyStars || 0,
+                                  anchorId,
+                                } as any;
+                                window.dispatchEvent(new CustomEvent('edit-task-open', { detail }));
+                              } catch {}
+                            }}
                           />
                           {/* Edge pre-task badge on task card */}
                           {pg.key === 'all' ? (
@@ -1836,18 +1862,7 @@ export default function HomePage({
         animateFromAnchorId={openComments?.anchorId}
       />
 
-      {/* Simple modal for long-press demo */}
-      {lpModal && (
-        <div onClick={() => setLpModal(false)} style={{ position:'fixed', inset:0, zIndex:2100, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:16, width:'min(92vw, 380px)' }}>
-            <div style={{ fontWeight:700, marginBottom:8 }}>Сработало!</div>
-            <div style={{ fontSize:14, opacity:.85 }}>Долгое удержание карточки успешно обработано.</div>
-            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
-              <button onClick={()=>setLpModal(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Ок</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Раньше тут была демо-модалка long-press */}
 
     </div>
   );

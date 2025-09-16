@@ -57,6 +57,7 @@ import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 import SettingsStars from './SettingsStars';
 import SettingsRank from './components/SettingsRank';
+import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
 function useChatId() {
@@ -119,7 +120,7 @@ function parseStartParam(sp: string) {
 
 /* ---------------- UI bits ---------------- */
 function TaskCard({
-  text, order, assigneeName, active, dragging, onClick,
+  text, order, assigneeName, assigneeChatId, meChatId, myRankIcon, active, dragging, onClick,
   isEvent, startAt, endAt, fromProcess,
   deadlineAt,
   acceptCondition,
@@ -130,6 +131,9 @@ function TaskCard({
   text: string;
   order: number;
   assigneeName?: string | null;
+  assigneeChatId?: string | null;
+  meChatId?: string;
+  myRankIcon?: string | null;
   active?: boolean;
   dragging?: boolean;
   onClick?: () => void;
@@ -221,7 +225,12 @@ function TaskCard({
       )}
       {assigneeName && !isEvent ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>👤</span><span>{assigneeName}</span>
+          <span>👤</span>
+          <span>
+            {String(assigneeChatId || '') === String(meChatId || '') && myRankIcon
+              ? `${myRankIcon} ${assigneeName}`
+              : assigneeName}
+          </span>
         </div>
       ) : null}
     </div>
@@ -239,7 +248,7 @@ function fmtShort(iso: string) {
 }
 
 function SortableTask({
-  taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess, deadlineAt,
+  taskId, text, order, assigneeName, assigneeChatId, meChatId, myRankIcon, onOpenTask, armed, isEvent, startAt, endAt, fromProcess, deadlineAt,
   onEditDeadline,
   acceptCondition,
   bountyStars,
@@ -249,6 +258,9 @@ function SortableTask({
   text: string;
   order: number;
   assigneeName?: string | null;
+  assigneeChatId?: string | null;
+  meChatId?: string;
+  myRankIcon?: string | null;
   onOpenTask: (id: string) => void;
   armed?: boolean;
   isEvent?: boolean;
@@ -276,6 +288,9 @@ function SortableTask({
         text={text}
         order={order}
         assigneeName={assigneeName}
+        assigneeChatId={assigneeChatId}
+        meChatId={meChatId}
+        myRankIcon={myRankIcon}
         active={armed}
         dragging={isDragging}
         onClick={() => onOpenTask(taskId)}
@@ -328,6 +343,7 @@ export default function App() {
   const [showProcess, setShowProcess] = useState(false);
 
   const chatId = useChatId();
+  const myRankIcon = useMyRankIcon(chatId);
   // Ключ для перезагрузки ленты на Home после создания задачи
   const [feedReloadKey, setFeedReloadKey] = useState(0);
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
@@ -946,7 +962,7 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
   /* ---------------- render ---------------- */
   return (
     <>
-      <WriteAccessGate />
+      <WriteAccessGate chatId={chatId} />
 
       {/* ⬇️ Полноэкранная страница процесса */}
       {showProcess && (
@@ -1060,7 +1076,7 @@ setPersistSeedSession(false);
       )}
 
       {taskId ? (
-        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
+        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} meChatId={chatId} myRankIcon={myRankIcon} />
       ) : (
         <div
           style={{
@@ -1197,6 +1213,8 @@ setPersistSeedSession(false);
                                 onRenamed={reloadBoard}
                                 activeId={activeId}
                                 dragging={dragging}
+                                meChatId={chatId}
+                                myRankIcon={myRankIcon}
                               />
                             ))}
                         </div>
@@ -1306,7 +1324,7 @@ setPersistSeedSession(false);
               {/* тут можно добавить другие пункты настроек позже */}
             </div>
           ) : tab === 'notifications' ? (
-            <NotificationsView />
+            <NotificationsView chatId={chatId} />
           ) : (
             <TabPlaceholder tab={tab} />
           )}
@@ -1447,12 +1465,16 @@ function ColumnView({
   onRenamed,
   activeId,
   dragging,
+  meChatId,
+  myRankIcon,
 }: {
   column: Column;
   onOpenTask: (id: string) => void;
   onRenamed: () => void;
   activeId: string | null;
   dragging: boolean;
+  meChatId: string;
+  myRankIcon: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(column.name);
@@ -1560,6 +1582,9 @@ function ColumnView({
               text={t.text}
               order={t.order}
               assigneeName={t.assigneeName}
+              assigneeChatId={(t as any).assigneeChatId || null}
+              meChatId={meChatId}
+              myRankIcon={myRankIcon}
               onOpenTask={onOpenTask}
               armed={activeId === t.id}
               isEvent={t.type === 'EVENT'}

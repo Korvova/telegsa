@@ -9,8 +9,8 @@ type Settings = {
   writeAccessGranted: boolean;
 };
 
-export default function NotificationsView() {
-  const me = String(WebApp?.initDataUnsafe?.user?.id || '');
+export default function NotificationsView({ chatId }: { chatId?: string }) {
+  const me = String(chatId || WebApp?.initDataUnsafe?.user?.id || '');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [s, setS] = useState<Settings | null>(null);

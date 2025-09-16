@@ -1,6 +1,6 @@
 import type { PreTaskDTO } from '../api';
 
-export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false, style }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean; style?: React.CSSProperties }) {
+export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false, style, myChatId, myRankIcon }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean; style?: React.CSSProperties; myChatId?: string; myRankIcon?: string | null; }) {
   const modeText = (() => {
     if (p.triggerMode === 'AFTER_ALL_DONE') return 'Сразу';
     if (p.triggerMode === 'DATE_PLUS') return `📅 ко времени: ${p.startAt ? new Date(p.startAt).toLocaleString() : ''}`;
@@ -59,7 +59,9 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
         ) : null}
         <div style={{ fontSize: 12, opacity: .9, display: 'grid', gap: 4 }}>
           <div>Режим: {modeText}</div>
-          <div>Ответственный: {getName(p.creatorChatId)}</div>
+          <div>
+            Ответственный: {String(p.creatorChatId || '') === String(myChatId || '') && (myRankIcon || '') ? `${myRankIcon} ` : ''}{getName(p.creatorChatId)}
+          </div>
           <div>Ждёт: {getName(p.plannedAssigneeChatId) || 'не выбран'}</div>
         </div>
         {footer ? (

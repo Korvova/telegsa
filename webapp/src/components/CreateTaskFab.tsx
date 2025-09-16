@@ -50,6 +50,8 @@ export default function CreateTaskFab({
   onCreated,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [editTaskId, setEditTaskId] = useState<string | null>(null);
+  const isEdit = !!editTaskId;
   // Контекст открытия из ленты (по клику на 🔘/⚫)
   const [edgeContext, setEdgeContext] = useState<null | { kind: 'TASK' | 'PRETASK'; id: string; text: string; groupId: string | null }>(null);
 
@@ -136,6 +138,39 @@ export default function CreateTaskFab({
   const [bountyRub, setBountyRub] = useState<number | null>(null);
   const [bountyLocked, setBountyLocked] = useState<boolean>(false);
   const [preCfg, setPreCfg] = useState<PreConfig | null>(null);
+
+  // listen to long-press edit open
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      try {
+        const d: any = (e as any).detail || {};
+        const taskId: string = String(d.taskId || '');
+        if (!taskId) return;
+
+        // Prefill
+        setEditTaskId(taskId);
+        setText(String(d.text || ''));
+        setGroupId((d.groupId ?? null) as string | null);
+        setDeadlineAt(d.deadlineAt || null);
+        // bounty: treat as rub for UI
+        const amt = Number(d.bountyStars || 0);
+        setBountyRub(Number.isFinite(amt) ? amt : 0);
+
+        // labels: fetch actual labels of the task
+        try {
+          const api = await import('../api');
+          const labels = await api.getTaskLabels(taskId).catch(() => []);
+          if (Array.isArray(labels) && labels.length) setSelectedLabelId(labels[0].id);
+        } catch {}
+
+        setOpen(true);
+        setStep(0);
+        focusText();
+      } catch {}
+    };
+    window.addEventListener('edit-task-open', handler as any);
+    return () => window.removeEventListener('edit-task-open', handler as any);
+  }, []);
 
   // server-side draft: lock panel if draft exists on server
   useEffect(() => {
@@ -762,6 +797,7 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
     setOpen(false);
     setBusy(false);
     setText('');
+    setEditTaskId(null);
     setGroupId(defaultGroupId ?? null);
     setPendingFiles([]);
     setSelectedLabelId(null);
@@ -1075,7 +1111,7 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
 
                       {/* Предзадача (кнопка убрали отсюда; см. панель инструментов ниже) */}
 
-                      {/* Кнопка справа (➤ / 🎙️) */}
+                      {/* Кнопка справа (💾 в режиме редактирования / ➤ / 🎙️) */}
                       <div
                         style={{
                           position: 'absolute',
@@ -1088,7 +1124,53 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                         }}
                       >
                         <div ref={sendRef} style={{ width: '100%', height: '100%', pointerEvents: 'auto' }}>
-                          {canSend ? (
+                          {isEdit && canSend ? (
+                            <button
+                              type="button"
+                              title="Сохранить"
+                              onClick={async () => {
+                                if (!editTaskId) return;
+                                try {
+                                  setBusy(true);
+                                  const api = await import('../api');
+                                  const val = text.trim();
+                                  if (val) {
+                                    try { await api.updateTask(editTaskId, val); } catch {}
+                                  }
+                                  // deadline
+                                  try { await api.setTaskDeadline(editTaskId, chatId, deadlineAt); } catch {}
+                                  // labels (only if selected)
+                                  if (groupId && selectedLabelId) {
+                                    try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
+                                  }
+                                  // bounty (rub)
+                                  if (bountyRub !== null && Number.isFinite(bountyRub)) {
+                                    try { await api.setTaskBounty(editTaskId, chatId, Number(bountyRub)); } catch {}
+                                  }
+                                  // media uploads
+                                  if (pendingFiles.length) {
+                                    for (const f of pendingFiles) {
+                                      try { await uploadTaskMedia(editTaskId, chatId, f); } catch {}
+                                    }
+                                  }
+                                  try {
+                                    window.dispatchEvent(new CustomEvent('task-patched', { detail: { id: editTaskId, text: val, deadlineAt, bountyStars: bountyRub ?? undefined } }));
+                                  } catch {}
+                                  try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+                                  closeModal();
+                                } finally {
+                                  setBusy(false);
+                                }
+                              }}
+                              style={{
+                                width: '100%', height: '100%', borderRadius: 999,
+                                background: '#2563eb', color: '#fff', border: '1px solid transparent', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+                              }}
+                            >
+                              💾
+                            </button>
+                          ) : canSend ? (
                             <>
                               {preCfg && preCfg.links?.length ? (
                                 <PreTaskActionsLauncher
@@ -1598,8 +1680,8 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                   </button>
 
                   <PostCreateActionsLauncher
-                    label={step === 0 ? '→ Далее' : 'Создать'}
-                    disabled={step === 0 ? !text.trim() : !text.trim()}
+                    label={isEdit ? 'Сохранить' : (step === 0 ? '→ Далее' : 'Создать')}
+                    disabled={isEdit ? !text.trim() : (step === 0 ? !text.trim() : !text.trim())}
                     style={{
                       padding: '10px 14px',
                       borderRadius: 12,
@@ -1612,6 +1694,32 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                     meChatId={chatId}
                     members={membersAsOptions}
                     onMake={async () => {
+                      if (isEdit && editTaskId) {
+                        // нижняя большая кнопка тоже сохраняет при редактировании
+                        const api = await import('../api');
+                        const val = text.trim();
+                        if (val) {
+                          try { await api.updateTask(editTaskId, val); } catch {}
+                        }
+                        try { await api.setTaskDeadline(editTaskId, chatId, deadlineAt); } catch {}
+                        if (groupId && selectedLabelId) {
+                          try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
+                        }
+                        if (bountyRub !== null && Number.isFinite(bountyRub)) {
+                          try { await api.setTaskBounty(editTaskId, chatId, Number(bountyRub)); } catch {}
+                        }
+                        if (pendingFiles.length) {
+                          for (const f of pendingFiles) {
+                            try { await uploadTaskMedia(editTaskId, chatId, f); } catch {}
+                          }
+                        }
+                        try {
+                          window.dispatchEvent(new CustomEvent('task-patched', { detail: { id: editTaskId, text: val, deadlineAt, bountyStars: bountyRub ?? undefined } }));
+                        } catch {}
+                        try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+                        closeModal();
+                        return { taskId: editTaskId, taskTitle: val } as any;
+                      }
                       if (step === 0) {
                         setStep(1);
                         throw new Error('__DEFER__');

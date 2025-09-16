@@ -43,9 +43,11 @@ type Props = {
   taskId: string;
   onClose: (groupId?: string | null) => void;
   onChanged: () => void;
+  meChatId?: string;
+  myRankIcon?: string | null;
 };
 
-export default function TaskView({ taskId, onClose, onChanged }: Props) {
+export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp, myRankIcon }: Props) {
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<Task | null>(null);
   const [text, setText] = useState('');
@@ -86,11 +88,7 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
   const [refreshTick, setRefreshTick] = useState(0);
 
   // кто я (для «Сделать ответственным себя»)
-  const meChatId = String(
-    WebApp?.initDataUnsafe?.user?.id ||
-      new URLSearchParams(window.location.search).get('from') ||
-      ''
-  );
+  const meChatId = String(meProp || '');
 
   const [media, setMedia] = useState<TaskMedia[]>([]);
   const [completeNeedPhotoOpen, setCompleteNeedPhotoOpen] = useState(false);
@@ -273,12 +271,9 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
       setGroupTitle(null);
       return;
     }
-    const me =
-      WebApp?.initDataUnsafe?.user?.id ||
-      new URLSearchParams(location.search).get('from');
-    if (!me) return;
+    if (!meChatId) return;
 
-    listGroups(String(me))
+    listGroups(String(meChatId))
       .then((r) => {
         if (r.ok) {
           setAllGroups(r.groups || []);
@@ -533,13 +528,17 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           <div style={{ fontSize: 14, opacity: 0.85 }}>
             {(() => {
               const creator = (task as any)?.creatorName;
+              const creatorId = String((task as any)?.createdByChatId || (task as any)?.sourceChatId || (task as any)?.chatId || '');
+              const nameWithIcon = creator && String(creatorId) === String(meChatId) && myRankIcon
+                ? `${myRankIcon} ${creator}`
+                : creator;
               if (task?.type === 'EVENT') {
                 return creator
-                  ? <>Событие от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
+                  ? <>Событие от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{nameWithIcon}</span></>
                   : 'Событие';
               }
               return creator
-                ? <>Задача от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{creator}</span></>
+                ? <>Задача от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{nameWithIcon}</span></>
                 : 'Задача';
             })()}
           </div>
@@ -929,34 +928,37 @@ export default function TaskView({ taskId, onClose, onChanged }: Props) {
           </button>
 
           {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
-          {task?.type !== 'EVENT' && (
-            task.assigneeChatId ? (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 12,
-                  border: '1px solid #2a3346',
-                  background: '#15251a',
-                  color: '#d7ffd7',
-                  display: 'inline-flex',
-                  gap: 8,
-                  alignItems: 'center',
-                }}
-                title="Ответственный по задаче"
-              >
-                <span style={{ opacity: 0.8 }}>Ответственный:</span>
-                <strong>
-                  {task.assigneeName
-                    || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
-                          ? '(назначаю …)'
-                          : String(task.assigneeChatId))}
-                </strong>
-                <button
-                  onClick={async () => {
-                    if (!confirm('Убрать ответственного?')) return;
-                    try {
-                      const api = await import('./api/assign');
-                      const r = await api.unassign(taskId, meChatId);
+              {task?.type !== 'EVENT' && (
+                task.assigneeChatId ? (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 12,
+                      border: '1px solid #2a3346',
+                      background: '#15251a',
+                      color: '#d7ffd7',
+                      display: 'inline-flex',
+                      gap: 8,
+                      alignItems: 'center',
+                    }}
+                    title="Ответственный по задаче"
+                  >
+                    <span style={{ opacity: 0.8 }}>Ответственный:</span>
+                    <strong>
+                      {(() => {
+                        const base = task.assigneeName
+                          || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
+                                ? '(назначаю …)'
+                                : String(task.assigneeChatId));
+                        return String(task.assigneeChatId || '') === String(meChatId || '') && myRankIcon ? `${myRankIcon} ${base}` : base;
+                      })()}
+                    </strong>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Убрать ответственного?')) return;
+                        try {
+                          const api = await import('./api/assign');
+                          const r = await api.unassign(taskId, meChatId);
                       if ((r as any)?.ok) {
                         setTask((prev) => (prev ? { ...prev, assigneeChatId: null, assigneeName: null } : prev));
                         setAssigningAssigneeChatId(null);

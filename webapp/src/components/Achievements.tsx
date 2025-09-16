@@ -282,6 +282,45 @@ export function RankBadgeButton({ items, meChatId }: { items: TaskFeedItem[]; me
   const score = stats.eagles;
   const { current } = pickRank(score);
   const [open, setOpen] = useState(false);
+  const [savedRank, setSavedRank] = useState<string | null>(null);
+
+  const iconFromCode = (code?: string | null): string | null => {
+    const c = String(code || '').toUpperCase();
+    switch (c) {
+      case 'ANT': return '🐜';
+      case 'FISH': return '🐟';
+      case 'SCORPION': return '🦂';
+      case 'SQUIRREL': return '🐿️';
+      case 'CAT': return '🐱';
+      case 'DOG': return '🐶';
+      case 'WOLF': return '🐺';
+      case 'BEAR': return '🐻';
+      case 'EAGLE': return '🦅';
+      case 'HORSE': return '🐎';
+      case 'DRAGON': return '🐉';
+      case 'SHARK': return '🦈';
+      case 'ELEPHANT': return '🐘';
+      case 'TREX': return '🦖';
+      case 'TIGER': return '🐯';
+      case 'LION': return '🦁';
+      default: return null;
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const API = (import.meta as any).env.VITE_API_BASE || '';
+        const r = await fetch(`${API}/me/rank?chatId=${encodeURIComponent(meChatId)}`);
+        if (!r.ok) { if (alive) setSavedRank(null); return; }
+        const j = await r.json().catch(() => ({}));
+        if (!alive) return;
+        if (j && j.ok && j.rank) setSavedRank(String(j.rank)); else setSavedRank(null);
+      } catch { if (alive) setSavedRank(null); }
+    })();
+    return () => { alive = false; };
+  }, [meChatId]);
 
   return (
     <>
@@ -290,9 +329,9 @@ export function RankBadgeButton({ items, meChatId }: { items: TaskFeedItem[]; me
         title={`Текущий ранг: ${current.title}`}
         style={{ background: 'transparent', border: 'none', color: '#e8eaed', cursor: 'pointer', fontSize: 18 }}
       >
-        {current.icon}
+        {iconFromCode(savedRank) || current.icon}
       </button>
-      {open && <RankModal open={open} onClose={() => setOpen(false)} stats={stats} />}
+      {open && <RankModal open={open} onClose={() => setOpen(false)} stats={stats} savedRankIcon={iconFromCode(savedRank) || undefined} />}
     </>
   );
 }
@@ -330,7 +369,7 @@ function AchievementsDetailModal({ stats, onClose, onPick }: { stats: AchStats; 
   );
 }
 
-function RankModal({ open, onClose, stats }: { open: boolean; onClose: () => void; stats: AchStats }) {
+function RankModal({ open, onClose, stats, savedRankIcon }: { open: boolean; onClose: () => void; stats: AchStats; savedRankIcon?: string }) {
   const score = stats.eagles;
   const { current, next } = pickRank(score);
   const [openRanks, setOpenRanks] = useState<Record<number, boolean>>({});
@@ -340,7 +379,7 @@ function RankModal({ open, onClose, stats }: { open: boolean; onClose: () => voi
   return (
     <OverlayModal open={open} onClose={onClose} maxWidth={600}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-        <div style={{ fontWeight:800, fontSize:16 }}>Текущий ранг: {current.icon} {current.title}</div>
+        <div style={{ fontWeight:800, fontSize:16 }}>Текущий ранг: {savedRankIcon || current.icon} {savedRankIcon ? '' : current.title}</div>
         <div style={{ marginLeft:'auto' }} />
         <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:18 }}>✖</button>
       </div>
