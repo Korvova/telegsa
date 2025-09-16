@@ -32,6 +32,7 @@ import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
 import StarBadge from '../../components/StarBadge';
 import CommentsStrip from '../../components/CommentsStrip';
+import TaskCommentsOverlay from '../../components/TaskCommentsOverlay';
 import PayoutPromptModal from '../../components/PayoutPromptModal';
 
 // const LONG_PRESS_MS = 500; // отключено: открываем быстрые действия по клику на статус
@@ -318,6 +319,7 @@ export default function HomePage({
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
+  const [openComments, setOpenComments] = useState<{ id: string; text: string } | null>(null);
 
   // meChatId уже объявлен выше
 
@@ -1403,11 +1405,12 @@ export default function HomePage({
                         {/* ВНЕ карточки: полоска комментариев плотно под карточкой */}
                         {hasComments ? (
                           <div style={{ marginTop: 0 }}>
-                            <CommentsStrip
-                              count={cCount}
-                              // ширина ровно как у карточки
-                              style={{ width: '100%' }}
-                            />
+                              <CommentsStrip
+                                count={cCount}
+                                // ширина ровно как у карточки
+                                style={{ width: '100%' }}
+                                onClick={() => setOpenComments({ id: t.id, text: (t as any).text || '' })}
+                              />
                           </div>
                         ) : null}
                       </div>
@@ -1811,6 +1814,15 @@ export default function HomePage({
           setManageForTask(null);
         }}
         onChanged={async()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }}
+      />
+
+      {/* Полноэкранный режим комментариев к задаче */}
+      <TaskCommentsOverlay
+        open={!!openComments}
+        onClose={() => setOpenComments(null)}
+        taskId={openComments?.id || ''}
+        taskText={openComments?.text || ''}
+        meChatId={meChatId}
       />
 
     </div>
