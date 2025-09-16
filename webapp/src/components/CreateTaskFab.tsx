@@ -68,6 +68,21 @@ export default function CreateTaskFab({
   const [members, setMembers] = useState<MemberOption[]>([]);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const focusText = () => { try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} };
+  // auto-resize textarea up to 6 lines, then scroll
+  const MAX_LINES = 6;
+  const LINE_PX = 20; // keep in sync with style.lineHeight below
+  const MAX_HEIGHT_PX = MAX_LINES * LINE_PX + 16; // + vertical padding (approx)
+  const adjustTextHeight = () => {
+    const el = textAreaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const maxPx = MAX_HEIGHT_PX;
+    const next = Math.min(maxPx, el.scrollHeight);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > maxPx ? 'auto' : 'hidden';
+  };
+  useEffect(() => { adjustTextHeight(); }, [text]);
+  useEffect(() => { if (open) setTimeout(adjustTextHeight, 0); }, [open]);
   const membersAsOptions: MemberOption[] = members.map(m => ({ chatId: m.chatId, name: m.name }));
 
   // Локальные вложения ДО отправки (обязательно объявляем ДО firstAudio)
@@ -986,6 +1001,7 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                           placeholder="Опиши задачу…"
                           value={text}
                           onChange={(e) => setText(e.target.value)}
+                          onInput={adjustTextHeight}
                           onKeyDown={(e) => {
                             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && text.trim()) {
                               e.preventDefault();
@@ -1005,9 +1021,9 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                             paddingLeft: 44,
                             resize: 'none',
                             minHeight: 38,
-                            maxHeight: 80,
-                            lineHeight: '20px',
-                            overflowY: 'auto',
+                            maxHeight: MAX_HEIGHT_PX,
+                            lineHeight: `${LINE_PX}px`,
+                            overflowY: 'hidden',
                           }}
                         />
                       )}
@@ -1409,10 +1425,11 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                       <textarea
                         ref={textAreaRef}
                         autoFocus
-                        rows={5}
+                        rows={1}
                         placeholder="Опиши задачу…"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
+                        onInput={adjustTextHeight}
                         style={{
                           width: '100%',
                           background: '#0b1220',
@@ -1421,7 +1438,11 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                           borderRadius: 12,
                           padding: 10,
                           paddingLeft: 44,
-                          resize: 'vertical',
+                          resize: 'none',
+                          minHeight: 38,
+                          maxHeight: MAX_HEIGHT_PX,
+                          lineHeight: `${LINE_PX}px`,
+                          overflowY: 'hidden',
                         }}
                       />
                       {/* ⭐ слева внутри инпута (мастер) */}
