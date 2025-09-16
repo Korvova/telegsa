@@ -8,7 +8,7 @@ import DeadlinePicker from './DeadlinePicker';
 import BountyPicker from './BountyPicker';
 import TonWalletConnect from './TonWalletConnect';
 import RemindersModal from './RemindersModal';
-import { createTaskReminder, type ReminderTarget } from '../api/reminders';
+import { createTaskReminder, deleteTaskReminder, listTaskReminders, type ReminderTarget, type TaskReminder as RItem } from '../api/reminders';
 
 import WebApp from '@twa-dev/sdk';
 import {
@@ -155,12 +155,21 @@ export default function CreateTaskFab({
         // bounty: treat as rub for UI
         const amt = Number(d.bountyStars || 0);
         setBountyRub(Number.isFinite(amt) ? amt : 0);
+        // accept condition
+        setAcceptConditionState((d.acceptCondition as any) || 'NONE');
 
         // labels: fetch actual labels of the task
         try {
           const api = await import('../api');
           const labels = await api.getTaskLabels(taskId).catch(() => []);
           if (Array.isArray(labels) && labels.length) setSelectedLabelId(labels[0].id);
+        } catch {}
+
+        // reminders: fetch and map into draft
+        try {
+          const r = await listTaskReminders(taskId).catch(() => ({ ok:false, reminders: [] } as any));
+          const arr: RItem[] = (r && (r as any).reminders) || [];
+          setRemindersDraft(arr.map(x => ({ target: x.target, fireAtIso: String(x.fireAt || x.createdAt || '') })));
         } catch {}
 
         setOpen(true);
@@ -1139,14 +1148,43 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                                   }
                                   // deadline
                                   try { await api.setTaskDeadline(editTaskId, chatId, deadlineAt); } catch {}
+                                  // accept condition
+                                  try { await api.setAcceptCondition(editTaskId, chatId, acceptCondition as any); } catch {}
                                   // labels (only if selected)
-                                  if (groupId && selectedLabelId) {
-                                    try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
-                                  }
+                                  try {
+                                    const cur = await api.getTaskLabels(editTaskId).catch(() => [] as any);
+                                    const curIds: string[] = Array.isArray(cur) ? cur.map((l:any)=>String(l.id)) : [];
+                                    if (groupId) {
+                                      if (selectedLabelId) {
+                                        // ensure selected present
+                                        try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
+                                        // remove others
+                                        for (const lid of curIds) if (lid !== selectedLabelId) {
+                                          try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {}
+                                        }
+                                      } else {
+                                        // remove all
+                                        for (const lid of curIds) {
+                                          try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {}
+                                        }
+                                      }
+                                    }
+                                  } catch {}
                                   // bounty (rub)
                                   if (bountyRub !== null && Number.isFinite(bountyRub)) {
                                     try { await api.setTaskBounty(editTaskId, chatId, Number(bountyRub)); } catch {}
                                   }
+                                  // reminders: replace all with draft
+                                  try {
+                                    const listed = await listTaskReminders(editTaskId).catch(()=>({ ok:false, reminders: [] } as any));
+                                    const current: RItem[] = (listed && (listed as any).reminders) || [];
+                                    for (const rr of current) {
+                                      try { await deleteTaskReminder(editTaskId, String((rr as any).id)); } catch {}
+                                    }
+                                    for (const d of remindersDraft) {
+                                      try { await createTaskReminder(editTaskId, { createdBy: chatId, target: d.target, fireAt: d.fireAtIso }); } catch {}
+                                    }
+                                  } catch {}
                                   // media uploads
                                   if (pendingFiles.length) {
                                     for (const f of pendingFiles) {
@@ -1702,6 +1740,31 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                           try { await api.updateTask(editTaskId, val); } catch {}
                         }
                         try { await api.setTaskDeadline(editTaskId, chatId, deadlineAt); } catch {}
+                        try { await api.setAcceptCondition(editTaskId, chatId, acceptCondition as any); } catch {}
+                        // labels sync
+                        try {
+                          const cur = await api.getTaskLabels(editTaskId).catch(() => [] as any);
+                          const curIds: string[] = Array.isArray(cur) ? cur.map((l:any)=>String(l.id)) : [];
+                          if (groupId) {
+                            if (selectedLabelId) {
+                              try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
+                              for (const lid of curIds) if (lid !== selectedLabelId) {
+                                try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {}
+                              }
+                            } else {
+                              for (const lid of curIds) {
+                                try { await api.removeTaskLabel(editTaskId, lid, chatId); } catch {}
+                              }
+                            }
+                          }
+                        } catch {}
+                        // reminders replace
+                        try {
+                          const listed = await listTaskReminders(editTaskId).catch(()=>({ ok:false, reminders: [] } as any));
+                          const current: RItem[] = (listed && (listed as any).reminders) || [];
+                          for (const rr of current) { try { await deleteTaskReminder(editTaskId, String((rr as any).id)); } catch {} }
+                          for (const d of remindersDraft) { try { await createTaskReminder(editTaskId, { createdBy: chatId, target: d.target, fireAt: d.fireAtIso }); } catch {} }
+                        } catch {}
                         if (groupId && selectedLabelId) {
                           try { await api.attachTaskLabels(editTaskId, chatId, [selectedLabelId]); } catch {}
                         }

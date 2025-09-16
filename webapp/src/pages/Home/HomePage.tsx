@@ -1203,6 +1203,7 @@ export default function HomePage({
                                   groupId,
                                   deadlineAt: (t as any).deadlineAt || null,
                                   bountyStars: (t as any).bountyStars || 0,
+                                  acceptCondition: (t as any).acceptCondition || 'NONE',
                                   anchorId,
                                 } as any;
                                 window.dispatchEvent(new CustomEvent('edit-task-open', { detail }));
