@@ -56,6 +56,18 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
     try { listRef.current?.scrollTo({ top: listRef.current.scrollHeight }); } catch {}
   }, [open, items.length]);
 
+  // При открытии сразу ставим фокус на инпут, чтобы быстрее писать
+  useEffect(() => {
+    if (!open) return;
+    const kick = () => {
+      try { inputRef.current?.focus(); } catch {}
+      ensureVisible();
+    };
+    const t1 = setTimeout(kick, 0);
+    const t2 = setTimeout(kick, 150);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [open]);
+
   const ensureVisible = () => {
     try { listRef.current?.scrollTo({ top: listRef.current.scrollHeight }); } catch {}
     try { inputRef.current?.scrollIntoView({ block: 'nearest' }); } catch {}
