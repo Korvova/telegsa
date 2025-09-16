@@ -14,8 +14,8 @@ export default function LongPressOutline({
   targetId,
   durationMs = 700,
   onComplete,
-  color = '#8aa0ff',
-  width = 3,
+  color = '#22d3ee',
+  width = 8,
   radius = 16,
   cancelMovePx = 10,
 }: Props) {
@@ -115,8 +115,8 @@ export default function LongPressOutline({
   const h = Math.max(0, rect.height);
   const rr = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
   const perimeter = 2 * (w + h - 2 * rr) + 2 * Math.PI * rr; // approx for rounded rect
-  const dash = perimeter;
-  const offset = dash * (1 - progress);
+  const visible = perimeter * progress;
+  const hidden = Math.max(0.0001, perimeter - visible);
 
   return (
     <div
@@ -130,7 +130,11 @@ export default function LongPressOutline({
         pointerEvents: 'none',
       }}
     >
-      <svg width={rect.width} height={rect.height} style={{ display: 'block' }}>
+      <svg
+        width={rect.width}
+        height={rect.height}
+        style={{ display: 'block', filter: `drop-shadow(0 0 8px ${color}) drop-shadow(0 0 14px ${color})` }}
+      >
         <rect
           x={width / 2}
           y={width / 2}
@@ -141,11 +145,12 @@ export default function LongPressOutline({
           fill="none"
           stroke={color}
           strokeWidth={width}
-          strokeDasharray={dash}
-          strokeDashoffset={offset}
+          strokeDasharray={`${visible} ${hidden}`}
+          strokeDashoffset={0}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </svg>
     </div>
   );
 }
-
