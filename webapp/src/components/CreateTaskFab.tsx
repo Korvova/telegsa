@@ -75,6 +75,18 @@ export default function CreateTaskFab({
   const [members, setMembers] = useState<MemberOption[]>([]);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const focusText = () => { try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} };
+  const focusTextEnd = () => {
+    try {
+      setTimeout(() => {
+        const el = textAreaRef.current;
+        if (el) {
+          const len = el.value.length;
+          el.focus();
+          try { el.setSelectionRange(len, len); } catch {}
+        }
+      }, 0);
+    } catch {}
+  };
   // auto-resize textarea up to 6 lines, then scroll
   const MAX_LINES = 6;
   const LINE_PX = 20; // keep in sync with style.lineHeight below
@@ -189,7 +201,7 @@ export default function CreateTaskFab({
 
         setOpen(true);
         setStep(0);
-        focusText();
+        focusTextEnd();
       } catch {}
     };
     window.addEventListener('edit-task-open', handler as any);
@@ -1367,11 +1379,11 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                             />
                           )}
                         </div>
-                      </div>
                     </div>
+                  </div>
 
-                    {/* Панель вложений под полем */}
-                    {toolsOpen && (
+                  {/* Панель вложений под полем */}
+                  {toolsOpen && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button
                         type="button"
@@ -1459,6 +1471,43 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
 
                   </div>
                   )}
+
+                  {/* Превью существующих вложений (редактирование) и новых */}
+                  {isEdit && existingMedia.length ? (
+                    <div style={{ fontSize: 12, opacity: 0.95 }}>
+                      <div style={{ marginBottom: 4 }}>Прикреплено (в задаче):</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {existingMedia.slice(0, 6).map((m, idx) => {
+                          const href = `${API_BASE}${m.url}`;
+                          if (m.kind === 'photo') {
+                            return (
+                              <a key={`${m.id}_${idx}`} href={href} target="_blank" rel="noreferrer"
+                                 style={{ display:'inline-block', width: 56, height: 56, borderRadius: 8, overflow:'hidden', border:'1px solid #2a3346' }}>
+                                <img src={href} alt={m.fileName || 'photo'} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                              </a>
+                            );
+                          }
+                          const label = m.fileName || (m.url ? m.url.split('/').pop() || 'файл' : 'файл');
+                          const icon = m.kind === 'voice' ? '🎵' : '📄';
+                          return (
+                            <a key={`${m.id}_${idx}`} href={href} target="_blank" rel="noreferrer"
+                               style={{ display:'inline-flex', alignItems:'center', gap:6, border:'1px solid #2a3346', background:'#1b2030', color:'#e8eaed', borderRadius:999, padding:'2px 8px' }}>
+                              <span>{icon}</span>
+                              <span style={{ maxWidth: 120, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{label}</span>
+                            </a>
+                          );
+                        })}
+                        {existingMedia.length > 6 && (
+                          <span style={{ display:'inline-flex', alignItems:'center', gap:6, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed', borderRadius:999, padding:'2px 8px' }}>+{existingMedia.length - 6} ещё</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  {pendingFiles.length ? (
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      Добавится: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
+                    </div>
+                  ) : null}
 
                     {deadlineAt ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
