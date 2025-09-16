@@ -23,6 +23,7 @@ import {
   attachTaskLabels,
   type GroupLabel,
   setTaskDeadline,
+  type TaskMedia,
 } from '../api';
 
 type PreConfig = {
@@ -89,6 +90,7 @@ export default function CreateTaskFab({
 
   // Локальные вложения ДО отправки (обязательно объявляем ДО firstAudio)
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [existingMedia, setExistingMedia] = useState<TaskMedia[]>([]);
 
   // первый аудио-файл среди вложений (если есть)
   const firstAudio = useMemo(
@@ -170,6 +172,14 @@ export default function CreateTaskFab({
           const r = await listTaskReminders(taskId).catch(() => ({ ok:false, reminders: [] } as any));
           const arr: RItem[] = (r && (r as any).reminders) || [];
           setRemindersDraft(arr.map(x => ({ target: x.target, fireAtIso: String(x.fireAt || x.createdAt || '') })));
+        } catch {}
+
+        // existing media for informational block
+        try {
+          const api = await import('../api');
+          const full = await api.getTaskWithGroup(taskId).catch(() => null as any);
+          const media = (full && (full as any).media) || [];
+          setExistingMedia(Array.isArray(media) ? media : []);
         } catch {}
 
         setOpen(true);
@@ -809,6 +819,7 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
     setEditTaskId(null);
     setGroupId(defaultGroupId ?? null);
     setPendingFiles([]);
+    setExistingMedia([]);
     setSelectedLabelId(null);
     setGroupLabels([]);
     setDeadlineAt(null);
@@ -1671,9 +1682,14 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
                       <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
                     ) : null}
 
+                    {existingMedia.length ? (
+                      <div style={{ fontSize: 12, opacity: 0.85 }}>
+                        Прикреплено (в задаче): {existingMedia.map((m) => m.fileName || (m.url ? m.url.split('/').pop() || 'файл' : 'файл')).join(', ')}
+                      </div>
+                    ) : null}
                     {pendingFiles.length ? (
                       <div style={{ fontSize: 12, opacity: 0.85 }}>
-                        Прикреплено: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
+                        Добавится: {pendingFiles.map((f) => f.name || 'файл').join(', ')}
                       </div>
                     ) : null}
                   </div>
@@ -1844,11 +1860,11 @@ function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, styl
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,.35)',
+            background: 'rgba(0,0,0,.45)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 1100,
+            zIndex: 2300,
           }}
         >
           <div
