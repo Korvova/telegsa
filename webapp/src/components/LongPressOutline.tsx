@@ -12,7 +12,7 @@ type Props = {
 
 export default function LongPressOutline({
   targetId,
-  durationMs = 700,
+  durationMs = 3000,
   onComplete,
   color = '#22d3ee',
   width = 8,
@@ -31,6 +31,7 @@ export default function LongPressOutline({
     if (!el) return;
 
     const onDown = (e: any) => {
+      try { e.preventDefault(); } catch {}
       const isPrimary = e.isPrimary !== false; // treat mouse/touch as primary
       if (!isPrimary) return;
       const r = el.getBoundingClientRect();
@@ -56,16 +57,16 @@ export default function LongPressOutline({
     const onLeave = () => cancel();
 
     // Attach listeners (pointer + mouse + touch for safety)
-    el.addEventListener('pointerdown', onDown, { passive: true });
+    el.addEventListener('pointerdown', onDown, { passive: false });
     el.addEventListener('pointermove', onMove, { passive: true });
     el.addEventListener('pointerup', onUp, { passive: true });
     el.addEventListener('pointercancel', onUp, { passive: true });
     el.addEventListener('mouseleave', onLeave, { passive: true });
-    el.addEventListener('touchstart', onDown, { passive: true });
+    el.addEventListener('touchstart', onDown, { passive: false });
     el.addEventListener('touchmove', onMove, { passive: true });
     el.addEventListener('touchend', onUp, { passive: true });
     el.addEventListener('touchcancel', onUp, { passive: true });
-    el.addEventListener('mousedown', onDown, { passive: true });
+    el.addEventListener('mousedown', onDown, { passive: false });
     el.addEventListener('mousemove', onMove, { passive: true });
     el.addEventListener('mouseup', onUp, { passive: true });
 
@@ -99,6 +100,11 @@ export default function LongPressOutline({
     const elapsed = performance.now() - startRef.current.t;
     const p = Math.min(1, elapsed / durationMs);
     setProgress(p);
+    // keep overlay aligned if page scrolls a bit while holding
+    try {
+      const el = document.getElementById(targetId);
+      if (el) setRect(el.getBoundingClientRect());
+    } catch {}
     if (p >= 1) {
       const done = onComplete;
       cancel();
@@ -126,14 +132,15 @@ export default function LongPressOutline({
         top: rect.top,
         width: rect.width,
         height: rect.height,
-        zIndex: 1500,
+        zIndex: 3500,
         pointerEvents: 'none',
+        transform: 'translateZ(0)'
       }}
     >
       <svg
         width={rect.width}
         height={rect.height}
-        style={{ display: 'block', filter: `drop-shadow(0 0 8px ${color}) drop-shadow(0 0 14px ${color})` }}
+        style={{ display: 'block', filter: `drop-shadow(0 0 10px ${color}) drop-shadow(0 0 22px ${color})` }}
       >
         <rect
           x={width / 2}

@@ -1178,7 +1178,8 @@ export default function HomePage({
                           {/* Long press progress around the card */}
                           <LongPressOutline
                             targetId={anchorId}
-                            durationMs={800}
+                            // 3 секунды удержания с яркой неоновой обводкой
+                            durationMs={3000}
                             radius={hasComments ? 0 : 16}
                             onComplete={() => setLpModal(true)}
                           />
