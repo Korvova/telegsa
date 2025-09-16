@@ -634,6 +634,8 @@ export type TaskFeedItem = {
   updatedAt: string;
   createdAt: string;
   deadlineAt?: string | null;
+  nextReminderAt?: string | null;
+  commentsCount?: number;
   acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';

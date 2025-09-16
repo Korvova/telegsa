@@ -23,6 +23,7 @@ import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
 import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
 import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
+import { useMyRankIcon } from '../../hooks/useMyRankIcon';
 import { listGroups as apiListGroups, fetchBoard as apiFetchBoard, type Column as BoardColumn } from '../../api';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
@@ -30,6 +31,7 @@ import type { StageKey } from '../../components/StageScroller';
 import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
 import StarBadge from '../../components/StarBadge';
+import CommentsStrip from '../../components/CommentsStrip';
 import PayoutPromptModal from '../../components/PayoutPromptModal';
 
 // const LONG_PRESS_MS = 500; // отключено: открываем быстрые действия по клику на статус
@@ -209,9 +211,9 @@ export default function HomePage({
   const [manageForTask, setManageForTask] = useState<{ id: string } | null>(null);
   const [achFilter, setAchFilter] = useState<AchFilterKey>('none');
   const [achItems, setAchItems] = useState<TaskFeedItem[] | null>(null);
-  const meChatId = String(
-    WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || ''
-  );
+  // Используем переданный chatId, чтобы не расходиться с настройками
+  const meChatId = String(chatId || '');
+  const myRankIcon = useMyRankIcon(meChatId);
 
   // Build dedicated view for achievements filter by scanning all boards (personal + groups)
   // ВАЖНО: объявление ниже хука useChatId, поэтому переносим ниже его вызова
@@ -537,7 +539,7 @@ export default function HomePage({
   useEffect(() => {
     try {
       if (!items.length) return;
-      const me = String(WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || '');
+      const me = meChatId;
       const first = items.find((t) => {
         const rub = Number((t as any).bountyStars || 0);
         const status = String((t as any).bountyStatus || 'NONE');
@@ -1039,6 +1041,8 @@ export default function HomePage({
                     const groupId = (t as any)?.groupId ?? null;
                   const badge = badgeForPhase(currentPhase);
                     const needsPhoto = (t as any).acceptCondition === 'PHOTO';
+                    const cCount = Number(((t as any).commentsCount ?? 0));
+                    const hasComments = cCount > 0;
                     const activeRing = opened
                       ? '0 0 0 2px rgba(138,160,255,.45) inset, 0 8px 20px rgba(0,0,0,.20)'
                       : '0 2px 8px rgba(0,0,0,.06)';
@@ -1121,6 +1125,8 @@ export default function HomePage({
                             color: '#0f1216',
                             border: `1px solid ${opened ? '#30416d' : cardBrd}`,
                             borderRadius: 16,
+                            borderBottomLeftRadius: hasComments ? 0 : 16,
+                            borderBottomRightRadius: hasComments ? 0 : 16,
                             padding: 12,
                             cursor: 'pointer',
                             boxShadow: activeRing,
@@ -1325,13 +1331,20 @@ export default function HomePage({
 
                           <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', gap: 10 }}>
                             {(t as any).assigneeName ? (
-                              <span>👤 {(t as any).assigneeName}</span>
+                              <span>
+                                👤{' '}
+                                {String((t as any).assigneeChatId || '') === String(meChatId) && myRankIcon
+                                  ? `${myRankIcon} ${(t as any).assigneeName}`
+                                  : String((t as any).assigneeName)}
+                              </span>
                             ) : null}
                             {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
                             <span style={{ marginLeft: 'auto' }}>
                               {new Date((t as any).updatedAt).toLocaleString()}
                             </span>
                           </div>
+
+                          {/* Полоска «комментарии (N) →» будет приклеена снизу (absolute) */}
 
                           {/* Внутри карточки: Полоска «Запустят после (N) ⬇/⬆» */}
                           {(() => {
@@ -1386,6 +1399,17 @@ export default function HomePage({
                             );
                           })()}
                         </button>
+
+                        {/* ВНЕ карточки: полоска комментариев плотно под карточкой */}
+                        {hasComments ? (
+                          <div style={{ marginTop: 0 }}>
+                            <CommentsStrip
+                              count={cCount}
+                              // ширина ровно как у карточки
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                       {/* Вне карточки: список предзадач под карточкой */}
                       {(() => {
@@ -1446,6 +1470,8 @@ export default function HomePage({
                                         tone="subtle"
                                         footer={footer}
                                         emphasis={cnt>0}
+                                        myChatId={meChatId}
+                                        myRankIcon={myRankIcon}
                                         style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
                                       />
                                     );
@@ -1489,7 +1515,7 @@ export default function HomePage({
                                                 <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</div>
                                               ) : null;
                                               return (
-                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
+                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
                                               );
                                             })()}
                                           </div>
@@ -1523,7 +1549,7 @@ export default function HomePage({
                                                       onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
                                                       onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
                                                     >
-                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
                                                     </div>
                                                   </div>
                                                 ))}

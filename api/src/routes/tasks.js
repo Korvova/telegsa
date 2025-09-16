@@ -497,6 +497,21 @@ router.get('/feed', async (req, res) => {
       }
     }
 
+    // comments count by task (for feed UI strip)
+    let commentsCountByTask = new Map();
+    if (taskIds.length) {
+      try {
+        const grp = await prisma.comment.groupBy({
+          by: ['taskId'],
+          where: { taskId: { in: taskIds } },
+          _count: { _all: true },
+        });
+        commentsCountByTask = new Map(grp.map(g => [g.taskId, (g._count && typeof g._count._all === 'number') ? g._count._all : 0]));
+      } catch (e) {
+        console.error('feed: groupBy task comments failed:', e?.message || e);
+      }
+    }
+
     // подтянем заголовки групп по префиксу до "::"
     const groupIds = Array.from(new Set(
       tasks.map(t => {
@@ -551,6 +566,7 @@ const items = tasks.map(t => {
     updatedAt: t.updatedAt,
     deadlineAt: t.deadlineAt,
     nextReminderAt: nextByTask.get(t.id) || null,
+    commentsCount: commentsCountByTask.get(t.id) || 0,
     bountyStars: t.bountyStars,
     bountyStatus: t.bountyStatus,
     acceptCondition: t.acceptCondition,
