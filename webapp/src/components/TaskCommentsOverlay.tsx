@@ -182,6 +182,32 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
           </button>
         </div>
       </div>
+
+      {/* Плавающая круглая кнопка «назад», как FAB (+), над правой стрелкой */}
+      <button
+        onClick={closeWithAnim}
+        aria-label="Назад в ленту"
+        title="Назад"
+        style={{
+          position: 'fixed',
+          right: 16,
+          bottom: `calc(92px + env(safe-area-inset-bottom, 0px))`,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          background: '#2563eb',
+          color: '#fff',
+          border: 'none',
+          boxShadow: '0 10px 24px rgba(0,0,0,.35)',
+          fontSize: 24,
+          lineHeight: '56px',
+          textAlign: 'center',
+          cursor: 'pointer',
+          zIndex: 2100,
+        }}
+      >
+        ←
+      </button>
     </div>
   );
 }

@@ -87,6 +87,24 @@ export default function CreateTaskFab({
       }, 0);
     } catch {}
   };
+
+  // При открытии в режиме редактирования ставим курсор в конец текста надёжно
+  useEffect(() => {
+    if (!open || !isEdit) return;
+    const place = () => {
+      const el = textAreaRef.current;
+      if (!el) return;
+      try {
+        const len = el.value.length;
+        el.focus();
+        el.setSelectionRange(len, len);
+      } catch {}
+    };
+    const t1 = setTimeout(place, 0);
+    const t2 = setTimeout(place, 60);
+    const t3 = setTimeout(place, 180);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [open, isEdit, editTaskId]);
   // auto-resize textarea up to 6 lines, then scroll
   const MAX_LINES = 6;
   const LINE_PX = 20; // keep in sync with style.lineHeight below
