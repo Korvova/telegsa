@@ -18,6 +18,8 @@ import CalendarView from './CalendarView';
 import TaskView from './TaskView';
 
 import HomePage from './pages/Home/HomePage';
+import DeadlinePicker from './components/DeadlinePicker';
+import CameraCaptureModal from './components/CameraCaptureModal';
 
 import {
   fetchBoard,
@@ -27,6 +29,10 @@ import {
   type Group,
   listGroups,
   upsertMe,
+  setTaskDeadline,
+  uploadTaskMedia,
+  addComment,
+  completeTask,
 } from './api';
 
 import {
@@ -49,6 +55,9 @@ import { CSS } from '@dnd-kit/utilities';
 
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
+import SettingsStars from './SettingsStars';
+import SettingsRank from './components/SettingsRank';
+import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
 function useChatId() {
@@ -76,10 +85,10 @@ function getTaskIdFromURL() {
 
 // заменить parseStartParam на:
 function parseStartParam(sp: string) {
-  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask'; id: string; token?: string };
+  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask' | 'watch'; id: string; token?: string };
 
   // 1) Полный вид
-  let m = sp.match(/^(assign|join|event|newtask)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
+  let m = sp.match(/^(assign|join|event|newtask|watch)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
   if (m) return { type: m[1] as any, id: m[2], token: m[3] };
 
   // 2) task_<id>
@@ -95,6 +104,8 @@ function parseStartParam(sp: string) {
     ? 'event'
     : sp.startsWith('newtask')
     ? 'newtask'
+    : sp.startsWith('watch')
+    ? 'watch'
     : null;
   if (!head) return null;
 
@@ -109,12 +120,20 @@ function parseStartParam(sp: string) {
 
 /* ---------------- UI bits ---------------- */
 function TaskCard({
-  text, order, assigneeName, active, dragging, onClick,
+  text, order, assigneeName, assigneeChatId, meChatId, myRankIcon, active, dragging, onClick,
   isEvent, startAt, endAt, fromProcess,
+  deadlineAt,
+  acceptCondition,
+  bountyStars,
+  bountyStatus,
+  onEditDeadline,
 }: {
   text: string;
   order: number;
   assigneeName?: string | null;
+  assigneeChatId?: string | null;
+  meChatId?: string;
+  myRankIcon?: string | null;
   active?: boolean;
   dragging?: boolean;
   onClick?: () => void;
@@ -122,18 +141,41 @@ function TaskCard({
   startAt?: string | null;
   endAt?: string | null;
   fromProcess?: boolean;
+  deadlineAt?: string | null;
+  bountyStars?: number | null;
+  bountyStatus?: 'NONE'|'PLEDGED'|'PAID'|'REFUNDED'|string;
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
+  onEditDeadline?: () => void;
 }) {
   const bg = dragging ? '#0e1629' : active ? '#151b2b' : '#121722';
   const dateLine = isEvent && startAt
     ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}`
     : null;
+  const leftText = (() => {
+    if (!deadlineAt) return null;
+    const ms = new Date(deadlineAt).getTime() - Date.now();
+    const signOverdue = ms < 0;
+    const abs = Math.abs(ms);
+    const d = Math.floor(abs / 86400000);
+    const h = Math.floor((abs % 86400000) / 3600000);
+    const m = Math.floor((abs % 3600000) / 60000);
+    const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+    return (signOverdue ? `просрочено: ${short}` : `осталось: ${short}`);
+  })();
 
   return (
     <div onClick={onClick} style={{
       background: bg, border: '1px solid #2a3346', borderRadius: 12, padding: 12,
       userSelect: 'none', cursor: 'pointer', boxShadow: dragging ? '0 6px 18px rgba(0,0,0,.35)' : 'none',
     }}>
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>#{order}</div>
+      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
+        {typeof bountyStars === 'number' && bountyStars > 0 ? (
+          <span title={String(bountyStatus)==='PAID' ? 'Выплачено' : 'Ожидает выплаты'} style={{ display:'inline-block', border:`1px solid ${String(bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String(bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String(bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'0 6px', lineHeight:'16px', fontSize:12 }}>
+            {String(bountyStatus)==='PAID' ? '💫' : '💰'} ({bountyStars})
+          </span>
+        ) : null}
+        <span>#{order}</span>
+      </div>
 
       <div
         style={{
@@ -150,9 +192,45 @@ function TaskCard({
       {dateLine && (
         <div style={{ fontSize: 12, opacity: .75, marginBottom: 6 }}>{dateLine}</div>
       )}
+      {deadlineAt && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onEditDeadline && onEditDeadline(); }}
+          title="Изменить дедлайн"
+          style={{ fontSize: 12, marginBottom: 6, color: new Date(deadlineAt).getTime() < Date.now() ? '#fecaca' : '#93c5fd', background: 'transparent', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}
+        >
+          🚩 {fmtShort(deadlineAt)} • {leftText}
+        </button>
+      )}
+      {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
+        <div style={{ fontSize: 11, marginBottom: 6 }}>
+          <span style={{ background:'#7f1d1d', color:'#fee2e2', border:'1px solid #dc2626', borderRadius:999, padding:'2px 6px' }}>⚠️ Просрочен</span>
+        </div>
+      )}
+      {acceptCondition === 'PHOTO' && (
+        <div style={{ fontSize: 12, marginBottom: 6 }} title="Требуется фото">
+          ☝️📸 Требуется фото
+        </div>
+      )}
+      {acceptCondition === 'APPROVAL' && (
+        <div style={{ fontSize: 12, marginBottom: 6 }} title="Требуется согласование">
+          ☝️🤝 Требуется согласование
+        </div>
+      )}
+      {typeof bountyStars === 'number' && bountyStars > 0 && (
+        <div style={{ fontSize: 12, marginBottom: 6 }} title={String(bountyStatus) === 'PAID' ? 'Выплачено' : 'Ожидает выплаты'}>
+          <span style={{
+            display:'inline-block', border:`1px solid ${String(bountyStatus)==='PAID' ? '#374151':'#6a4a20'}`, background:String(bountyStatus)==='PAID' ? '#1f2937':'#3a2a10', color:String(bountyStatus)==='PAID' ? '#9ca3af':'#facc15', borderRadius:999, padding:'2px 8px'
+          }}>⭐ ({bountyStars})</span>
+        </div>
+      )}
       {assigneeName && !isEvent ? (
         <div style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>👤</span><span>{assigneeName}</span>
+          <span>👤</span>
+          <span>
+            {String(assigneeChatId || '') === String(meChatId || '') && myRankIcon
+              ? `${myRankIcon} ${assigneeName}`
+              : assigneeName}
+          </span>
         </div>
       ) : null}
     </div>
@@ -170,18 +248,30 @@ function fmtShort(iso: string) {
 }
 
 function SortableTask({
-  taskId, text, order, assigneeName, onOpenTask, armed, isEvent, startAt, endAt, fromProcess,
+  taskId, text, order, assigneeName, assigneeChatId, meChatId, myRankIcon, onOpenTask, armed, isEvent, startAt, endAt, fromProcess, deadlineAt,
+  onEditDeadline,
+  acceptCondition,
+  bountyStars,
+  bountyStatus,
 }: {
   taskId: string;
   text: string;
   order: number;
   assigneeName?: string | null;
+  assigneeChatId?: string | null;
+  meChatId?: string;
+  myRankIcon?: string | null;
   onOpenTask: (id: string) => void;
   armed?: boolean;
   isEvent?: boolean;
   startAt?: string | null;
   endAt?: string | null;
   fromProcess?: boolean;
+  deadlineAt?: string | null;
+  onEditDeadline?: () => void;
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
+  bountyStars?: number | null;
+  bountyStatus?: 'NONE'|'PLEDGED'|'PAID'|'REFUNDED'|string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: taskId });
@@ -198,6 +288,9 @@ function SortableTask({
         text={text}
         order={order}
         assigneeName={assigneeName}
+        assigneeChatId={assigneeChatId}
+        meChatId={meChatId}
+        myRankIcon={myRankIcon}
         active={armed}
         dragging={isDragging}
         onClick={() => onOpenTask(taskId)}
@@ -205,6 +298,11 @@ function SortableTask({
         startAt={startAt}
         endAt={endAt}
         fromProcess={fromProcess}
+        deadlineAt={deadlineAt}
+        onEditDeadline={onEditDeadline}
+        acceptCondition={acceptCondition}
+        bountyStars={bountyStars}
+        bountyStatus={bountyStatus}
       />
     </div>
   );
@@ -245,16 +343,31 @@ export default function App() {
   const [showProcess, setShowProcess] = useState(false);
 
   const chatId = useChatId();
+  const myRankIcon = useMyRankIcon(chatId);
+  // Ключ для перезагрузки ленты на Home после создания задачи
+  const [feedReloadKey, setFeedReloadKey] = useState(0);
   const [taskId, setTaskId] = useState<string>(getTaskIdFromURL());
   const [loading, setLoading] = useState(true);
   const [columns, setColumns] = useState<Column[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [deadlineEdit, setDeadlineEdit] = useState<{ taskId: string; value: string | null } | null>(null);
+  const [acceptPrompt, setAcceptPrompt] = useState<{ id: string } | null>(null);
+  const acceptFileRef = useRef<HTMLInputElement | null>(null);
+  const [acceptCamOpen, setAcceptCamOpen] = useState(false);
+  const [acceptUploadBusy, setAcceptUploadBusy] = useState(false);
 
 
 
 const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
 
 const [persistSeedSession, setPersistSeedSession] = useState(false);
+
+
+
+
+// добавь СРАЗУ ПОСЛЕ:
+const [spawnPrevForFocus, setSpawnPrevForFocus] = useState<boolean>(false);
+const [seedPrevForProcess, setSeedPrevForProcess] = useState<boolean>(false);
 
 
   const [tab, setTab] = useState<TabKey>('home');
@@ -275,10 +388,25 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
       setTab('groups');
       setSelectedGroupId(String(d.groupId));
       setGroupTab('process');
-      setSpawnNextForFocus(!!d.seedNewRight);
 
-         // 👇 включаем сеанс посева, если пришли по seedTaskId
-   setPersistSeedSession(!!d.seedTaskId);
+
+
+// право: поддерживаем и старый d.seedNewRight, и явный d.spawnNextForFocus
+setSpawnNextForFocus(Boolean(d.seedNewRight || d.spawnNextForFocus));
+
+// лево: новый флаг
+setSpawnPrevForFocus(Boolean(d.spawnPrevForFocus));
+
+// сеанс посева активен, если пришёл seedTaskId
+setPersistSeedSession(!!d.seedTaskId);
+
+// посев слева (мини-связка «Новый ← Текущая»)
+setSeedPrevForProcess(Boolean(d.seedPrev));
+
+
+
+
+
 
       // из TaskView либо фокус на конкретный узел, либо посев
       if (d.focusTaskId) {
@@ -499,6 +627,19 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
     if (!parsed) return;
 
     if (parsed.type === 'assign') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('task', parsed.id);
+      window.history.replaceState(null, '', url.toString());
+      setTaskId(parsed.id);
+
+      fetch(`${import.meta.env.VITE_API_BASE}/invites/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: me, token: parsed.token }),
+      }).catch(() => {});
+    }
+
+    if (parsed.type === 'watch') {
       const url = new URL(window.location.href);
       url.searchParams.set('task', parsed.id);
       window.history.replaceState(null, '', url.toString());
@@ -794,6 +935,23 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
 
     const toIndex = col.tasks.findIndex((t) => t.id === active);
     try {
+      // если бросили в Done и у задачи требуется фото — прервём перенос и попросим фото
+      const moved = columns.flatMap((c) => c.tasks).find((t) => t.id === active) as any;
+      if (col.name === 'Done' && moved && moved.acceptCondition === 'PHOTO') {
+        setAcceptPrompt({ id: active });
+        await reloadBoard();
+        return;
+      }
+      if (col.name === 'Done' && moved && moved.acceptCondition === 'APPROVAL') {
+        try {
+          const approvalCol = columns.find((c) => String(c.name) === 'Approval');
+          if (approvalCol) {
+            await apiMoveTask(active, approvalCol.id, 0);
+            await reloadBoard();
+            return;
+          }
+        } catch {}
+      }
       await apiMoveTask(active, finalColId, Math.max(0, toIndex));
     } catch (e) {
       console.error('[DND] move error', e);
@@ -804,7 +962,7 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
   /* ---------------- render ---------------- */
   return (
     <>
-      <WriteAccessGate />
+      <WriteAccessGate chatId={chatId} />
 
       {/* ⬇️ Полноэкранная страница процесса */}
       {showProcess && (
@@ -829,15 +987,33 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
   chatId={chatId}
   groupId={resolvedGroupId ?? null}
   onOpenTask={openTask}
+
+  /* seed-сценарии */
   seedTaskId={seedTaskIdForProcess}
   seedAssigneeChatId={seedAssigneeChatIdForProcess}
   forceSeedFromTask={!!seedTaskIdForProcess}
   focusTaskId={focusTaskIdForProcess}
-  // ↓ новое: «прорости узел справа» и сброс флага после применения
+
+  /* справа: «прорости узел от фокуса» */
   spawnNextForFocus={spawnNextForFocus}
   onSpawnNextConsumed={() => setSpawnNextForFocus(false)}
-  onSeedConsumed={() => { setSeedTaskIdForProcess(null); setSeedAssigneeChatIdForProcess(null); }}
-    persistSeedSession={persistSeedSession} 
+
+  /* слева: НОВОЕ — «прорости узел слева от фокуса» */
+  spawnPrevForFocus={spawnPrevForFocus}
+  onSpawnPrevConsumed={() => setSpawnPrevForFocus(false)}
+
+  /* посев в режиме «Новый ← Текущая» (если задачи ещё нет в графе) */
+  seedPrev={seedPrevForProcess}
+
+  /* когда seed-сессия отработана — сбросить семена */
+  onSeedConsumed={() => {
+    setSeedTaskIdForProcess(null);
+    setSeedAssigneeChatIdForProcess(null);
+    setSeedPrevForProcess(false);
+  }}
+
+  /* продолжать seed-сессию между повторными открытиями полотна */
+  persistSeedSession={persistSeedSession}
 />
 
             {/* Нижняя кнопка назад — только внутри оверлея процесса */}
@@ -860,6 +1036,16 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
                   setFocusTaskIdForProcess(null);
                   setSeedTaskIdForProcess(null);
                   setSeedAssigneeChatIdForProcess(null);
+
+setSpawnNextForFocus(false);
+setSpawnPrevForFocus(false);
+setSeedPrevForProcess(false);
+setFocusTaskIdForProcess(null);
+setSeedTaskIdForProcess(null);
+setSeedAssigneeChatIdForProcess(null);
+setPersistSeedSession(false);
+
+
                   const url = new URL(window.location.href);
                   url.searchParams.delete('view');
                   window.history.replaceState(null, '', url.toString());
@@ -890,7 +1076,7 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
       )}
 
       {taskId ? (
-        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} />
+        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} meChatId={chatId} myRankIcon={myRankIcon} />
       ) : (
         <div
           style={{
@@ -970,10 +1156,11 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
           </div>
 
           {tab === 'home' ? (
-            <HomePage
-              chatId={chatId}
-              onOpenTask={openTask}
-            />
+          <HomePage
+            chatId={chatId}
+            onOpenTask={openTask}
+            reloadKey={feedReloadKey}
+          />
           ) : tab === 'groups' ? (
             groupsPage === 'list' ? (
               <GroupList
@@ -1026,6 +1213,8 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
                                 onRenamed={reloadBoard}
                                 activeId={activeId}
                                 dragging={dragging}
+                                meChatId={chatId}
+                                myRankIcon={myRankIcon}
                               />
                             ))}
                         </div>
@@ -1126,10 +1315,16 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
                 </div>
               </button>
 
+              {/* Звёзды — сводка и способ получения (SBP) */}
+              <SettingsStars chatId={chatId} />
+
+              {/* Ранг пользователя */}
+              <SettingsRank chatId={chatId} />
+
               {/* тут можно добавить другие пункты настроек позже */}
             </div>
           ) : tab === 'notifications' ? (
-            <NotificationsView />
+            <NotificationsView chatId={chatId} />
           ) : (
             <TabPlaceholder tab={tab} />
           )}
@@ -1138,7 +1333,13 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
             defaultGroupId={resolvedGroupId ?? null}
             chatId={chatId}
             groups={groups}
-            onCreated={reloadBoard}
+            onCreated={() => {
+              if (tab === 'home') {
+                setFeedReloadKey((k) => k + 1);
+              } else {
+                reloadBoard();
+              }
+            }}
           />
 
           {/* Нижняя панель */}
@@ -1179,6 +1380,79 @@ const [persistSeedSession, setPersistSeedSession] = useState(false);
               }}
             />
           ) : null}
+
+          {/* 🚩 Редактор дедлайна для задач на доске */}
+          <DeadlinePicker
+            open={!!deadlineEdit}
+            value={deadlineEdit?.value ?? null}
+            onClose={() => setDeadlineEdit(null)}
+            onChange={async (iso) => {
+              const id = deadlineEdit?.taskId;
+              if (!id) return;
+              try {
+                const r = await setTaskDeadline(id, chatId, iso);
+                if (r?.ok && r.task) {
+                  setColumns((prev) => prev.map((c) => ({
+                    ...c,
+                    tasks: c.tasks.map((t) => (t.id === id ? ({ ...t, deadlineAt: r.task!.deadlineAt || null } as any) : t)),
+                  })));
+                }
+              } catch {}
+            }}
+          />
+
+          {/* ☝️ Завершение с фото при dnd → Done */}
+          {acceptPrompt && (
+            <div
+              onClick={() => setAcceptPrompt(null)}
+              style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+            >
+              <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
+                <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <button disabled={acceptUploadBusy} onClick={()=> acceptFileRef.current?.click()} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: acceptUploadBusy ? 0.6 : 1 }}>🖼️ Выбрать</button>
+                  <button disabled={acceptUploadBusy} onClick={()=> setAcceptCamOpen(true)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: acceptUploadBusy ? 0.6 : 1 }}>📸 Камера</button>
+                  <input ref={acceptFileRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (!file || !acceptPrompt) return;
+                    try {
+                      setAcceptUploadBusy(true);
+                      const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
+                      if ((up as any)?.ok && (up as any)?.media?.url) {
+                        await addComment(acceptPrompt.id, chatId, (up as any).media.url);
+                      }
+                      await completeTask(acceptPrompt.id);
+                      setAcceptPrompt(null);
+                      await reloadBoard();
+                    } catch {}
+                    finally { setAcceptUploadBusy(false); }
+                  }} />
+                  <div style={{ fontSize: 12, opacity: 0.85 }}>{acceptUploadBusy ? 'Загружаю фото…' : ''}</div>
+                  <button disabled={acceptUploadBusy} onClick={()=> setAcceptPrompt(null)} style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: acceptUploadBusy ? 0.6 : 1 }}>Отмена</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <CameraCaptureModal
+            open={acceptCamOpen}
+            onClose={() => setAcceptCamOpen(false)}
+          onCapture={async (file) => {
+            if (!acceptPrompt) return;
+            try {
+              setAcceptUploadBusy(true);
+              const up = await uploadTaskMedia(acceptPrompt.id, chatId, file);
+              if ((up as any)?.ok && (up as any)?.media?.url) {
+                await addComment(acceptPrompt.id, chatId, (up as any).media.url);
+              }
+              await completeTask(acceptPrompt.id);
+              setAcceptCamOpen(false);
+              setAcceptPrompt(null);
+              await reloadBoard();
+            } catch {}
+            finally { setAcceptUploadBusy(false); }
+          }}
+        />
         </div>
       )}
     </>
@@ -1191,12 +1465,16 @@ function ColumnView({
   onRenamed,
   activeId,
   dragging,
+  meChatId,
+  myRankIcon,
 }: {
   column: Column;
   onOpenTask: (id: string) => void;
   onRenamed: () => void;
   activeId: string | null;
   dragging: boolean;
+  meChatId: string;
+  myRankIcon: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(column.name);
@@ -1304,12 +1582,19 @@ function ColumnView({
               text={t.text}
               order={t.order}
               assigneeName={t.assigneeName}
+              assigneeChatId={(t as any).assigneeChatId || null}
+              meChatId={meChatId}
+              myRankIcon={myRankIcon}
               onOpenTask={onOpenTask}
               armed={activeId === t.id}
               isEvent={t.type === 'EVENT'}
               startAt={t.startAt}
               endAt={t.endAt}
               fromProcess={!!t.fromProcess}
+              deadlineAt={(t as any).deadlineAt || null}
+              bountyStars={(t as any).bountyStars || 0}
+              bountyStatus={(t as any).bountyStatus || 'NONE'}
+              acceptCondition={(t as any).acceptCondition || 'NONE'}
             />
           ))}
 

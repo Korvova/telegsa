@@ -106,6 +106,7 @@ export function shareNewTaskRouter({ prisma }) {
           order: nextOrder,
           text: src.text,
           assigneeChatId: who,
+          createdByChatId: who,
           // если есть спецполя — не копируем, чтобы не мешать логике событий и т.д.
         },
       });

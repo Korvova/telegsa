@@ -7,8 +7,8 @@ type Settings = {
   writeAccessGranted: boolean;
 };
 
-export default function WriteAccessGate() {
-  const me = String(WebApp?.initDataUnsafe?.user?.id || '');
+export default function WriteAccessGate({ chatId }: { chatId?: string }) {
+  const me = String(chatId || WebApp?.initDataUnsafe?.user?.id || '');
   const API = (import.meta as any).env.VITE_API_BASE || '';
 
   const [loading, setLoading] = useState(true);

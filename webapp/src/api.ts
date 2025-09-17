@@ -11,6 +11,11 @@ export type Task = {
   columnId: string;
   createdAt: string;
   updatedAt: string;
+  deadlineAt?: string | null;
+  nextReminderAt?: string | null;
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL';
+  bountyStars?: number;
+  bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
 
     fromProcess?: boolean; // 🔀
 
@@ -42,6 +47,8 @@ export type Group = {
   id: string;
   title: string;
   kind: 'own' | 'member';
+  isTelegramGroup?: boolean;
+  isPublic?: boolean;
   ownerName?: string | null;
 };
 
@@ -153,6 +160,43 @@ export function renameGroupTitle(id: string, chatId: string, title: string) {
   return ky
     .patch(`${API_BASE}/groups/${id}`, { json: { chatId, title } })
     .json<{ ok: boolean; group: Group }>();
+}
+
+export async function toggleGroupPublic(id: string, chatId: string, makePublic: boolean) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(id)}/public`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, public: makePublic }),
+  });
+  return r.json() as Promise<{ ok: boolean; group?: { id: string; isPublic: boolean }; error?: string }>;
+}
+
+export async function listPublicGroups(params?: { search?: string; offset?: number; limit?: number }) {
+  const sp = new URLSearchParams();
+  if (params?.search) sp.set('search', params.search);
+  if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+  if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+  const r = await fetch(`${API_BASE}/groups/public?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; groups: Array<{ id: string; title: string; ownerChatId: string; ownerName?: string | null; isPublic: boolean }>; nextOffset?: number; hasMore?: boolean }>;
+}
+
+export async function getWatchStatus(groupId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/watch?chatId=${encodeURIComponent(chatId)}`);
+  return r.json() as Promise<{ ok: boolean; watching: boolean }>;
+}
+
+export async function watchGroup(groupId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/watch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId }),
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+export async function unwatchGroup(groupId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/watch?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean }>;
 }
 
 export function deleteGroup(id: string, chatId: string) {
@@ -627,9 +671,16 @@ export type TaskFeedItem = {
   text: string;
   updatedAt: string;
   createdAt: string;
+  deadlineAt?: string | null;
+  nextReminderAt?: string | null;
+  commentsCount?: number;
+  acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL';
+  bountyStars?: number;
+  bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
   status: string;
   groupId: string | null;
   groupTitle: string;
+  isTelegramGroup?: boolean;
   creatorChatId: string;
   creatorName: string;
   assigneeChatId: string | null;
@@ -683,6 +734,60 @@ export async function transcribeVoice(file: File, lang = 'ru'): Promise<{ ok: bo
     throw new Error(`STT failed: ${res.status} ${msg}`);
   }
   return res.json();
+}
+
+// ==== Rating API ====
+export type RatingStats = {
+  acorns: number;
+  seedlings: number;
+  seedlingsRemainder: number;
+  eaglesBase: number;
+  eaglesFromSeedlings: number;
+  eagles: number;
+  loadBlack: number;
+  loadRed: number;
+  loadRedInt: number;
+  bombs: number;
+  rockets: number;
+  rocketsAfterPenalty: number;
+  phoenix: number;
+};
+
+export async function getMyRating(chatId: string): Promise<{
+  ok: boolean;
+  stats?: RatingStats;
+  score?: number;
+  rank?: { current: { threshold: number; icon: string; title: string }; next: { threshold: number; icon: string; title: string } | null };
+  features?: Record<string, any>;
+}> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/me/rating?chatId=${encodeURIComponent(chatId)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
+export async function getMyAcorns(chatId: string): Promise<{ ok: boolean; count?: number }> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/me/acorns?chatId=${encodeURIComponent(chatId)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
+export async function getMyCreatedStats(chatId: string): Promise<{ ok: boolean; total?: number; done?: number; cancel?: number; active?: number }> {
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/me/created-stats?chatId=${encodeURIComponent(chatId)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
+}
+
+// Reliable endpoint under /tasks namespace (works on prod proxy)
+export async function countCreatedTasks(chatId: string, mode: 'active'|'total'|'done'|'cancel' = 'active'):
+  Promise<{ ok: boolean; count?: number }>
+{
+  const API = API_BASE || (import.meta as any).env.VITE_API_BASE || '';
+  const r = await fetch(`${API}/tasks/created/count?chatId=${encodeURIComponent(chatId)}&mode=${encodeURIComponent(mode)}`);
+  const j = await r.json().catch(() => ({ ok: false }));
+  return j;
 }
 
 
@@ -806,6 +911,99 @@ export async function getTaskLabels(taskId: string): Promise<GroupLabel[]> {
   return j.labels as GroupLabel[];
 }
 
+// ==== Deadline API ====
+export async function setTaskDeadline(taskId: string, chatId: string, deadlineAt: string | null) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/deadline`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, deadlineAt }),
+  });
+  const j = await r.json().catch(() => ({}));
+  return j as { ok: boolean; task?: Task; error?: string };
+}
+
+// ==== Bounty (virtual stars) API ====
+export async function setTaskBounty(taskId: string, chatId: string, amount: number) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/bounty`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, amount }),
+  });
+  return r.json() as Promise<{ ok: boolean; task?: Task }>;
+}
+
+export async function fakeDeposit(taskId: string, chatId: string, amount: number) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/deposit/fake`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, amount }),
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+export async function getPayoutMethod(chatId: string) {
+  const r = await fetch(`${API_BASE}/payout-method?chatId=${encodeURIComponent(chatId)}`);
+  return r.json() as Promise<{ ok: boolean; method?: { chatId: string; phone: string; bankCode?: string } | null }>;
+}
+
+export async function setPayoutMethod(chatId: string, phone: string, bankCode?: string) {
+  const r = await fetch(`${API_BASE}/payout-method`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, phone, bankCode }),
+  });
+  return r.json();
+}
+
+export async function getStarsSummary(chatId: string) {
+  const r = await fetch(`${API_BASE}/stars/summary?chatId=${encodeURIComponent(chatId)}`);
+  return r.json() as Promise<{ ok: boolean; received: number; sent: number }>;
+}
+
+// ==== Likes API ====
+export async function getTaskLikes(taskId: string, chatId?: string) {
+  const u = new URL(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/likes`, window.location.origin);
+  if (chatId) u.searchParams.set('chatId', chatId);
+  const r = await fetch(u.toString().replace(window.location.origin, ''));
+  return r.json() as Promise<{ ok: boolean; count: number; me?: boolean }>;
+}
+export async function likeTask(taskId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/likes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId }) });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+export async function unlikeTask(taskId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/likes?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+export async function getCommentLikes(taskId: string, commentId: string, chatId?: string) {
+  const url = `${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/likes` + (chatId ? `?chatId=${encodeURIComponent(chatId)}` : '');
+  const r = await fetch(url);
+  return r.json() as Promise<{ ok: boolean; count: number; me?: boolean }>;
+}
+export async function likeComment(taskId: string, commentId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/likes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId }) });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+export async function unlikeComment(taskId: string, commentId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/likes?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean; count: number; me: boolean }>;
+}
+
+// ==== Accept condition API ====
+export async function setAcceptCondition(
+  taskId: string,
+  chatId: string,
+  condition: 'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL'
+) {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/accept-condition`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, condition }),
+  });
+  const j = await r.json().catch(() => ({}));
+  return j as { ok: boolean; task?: Task; error?: string };
+}
+
 
 
 export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; outgoing: Array<{id:string;text:string}>; incoming: Array<{id:string;text:string}>; }> {
@@ -813,5 +1011,100 @@ export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; o
   return r.json();
 }
 
+/* ---------- Pre-Tasks API ---------- */
+export type PreTaskDTO = {
+  id: string;
+  creatorChatId: string;
+  groupId?: string | null;
+  text: string;
+  payload?: any;
+  plannedAssigneeChatId?: string | null;
+  triggerMode: 'AFTER_ALL_DONE' | 'DATE_PLUS' | 'DELAY_AFTER' | 'AFTER_ALL_CANCELED';
+  startAt?: string | null;
+  delayMinutes?: number | null;
+  autoCancelOnAny?: boolean;
+  status: 'PREVIEW' | 'ARMED' | 'FIRED' | 'CANCELED' | 'FAILED';
+  targetTaskId?: string | null;
+  timezone?: string | null;
+  fireAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  links?: Array<{ id: string; taskId?: string | null; depPreTaskId?: string | null }>;
+};
 
+export async function createPreTask(params: {
+  chatId: string;
+  groupId?: string | null;
+  text: string;
+  plannedAssigneeChatId?: string | null;
+  triggerMode: 'AFTER_ALL_DONE' | 'DATE_PLUS' | 'DELAY_AFTER' | 'AFTER_ALL_CANCELED';
+  startAt?: string | null;
+  delayMinutes?: number | null;
+  autoCancelOnAny?: boolean;
+  timezone?: string | null;
+  links?: Array<{ taskId?: string; preTaskId?: string }>;
+  arm?: boolean;
+}) {
+  const r = await fetch(`${API_BASE}/pre-tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
 
+export async function getPreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}`);
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function updatePreTask(id: string, patch: Partial<PreTaskDTO>) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function setPreTaskLinks(id: string, links: Array<{ taskId?: string; preTaskId?: string }>) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/links`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ links }),
+  });
+  return r.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
+export async function armPreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/arm`, { method: 'POST' });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function cancelPreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  return r.json() as Promise<{ ok: boolean; preTask?: PreTaskDTO; error?: string }>;
+}
+
+export async function forceFirePreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}/force-fire`, { method: 'POST' });
+  return r.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
+export async function listPreTasks(params: { chatId: string; groupId?: string | null; status?: string[] }) {
+  const sp = new URLSearchParams();
+  sp.set('chatId', params.chatId);
+  if (params.groupId) sp.set('groupId', params.groupId);
+  if (params.status?.length) sp.set('status', params.status.join(','));
+  const r = await fetch(`${API_BASE}/pre-tasks?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; preTasks: PreTaskDTO[] }>;
+}
+
+export async function deletePreTask(id: string) {
+  const r = await fetch(`${API_BASE}/pre-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!r.ok) {
+    // try json
+    try { const j = await r.json(); return j as { ok: boolean; error?: string }; } catch { return { ok: false, error: `http_${r.status}` } as any; }
+  }
+  try { const j = await r.json(); return j as { ok: boolean; error?: string }; } catch { return { ok: true } as any; }
+}

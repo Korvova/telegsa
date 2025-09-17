@@ -36,11 +36,8 @@ const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const me =
-        WebApp?.initDataUnsafe?.user?.id ||
-        new URLSearchParams(location.search).get('from');
-      if (!me) return;
-      const r = await listGroups(String(me));
+      if (!chatId) return;
+      const r = await listGroups(String(chatId));
       if (r.ok) setGroups(r.groups || []);
     })();
   }, [open]);
@@ -74,11 +71,7 @@ const onSave = async () => {
     if (!r.ok) throw new Error('create_event_failed');
 
     // напоминания (персональные; организатор = создатель)
-    const byChatId = String(
-      WebApp?.initDataUnsafe?.user?.id ||
-      new URLSearchParams(location.search).get('from') ||
-      chatId
-    );
+    const byChatId = String(chatId);
     if (reminders.length) {
       await setMyEventReminders(r.event.id, byChatId, reminders.slice().sort((a,b)=>a-b));
     }

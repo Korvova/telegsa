@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import WheelPicker, { type WheelItem } from './WheelPicker';
-import { listGroups } from '../api';
+import { listGroups, listPublicGroups } from '../api';
 
 type MinimalGroup = { id: string; title: string };
 
@@ -21,10 +21,11 @@ export default function GroupFilterModal({
   chatId,
   groupsProp,
 }: Props) {
-  const [tab, setTab] = useState<'own' | 'member'>('own');
+  const [tab, setTab] = useState<'own' | 'member' | 'public'>('own');
   const [loading, setLoading] = useState(false);
   const [own, setOwn] = useState<MinimalGroup[]>([]);
   const [member, setMember] = useState<MinimalGroup[]>([]);
+  const [pub, setPub] = useState<MinimalGroup[]>([]);
   const [selectedId, setSelectedId] = useState<string | undefined>(initialGroupId);
 
   // маппер любых Group → MinimalGroup
@@ -93,6 +94,12 @@ export default function GroupFilterModal({
 
         setOwn(ownMapped);
         setMember(memberMapped);
+        // публичные группы
+        try {
+          const pubRes = await listPublicGroups({ limit: 200 });
+          const pubArr = Array.isArray(pubRes?.groups) ? pubRes.groups : [];
+          setPub(pubArr.map((g:any) => ({ id: String(g.id), title: `🌍 ${String(g.title)}` })));
+        } catch { setPub([]); }
       } catch (e) {
         console.error('listGroups failed', e);
         setOwn([]);
@@ -105,9 +112,9 @@ export default function GroupFilterModal({
   }, [isOpen, chatId]);
 
   const items: WheelItem[] = useMemo(() => {
-    const src = tab === 'own' ? own : member;
+    const src = tab === 'own' ? own : (tab === 'member' ? member : pub);
     return src.map((g) => ({ id: g.id, label: g.title }));
-  }, [tab, own, member]);
+  }, [tab, own, member, pub]);
 
   const initialIndex = useMemo(() => {
     if (!selectedId) return 0;
@@ -166,7 +173,7 @@ export default function GroupFilterModal({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            gridTemplateColumns: '1fr 1fr 1fr',
             gap: 8,
             background: '#f2f4f8',
             padding: 6,
@@ -203,6 +210,21 @@ export default function GroupFilterModal({
           >
             Со мной
           </button>
+          <button
+            onClick={() => setTab('public')}
+            style={{
+              border: 'none',
+              borderRadius: 8,
+              padding: '10px 0',
+              fontWeight: 700,
+              background: tab === 'public' ? '#2b7cff' : '#ffffff',
+              color: tab === 'public' ? '#fff' : '#333',
+              boxShadow: tab === 'public' ? '0 2px 8px rgba(43,124,255,0.35)' : 'none',
+              cursor: 'pointer',
+            }}
+          >
+            Публичные
+          </button>
         </div>
 
         {/* Слайдер */}
@@ -222,13 +244,15 @@ export default function GroupFilterModal({
               {tab === 'own' ? 'У вас нет проектов' : 'Нет проектов с вашим участием'}
             </div>
           ) : (
-            <WheelPicker
-              items={items}
-              itemHeight={40}
-              visibleCount={5}
-              initialIndex={initialIndex}
-              onChange={(idx) => setSelectedId(items[idx]?.id)}
-            />
+            <div style={{ color: tab==='public' ? '#16a34a' : '#333' }}>
+              <WheelPicker
+                items={items}
+                itemHeight={40}
+                visibleCount={5}
+                initialIndex={initialIndex}
+                onChange={(idx) => setSelectedId(items[idx]?.id)}
+              />
+            </div>
           )}
         </div>
 

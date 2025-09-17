@@ -156,14 +156,15 @@ export default function FeedScopeTabs({
 
     // Мои проекты — белые
     ownGroups.forEach((g, idx) => {
+      const isTg = (g as any).isTelegramGroup === true;
       items.push(
         <Tab
           key={`own-${g.id}`}
           active={isActive({ kind: 'group', groupId: g.id })}
           onClick={() => onChange({ kind: 'group', groupId: g.id })}
-          color="#ffffff"
+          color={isTg ? '#42aaff' : '#ffffff'}
         >
-          {g.title}
+          {isTg ? '➡️📁 ' : ''}{g.title}
         </Tab>
       );
       // ставим | между всеми, кроме последнего общего случая
@@ -172,14 +173,15 @@ export default function FeedScopeTabs({
 
     // Участник — голубые
     memberGroups.forEach((g, idx) => {
+      const isTg = (g as any).isTelegramGroup === true;
       items.push(
         <Tab
           key={`mem-${g.id}`}
           active={isActive({ kind: 'group', groupId: g.id })}
           onClick={() => onChange({ kind: 'group', groupId: g.id })}
-          color="#8aa0ff"
+          color={isTg ? '#42aaff' : '#8aa0ff'}
         >
-          {g.title}
+          {isTg ? '➡️📁 ' : ''}{g.title}
         </Tab>
       );
       if (idx < memberGroups.length - 1) pushSep();

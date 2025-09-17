@@ -1,6 +1,10 @@
 // webapp/src/pages/Home/HomePage.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
+import StoriesBar from '../../components/stories/StoriesBar';
+import StoriesViewer from '../../components/stories/StoriesViewer';
+import { useStoriesData } from '../../components/stories/useStoriesData';
+import type { StoriesBarItem } from '../../components/stories/StoriesTypes';
 import {
   listMyFeed,
   type TaskFeedItem,
@@ -8,13 +12,35 @@ import {
   type GroupLabel,
   listGroups,
   API_BASE,
+  uploadTaskMedia,
+  addComment,
+  completeTask,
+  fetchBoard,
+  moveTask,
 } from '../../api';
+import { listPreTasks, type PreTaskDTO, getGroupMembers, deletePreTask } from '../../api';
+import PreTaskCard from '../../components/PreTaskCard';
+import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
+import PreTaskEditModal from '../../components/PreTaskEditModal';
+// duplicate import removed
+import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
+import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
+import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
+import { useMyRankIcon } from '../../hooks/useMyRankIcon';
+import { listGroups as apiListGroups, fetchBoard as apiFetchBoard, type Column as BoardColumn } from '../../api';
+import DeadlinePicker from '../../components/DeadlinePicker';
+import CameraCaptureModal from '../../components/CameraCaptureModal';
 import type { StageKey } from '../../components/StageScroller';
 import GroupFilterModal from '../../components/GroupFilterModal';
 import LabelFilterWheel from '../../components/LabelFilterWheel';
+import StarBadge from '../../components/StarBadge';
+import CommentsStrip from '../../components/CommentsStrip';
+import TaskCommentsOverlay from '../../components/TaskCommentsOverlay';
+import LongPressOutline from '../../components/LongPressOutline';
+import PayoutPromptModal from '../../components/PayoutPromptModal';
 
-const LONG_PRESS_MS = 500;
+// const LONG_PRESS_MS = 500; // отключено: открываем быстрые действия по клику на статус
 
 function fmtShort(iso?: string | null): string {
   if (!iso) return '';
@@ -105,10 +131,22 @@ type FeedScope = { kind: 'all' } | { kind: 'group'; groupId: string };
 export default function HomePage({
   chatId,
   onOpenTask,
+  reloadKey = 0,
 }: {
   chatId: string;
   onOpenTask: (id: string) => void;
+  reloadKey?: number;
 }) {
+  // скрывать верхние FAB 📁/🏷️, когда открыт CreateTask
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setIsCreateTaskOpen(Boolean(detail));
+    };
+    window.addEventListener('create-task-open', handler as EventListener);
+    return () => window.removeEventListener('create-task-open', handler as EventListener);
+  }, []);
   // 🏷️ кэш ярлыков по задачам
   const [labelsByTask, setLabelsByTask] = useState<Record<string, GroupLabel[]>>({});
 
@@ -117,6 +155,154 @@ export default function HomePage({
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [preTasks, setPreTasks] = useState<PreTaskDTO[]>([]);
+  // Эфемерные дети (сразу после создания, до того как links «дописались» на сервере)
+  const [ephemeralChildren, setEphemeralChildren] = useState<Record<string, any[]>>({});
+  // debug helpers for after-stripe
+  const logChildrenForTask = (tid: string) => {
+    try {
+      const t = items.find((x:any)=> String(x.id)===String(tid));
+      const ttext = String((t as any)?.text || '');
+      let firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===String(tid));
+      if (!firedOfTask.length && ttext) firedOfTask = preTasks.filter((p:any)=> String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+      const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+      const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===String(tid)));
+      const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+      const uniq = new Set<string>();
+      for (const x of direct) uniq.add(String((x as any).id));
+      for (const x of viaFired) uniq.add(String((x as any).id));
+      console.log('[AFTER_STRIPE_TASK]', {
+        taskId: String(tid),
+        text: ttext,
+        firedIds: Array.from(firedIds),
+        directIds: direct.map((x:any)=>String(x.id)),
+        viaFiredIds: viaFired.map((x:any)=>String(x.id)),
+        total: uniq.size,
+      });
+    } catch (e) { console.log('[AFTER_STRIPE_TASK][ERR]', e); }
+  };
+  const logChildrenForPre = (pid: string) => {
+    try {
+      const children = preTasks.filter((x:any) => String(x.id)!==String(pid) && Array.isArray((x as any).links) && (x as any).links.some((l:any)=> String((l as any).depPreTaskId || (l as any).preTaskId || '')===String(pid)));
+      console.log('[AFTER_STRIPE_PRE]', { preId: String(pid), childIds: children.map((x:any)=>String(x.id)), count: children.length });
+    } catch (e) { console.log('[AFTER_STRIPE_PRE][ERR]', e); }
+  };
+  // общая подгрузка предзадач (в т.ч. FIRED)
+  const refreshPreTasks = async () => {
+    try {
+      const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED','FIRED'] });
+      if ((pr as any)?.ok) setPreTasks((pr as any).preTasks || []);
+    } catch {}
+  };
+
+  // Точечно подтянуть один preTask (актуализировать links)
+  const ensurePreTaskFresh = async (pid: string) => {
+    try {
+      const api = await import('../../api');
+      const full = await api.getPreTask(String(pid));
+      const p = (full as any)?.preTask;
+      if (p && p.id) {
+        setPreTasks((prev) => {
+          const map = new Map(prev.map((x:any)=>[String(x.id), x]));
+          map.set(String(p.id), p as any);
+          return Array.from(map.values());
+        });
+      }
+    } catch {}
+  };
+  const [openPreTask, setOpenPreTask] = useState<PreTaskDTO | null>(null);
+  const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
+  const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
+  const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
+  const [groupPublicById, setGroupPublicById] = useState<Record<string, boolean>>({});
+  const [manageForTask, setManageForTask] = useState<{ id: string } | null>(null);
+  const [achFilter, setAchFilter] = useState<AchFilterKey>('none');
+  const [achItems, setAchItems] = useState<TaskFeedItem[] | null>(null);
+  // Используем переданный chatId, чтобы не расходиться с настройками
+  const meChatId = String(chatId || '');
+  const myRankIcon = useMyRankIcon(meChatId);
+
+  // ── Stories (сегодняшние изменения) ──
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [currentProject, setCurrentProject] = useState<StoriesBarItem | null>(null);
+  const { items: storyItems, markSeen } = useStoriesData(meChatId);
+  const onOpenProjectStories = (item: StoriesBarItem) => {
+    setCurrentProject(item);
+    setViewerOpen(true);
+  };
+
+  // Build dedicated view for achievements filter by scanning all boards (personal + groups)
+  // ВАЖНО: объявление ниже хука useChatId, поэтому переносим ниже его вызова
+  // этот эффект объявлен позже после useChatId
+  useEffect(() => {
+    if (achFilter === 'none') { setAchItems(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const me = String(meChatId);
+        const normalize = (name: string) => {
+          const i = name.indexOf('::');
+          return i >= 0 ? { base: name.slice(i + 2), groupId: name.slice(0, i) } : { base: name, groupId: null as string | null };
+        };
+        const cols: BoardColumn[] = [];
+        const def = await apiFetchBoard(me).catch(() => null as any);
+        if (def && (def as any).columns) cols.push(...((def as any).columns as BoardColumn[]));
+        const gs = await apiListGroups(me).catch(() => ({ ok:false, groups: [] } as any));
+        const groups = (gs && (gs as any).groups) || [];
+        const gTitle = new Map<string, string>();
+        for (const g of groups) gTitle.set(String(g.id), String(g.title || ''));
+        for (const g of groups) {
+          const b = await apiFetchBoard(me, String(g.id)).catch(() => null as any);
+          if (b && (b as any).columns) cols.push(...((b as any).columns as BoardColumn[]));
+        }
+
+        const items: TaskFeedItem[] = [];
+        for (const c of cols) {
+          const { base, groupId } = normalize(String(c.name));
+          const status = String(base);
+          const isDone = status.toLowerCase() === 'done';
+          const isCancel = status.toLowerCase() === 'cancel';
+          const isActive = !isDone && !isCancel;
+          for (const t of c.tasks || []) {
+            const creatorMe = String((t as any).createdByChatId || '') === me;
+            const assigneeMe = String((t as any).assigneeChatId || '') === me;
+            const assigneeOther = (t as any).assigneeChatId && !assigneeMe;
+            const match = (
+              achFilter === 'acorns' ? (creatorMe && !isDone)
+              : achFilter === 'seedlings' ? (isDone && creatorMe && assigneeMe)
+              : achFilter === 'eagles' ? (isDone && creatorMe && !!assigneeOther)
+              : achFilter === 'loadBlack' ? (isActive && assigneeMe && !creatorMe)
+              : achFilter === 'rockets' ? (isDone && assigneeMe && !creatorMe)
+              : true
+            );
+            if (!match) continue;
+            items.push({
+              id: String((t as any).id),
+              text: String((t as any).text || ''),
+              createdAt: String((t as any).createdAt || new Date().toISOString()),
+              updatedAt: String((t as any).updatedAt || new Date().toISOString()),
+              deadlineAt: (t as any).deadlineAt || null,
+              acceptCondition: (t as any).acceptCondition || 'NONE',
+              bountyStars: (t as any).bountyStars || 0,
+              bountyStatus: (t as any).bountyStatus || 'NONE',
+              status,
+              groupId: groupId,
+              groupTitle: groupId ? (gTitle.get(String(groupId)) || 'Без группы') : 'Моя группа',
+              isTelegramGroup: false,
+              creatorChatId: String((t as any).createdByChatId || (t as any).chatId || ''),
+              creatorName: '',
+              assigneeChatId: (t as any).assigneeChatId ? String((t as any).assigneeChatId) : null,
+              assigneeName: (t as any).assigneeName || null,
+              fromProcess: !!(t as any).fromProcess,
+              taskType: (t as any).type || 'TASK',
+            } as TaskFeedItem);
+          }
+        }
+        if (alive) setAchItems(items);
+      } catch { if (alive) setAchItems([]); }
+    })();
+    return () => { alive = false; };
+  }, [achFilter, meChatId, reloadKey]);
 
   // выбор области
   const [scope, setScope] = useState<FeedScope>({ kind: 'all' });
@@ -136,14 +322,104 @@ export default function HomePage({
 
   // колесо выбора ярлыка
   const [isLabelWheelOpen, setLabelWheelOpen] = useState(false);
+  const [completePrompt, setCompletePrompt] = useState<{ id: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
+  const [payoutPrompt, setPayoutPrompt] = useState<{ id: string; rub: number } | null>(null);
+  // раскрытие списка предзадач под карточкой
+  const [openAfter, setOpenAfter] = useState<Record<string, boolean>>({});
 
   // поиск
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
+  const [openComments, setOpenComments] = useState<{ id: string; text: string; anchorId: string } | null>(null);
+  const [sseTick, setSseTick] = useState(0);
+  // const [lpModal, setLpModal] = useState(false); // deprecated demo modal
 
-  const meChatId = String(
-    WebApp?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('from') || ''
-  );
+  // meChatId уже объявлен выше
+
+  // Свайп вправо по карточке => быстрый запуск создания предзадачи (как по 🔘)
+  const swipeState = useRef<{ id: string | null; sx: number; sy: number } | null>(null);
+  const [swipeUi, setSwipeUi] = useState<{ id: string | null; dx: number }>({ id: null, dx: 0 });
+  const preSwipeState = useRef<{ id: string | null; sx: number; sy: number } | null>(null);
+  const [preSwipeUi, setPreSwipeUi] = useState<{ id: string | null; dx: number }>({ id: null, dx: 0 });
+  const SWIPE_REVEAL = 120; // ширина «Запустить после» для фиксации
+  const SWIPE_MAX = 180; // максимум сдвига визуально
+  const SWIPE_Y = 40; // допустимый перекос по оси Y
+  const suppressClickRef = useRef<{ id: string; until: number } | null>(null);
+  const beginSwipe = (id: string, x: number, y: number) => {
+    swipeState.current = { id, sx: x, sy: y };
+    setSwipeUi({ id, dx: 0 });
+  };
+  const moveSwipe = (e: PointerEvent | TouchEvent, id: string) => {
+    const st = swipeState.current;
+    if (!st || st.id !== id) return;
+    let x = 0, y = 0;
+    if ((e as TouchEvent).touches && (e as TouchEvent).touches[0]) {
+      x = (e as TouchEvent).touches[0].clientX;
+      y = (e as TouchEvent).touches[0].clientY;
+    } else if ((e as PointerEvent).clientX != null) {
+      x = (e as PointerEvent).clientX;
+      y = (e as PointerEvent).clientY;
+    }
+    const dx = x - st.sx;
+    const dy = Math.abs(y - st.sy);
+    if (dy >= SWIPE_Y) return; // слишком большой вертикальный сдвиг — игнорируем
+    if (dx > 10) cancelLongPress();
+    const nx = Math.max(0, Math.min(dx, SWIPE_MAX));
+    setSwipeUi((prev) => (prev.id === id ? { id, dx: nx } : prev));
+  };
+  const endSwipe = (id?: string, payload?: { text: string; groupId: string | null }) => {
+    const cur = swipeUi;
+    if (id && cur.id === id && cur.dx >= SWIPE_REVEAL) {
+      cancelLongPress();
+      try {
+        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: id, text: payload?.text, groupId: payload?.groupId } }));
+        WebApp?.HapticFeedback?.impactOccurred?.('light');
+      } catch {}
+      suppressClickRef.current = { id, until: Date.now() + 600 };
+    }
+    swipeState.current = null;
+    setSwipeUi({ id: null, dx: 0 });
+  };
+  const beginPreSwipe = (id: string, x: number, y: number) => {
+    const sid = String(id);
+    preSwipeState.current = { id: sid, sx: x, sy: y };
+    setPreSwipeUi({ id: sid, dx: 0 });
+  };
+  const movePreSwipe = (e: PointerEvent | TouchEvent, id: string) => {
+    const st = preSwipeState.current;
+    if (!st || st.id !== String(id)) return;
+    let x = 0, y = 0;
+    if ((e as TouchEvent).touches && (e as TouchEvent).touches[0]) {
+      x = (e as TouchEvent).touches[0].clientX;
+      y = (e as TouchEvent).touches[0].clientY;
+    } else if ((e as PointerEvent).clientX != null) {
+      x = (e as PointerEvent).clientX;
+      y = (e as PointerEvent).clientY;
+    }
+    const dx = x - st.sx;
+    const dy = Math.abs(y - st.sy);
+    if (dy >= SWIPE_Y) return;
+    if (dx > 10) cancelLongPress();
+    const nx = Math.max(0, Math.min(dx, SWIPE_MAX));
+    setPreSwipeUi((prev) => (prev.id === String(id) ? { id: String(id), dx: nx } : prev));
+  };
+  const endPreSwipe = (id?: string, payload?: { text: string; groupId: string | null }) => {
+    const cur = preSwipeUi;
+    if (id && cur.id === String(id) && cur.dx >= SWIPE_REVEAL) {
+      cancelLongPress();
+      try {
+        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { preTaskId: String(id), text: payload?.text, groupId: payload?.groupId } }));
+        WebApp?.HapticFeedback?.impactOccurred?.('light');
+      } catch {}
+      suppressClickRef.current = { id: String(id), until: Date.now() + 600 } as any;
+    }
+    preSwipeState.current = null;
+    setPreSwipeUi({ id: null, dx: 0 });
+  };
 
   const DEFAULT_STATUSES = ['Новые', 'В работе', 'Готово', 'Согласование', 'Ждёт'] as const;
 
@@ -153,6 +429,7 @@ export default function HomePage({
     const load = async () => {
       setLoading(true);
       try {
+        const hardLimit = achFilter === 'none' ? 30 : 500;
         const r = await listMyFeed({
           chatId,
           role: 'all',
@@ -160,7 +437,7 @@ export default function HomePage({
           q: search.trim(),
           sort: 'updated_desc',
           offset: 0,
-          limit: 30,
+          limit: hardLimit,
         });
         if (!alive) return;
         if (r.ok) {
@@ -168,6 +445,10 @@ export default function HomePage({
           setOffset(r.nextOffset);
           setHasMore(r.hasMore);
         }
+        try {
+          const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED','FIRED'] });
+          if (alive && pr.ok) setPreTasks(pr.preTasks || []);
+        } catch {}
       } finally {
         if (alive) setLoading(false);
       }
@@ -176,7 +457,128 @@ export default function HomePage({
     return () => {
       alive = false;
     };
-  }, [chatId, search]);
+  }, [chatId, search, reloadKey, achFilter, sseTick]);
+
+  // После создания предзадачи — быстро перезагрузим список, чтобы подтянуть корректные связи (links)
+  useEffect(() => {
+    const h = async (e: Event) => {
+      const detailAny: any = (e as any)?.detail || null;
+      const pre = (detailAny && detailAny.preTask) || detailAny;
+      const parentTaskIds: string[] = (detailAny && detailAny.parentTaskIds) || [];
+      const parentPreTaskIds: string[] = (detailAny && detailAny.parentPreTaskIds) || [];
+      try { console.log('[EVENT] pre-task-created', detailAny); } catch {}
+      // 1) обновим общий список
+      await refreshPreTasks();
+      // 2) если известно id новой предзадачи — подтянем её полностью и раскроем родителя
+      try {
+        const nid = String(pre?.id || '');
+        if (nid) {
+          const api = await import('../../api');
+          const full = await api.getPreTask(nid);
+          const p = (full as any)?.preTask;
+          if (p && Array.isArray((p as any).links)) {
+            let parentIds: string[] = (p as any).links
+              .map((l:any)=> String((l as any).depPreTaskId || (l as any).preTaskId || ''))
+              .filter(Boolean);
+            // дополним родителями из payload события
+            parentIds = Array.from(new Set([...parentIds, ...parentPreTaskIds]));
+            // сохраним эфемерных детей для мгновенного отображения
+            if (parentIds.length) {
+              setEphemeralChildren(prev => {
+                const next: Record<string, any[]> = { ...prev };
+                for (const pid of parentIds) {
+                  const arr = next[String(pid)] || [];
+                  // если такого id ещё нет — добавим
+                  if (!arr.some((x:any)=> String((x as any).id)===String(p.id))) next[String(pid)] = [p, ...arr];
+                }
+                return next;
+              });
+            }
+            if (parentIds.length) {
+              setOpenAfter(prev => {
+                const next = { ...prev } as any;
+                for (const pid of parentIds) next[`P:${pid}`] = true;
+                return next;
+              });
+              // точечно освежим каждого родителя
+              for (const pid of parentIds) { try { await ensurePreTaskFresh(pid); } catch {} }
+            }
+            // раскрыть и для parent-task, если были переданы
+            if (Array.isArray(parentTaskIds) && parentTaskIds.length) {
+              setOpenAfter(prev => {
+                const next = { ...prev } as any;
+                for (const tid of parentTaskIds) next[`T:${tid}`] = true;
+                return next;
+              });
+            }
+          }
+        }
+      } catch {}
+      // 3) повторная подгрузка через небольшой лаг — на случай отложенной записи связей
+      setTimeout(() => { refreshPreTasks(); }, 800);
+    };
+    window.addEventListener('pre-task-created', h as EventListener);
+    return () => window.removeEventListener('pre-task-created', h as EventListener);
+  }, [chatId]);
+
+  // подтянуть имена для предзадач (owner + members групп)
+  useEffect(() => {
+    (async () => {
+      try {
+        const groupIds = Array.from(new Set(preTasks.map(p => String(p.groupId || '')).filter(Boolean)));
+        const map: Record<string, string> = {};
+        for (const gid of groupIds) {
+          try {
+            const r = await getGroupMembers(gid);
+            if (r?.owner) map[String(r.owner.chatId)] = r.owner.name || String(r.owner.chatId);
+            for (const m of r.members || []) {
+              map[String(m.chatId)] = m.name || String(m.chatId);
+            }
+          } catch {}
+        }
+        // сам пользователь
+        map[String(chatId)] = map[String(chatId)] || 'Я';
+        setNameByChat(map);
+      } catch {}
+    })();
+    // build group title map
+    (async () => {
+      try {
+        const r = await listGroups(chatId);
+        if ((r as any)?.ok) {
+          const map: Record<string, string> = {};
+          const pub: Record<string, boolean> = {};
+          for (const g of (r as any).groups || []) {
+            map[String(g.id)] = g.title;
+            pub[String(g.id)] = !!(g as any).isPublic;
+          }
+          setGroupTitleById(map);
+          setGroupPublicById(pub);
+        }
+      } catch {}
+    })();
+  }, [preTasks, chatId]);
+
+  // Показ модалки для ответственного, если задача в Done и есть невыплаченное вознаграждение (без скрытия до оплаты)
+  useEffect(() => {
+    try {
+      if (!items.length) return;
+      const me = meChatId;
+      const first = items.find((t) => {
+        const rub = Number((t as any).bountyStars || 0);
+        const status = String((t as any).bountyStatus || 'NONE');
+        const assignee = String((t as any).assigneeChatId || '');
+        const isDone = (String((t as any).status || '').toLowerCase() === 'готово') || (String((t as any).phase || '').toLowerCase() === 'done');
+        if (!rub || rub <= 0) return false;
+        if (status === 'PAID') return false;
+        if (!isDone) return false;
+        if (!assignee || assignee !== me) return false;
+        return true;
+      });
+      if (first) setPayoutPrompt({ id: (first as any).id, rub: Number((first as any).bountyStars || 0) });
+      else setPayoutPrompt(null);
+    } catch {}
+  }, [items]);
 
   const loadMore = async () => {
     if (loading || !hasMore) return;
@@ -272,12 +674,42 @@ export default function HomePage({
 
   // базовая фильтрация + по ярлыку
   const filteredItems = useMemo(() => {
-    const base = items.filter((t: any) => {
+    const baseScoped = items.filter((t: any) => {
       if (scope.kind === 'all') return true;
       return String(t.groupId || '') === String(scope.groupId);
     });
 
-    if (!(scope.kind === 'group') || !selectedLabel) return base;
+    const base = baseScoped;
+    if (!(scope.kind === 'group') || !selectedLabel) {
+      // apply achievements filter even without label
+      const withAch = base.filter((t: any) => {
+        const phase = String(phaseOf(t)).toLowerCase();
+        const done = phase === 'done';
+        const cancel = phase === 'cancel';
+        const active = !done && !cancel;
+        const creatorMe = String((t as any).creatorChatId || '') === String(meChatId);
+        const assigneeMe = String((t as any).assigneeChatId || '') === String(meChatId);
+        switch (achFilter) {
+          case 'acorns':
+            return creatorMe && !done; // исключаем Done
+          case 'seedlings':
+            return done && creatorMe && assigneeMe;
+          case 'eagles':
+            return done && creatorMe && String((t as any).assigneeChatId || '') !== String(meChatId) && !!(t as any).assigneeChatId;
+          case 'loadBlack':
+            return active && assigneeMe && !creatorMe;
+          case 'rockets':
+            return done && assigneeMe && !creatorMe;
+          case 'bombs': {
+            const dl = (t as any).deadlineAt ? Date.parse(String((t as any).deadlineAt)) : NaN;
+            return active && assigneeMe && !Number.isNaN(dl) && dl < Date.now();
+          }
+          default:
+            return true;
+        }
+      });
+      return withAch;
+    }
 
     const matchTitle = selectedLabel.title.trim().toLowerCase();
     const hasLabel = (t: any) => {
@@ -297,33 +729,102 @@ export default function HomePage({
       return false;
     };
 
-    return base.filter(hasLabel);
-  }, [items, scope, selectedLabel, labelsByTask]);
+    const byLabel = base.filter(hasLabel);
+    const withAch = byLabel.filter((t: any) => {
+      const phase = String(phaseOf(t)).toLowerCase();
+      const done = phase === 'done';
+      const cancel = phase === 'cancel';
+      const active = !done && !cancel;
+      const creatorMe = String((t as any).creatorChatId || '') === String(meChatId);
+      const assigneeMe = String((t as any).assigneeChatId || '') === String(meChatId);
+      switch (achFilter) {
+        case 'acorns':
+          return creatorMe && !done; // исключаем Done
+        case 'seedlings':
+          return done && creatorMe && assigneeMe;
+        case 'eagles':
+          return done && creatorMe && String((t as any).assigneeChatId || '') !== String(meChatId) && !!(t as any).assigneeChatId;
+        case 'loadBlack':
+          return active && assigneeMe && !creatorMe;
+        case 'rockets':
+          return done && assigneeMe && !creatorMe;
+        case 'bombs': {
+          const dl = (t as any).deadlineAt ? Date.parse(String((t as any).deadlineAt)) : NaN;
+          return active && assigneeMe && !Number.isNaN(dl) && dl < Date.now();
+        }
+        default:
+          return true;
+      }
+    });
+    return withAch;
+  }, [items, scope, selectedLabel, labelsByTask, achFilter, meChatId]);
 
   // локальный патч только выбранного айтема
   const patchItem = (id: string, patch: Partial<TaskFeedItem> & Record<string, any>) => {
     setItems((prev) => (prev.map((it) => (it.id === id ? ({ ...it, ...patch } as any) : it))));
   };
 
-  // QUICK BAR
-  const [openQBarId, setOpenQBarId] = useState<string | null>(null);
+  // принять внешние патчи (например, после редактирования через FAB)
+  useEffect(() => {
+    const onPatched = (e: any) => {
+      try {
+        const d = (e && e.detail) || {};
+        const id = String(d.id || '');
+        if (!id) return;
+        patchItem(id, d);
+      } catch {}
+    };
+    window.addEventListener('task-patched', onPatched as any);
+    return () => window.removeEventListener('task-patched', onPatched as any);
+  }, []);
+
+  // SSE auto-refresh on task fired
+  useEffect(() => {
+    if (!chatId) return;
+    const url = `${API_BASE}/events/stream?chatId=${encodeURIComponent(chatId)}`;
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(url);
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data || '{}');
+          if (data && data.type === 'task_fired') {
+            setSseTick((x) => x + 1);
+            // refresh preTasks too
+            refreshPreTasks();
+          }
+        } catch {}
+      };
+      es.onerror = () => { try { es && es.close(); } catch {}; es = null; };
+    } catch {}
+    return () => { try { es && es.close(); } catch {} };
+  }, [chatId]);
+
+  // удалить карточку из ленты (после удаления задачи)
+  useEffect(() => {
+    const onRemoved = (e: any) => {
+      try {
+        const id = String((e && e.detail && e.detail.id) || '');
+        if (!id) return;
+        setItems(prev => prev.filter(it => it.id !== id));
+      } catch {}
+    };
+    window.addEventListener('task-removed', onRemoved as any);
+    return () => window.removeEventListener('task-removed', onRemoved as any);
+  }, []);
+
+  // QUICK BAR (храним id задачи и ключ страницы, чтобы не дублировать в нескольких секциях)
+  const [openQBar, setOpenQBar] = useState<{ id: string; page: PageKey } | null>(null);
   const lpTimer = useRef<any>(null);
   const sliderRef = useRef<HTMLDivElement | null>(null);
-  const isQuickBarOpen = openQBarId !== null;
+  const isQuickBarOpen = openQBar !== null;
 
-  const startLongPress = (taskId: string) => {
-    clearTimeout(lpTimer.current);
-    lpTimer.current = setTimeout(() => {
-      setOpenQBarId(taskId);
-      try {
-        WebApp?.HapticFeedback?.impactOccurred?.('light');
-      } catch {}
-    }, LONG_PRESS_MS);
-  };
+  // long-press отключён: быстрые действия открываются по клику на статус-бейдж
+  // const startLongPress = (_taskId: string) => {};
   const cancelLongPress = () => {
     clearTimeout(lpTimer.current);
   };
-  const closeQBar = () => setOpenQBarId(null);
+  const closeQBar = () => setOpenQBar(null);
 
   // загрузка ярлыков группы (для колеса)
   async function ensureGroupLabels(groupId: string): Promise<GroupLabel[]> {
@@ -398,9 +899,10 @@ export default function HomePage({
       if (wheelLock) return;
       wheelLock = true;
       const dir = e.deltaX > 0 ? 1 : -1;
-      const page = Math.round(el.scrollLeft / el.clientWidth);
+      const pageW = el.clientWidth + COLUMN_GAP;
+      const page = Math.round(el.scrollLeft / pageW);
       const next = Math.max(0, Math.min(page + dir, PAGES.length - 1));
-      el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
+      el.scrollTo({ left: next * pageW, behavior: 'smooth' });
       setTimeout(() => {
         wheelLock = false;
       }, 350);
@@ -412,10 +914,20 @@ export default function HomePage({
   }, []);
 
   // ---- UI ----
+  const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
+      {/* Сториз: самый верх над шапкой */}
+      <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
+      {viewerOpen && currentProject && (
+        <StoriesViewer
+          project={currentProject}
+          onClose={() => setViewerOpen(false)}
+          onSeen={(slideIndex) => markSeen(currentProject.projectId, slideIndex)}
+        />
+      )}
       {/* Хедер: Все | <группа>  🔎 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button
           onClick={() => {
             setScope({ kind: 'all' });
@@ -442,6 +954,8 @@ export default function HomePage({
           {scope.kind === 'group' ? currentGroupTitle || 'Выбрана группа' : 'Выбрать группу'}
         </button>
         <div style={{ marginLeft: 'auto' }} />
+        {/* Текущий ранг рядом с 🔎 */}
+        <RankBadgeButton items={items} meChatId={meChatId} />
         <button
           onClick={() => setSearchOpen((v) => !v)}
           style={{ background: 'transparent', border: 'none', color: '#c7d2fe', cursor: 'pointer', fontSize: 18 }}
@@ -479,12 +993,13 @@ export default function HomePage({
           overscrollBehaviorX: 'contain' as any,
           scrollSnapType: 'x mandatory',
           WebkitOverflowScrolling: 'touch',
-          gap: 0,
+          gap: COLUMN_GAP,
           scrollBehavior: 'smooth',
         }}
       >
         {PAGES.map((pg) => {
-          const pageItems = filteredItems.filter((t: any) => {
+          const baseList = achFilter !== 'none' && pg.key === 'all' && achItems ? achItems : filteredItems;
+          const pageItems = baseList.filter((t: any) => {
             if (pg.key === 'all') return true;
             return String(phaseOf(t)) === pg.key;
           });
@@ -500,7 +1015,7 @@ export default function HomePage({
                   position: 'sticky',
                   top: 0,
                   zIndex: 2,
-                  padding: '6px 12px 8px',
+                padding: '6px 8px 8px',
                   background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
                   backdropFilter: 'blur(2px)',
                   display: 'flex',
@@ -523,6 +1038,27 @@ export default function HomePage({
                 >
                   {pg.label}
                 </span>
+
+                {/* Очивки рядом с «Все» */}
+                {pg.key === 'all' ? (
+                  <div style={{ marginLeft: 4, display:'inline-flex', alignItems:'center', gap:6 }}>
+                    <AchievementsBar
+                      items={items}
+                      meChatId={meChatId}
+                      reloadToken={reloadKey}
+                      onFilter={(k) => setAchFilter(k)}
+                    />
+                    {achFilter !== 'none' && (
+                      <button
+                        onClick={() => setAchFilter('none')}
+                        title="Сбросить фильтр"
+                        style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:12 }}
+                      >
+                        ✕ фильтр
+                      </button>
+                    )}
+                  </div>
+                ) : null}
 
                 {scope.kind === 'group' && (
                   <button
@@ -548,9 +1084,162 @@ export default function HomePage({
                 )}
               </div>
 
+              {(() => {
+                // Вставим плановые предзадачи (без links), созданные мной и попадающие в область
+                const scheduled = preTasks.filter((pp:any) => {
+                  const statusOk = String(pp.status||'')==='ARMED';
+                  const modeOk = String(pp.triggerMode||'')==='DATE_PLUS';
+                  const noLinks = !Array.isArray((pp as any).links) || ((pp as any).links).length===0;
+                  const mine = String((pp as any).creatorChatId||'')===String(meChatId);
+                  const inScope = (scope.kind==='all') || (String((pp as any).groupId||'')===String((scope as any).groupId||''));
+                  return statusOk && modeOk && noLinks && mine && inScope;
+                });
+                const now = Date.now();
+                // Выровняем «Плановые» по той же логике порядка, что и задачи (updated_at ↓)
+                const scheduledSorted = scheduled
+                  .slice()
+                  .sort((a:any, b:any) => {
+                    const tb = Date.parse(String((b as any).updatedAt || (b as any).createdAt || (b as any).startAt || 0)) || 0;
+                    const ta = Date.parse(String((a as any).updatedAt || (a as any).createdAt || (a as any).startAt || 0)) || 0;
+                    return tb - ta;
+                  });
+                let schedIdx = 0;
+                return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                
                 {pageItems.length ? (
                   pageItems.map((t) => {
+                    const injected: any[] = [];
+                    // Вставим все «Плановые», которые новее текущей карточки
+                    try {
+                      const taskTs = Date.parse(String((t as any).updatedAt || 0)) || 0;
+                      while (schedIdx < scheduledSorted.length) {
+                        const p:any = scheduledSorted[schedIdx];
+                        const pTs = Date.parse(String((p as any).updatedAt || (p as any).createdAt || (p as any).startAt || 0)) || 0;
+                        if (pTs > taskTs) {
+                          const when = String((p as any).startAt||'');
+                          const ms = when ? (new Date(when).getTime() - now) : 0;
+                          const signOverdue = ms < 0;
+                          const abs = Math.abs(ms);
+                          const d = Math.floor(abs / 86400000);
+                          const h = Math.floor((abs % 86400000) / 3600000);
+                          const m = Math.floor((abs % 3600000) / 60000);
+                          const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+                          const leftText = when ? (signOverdue ? 'скоро' : `через ${short}`) : '';
+                          const gtitle = (p as any).groupId ? (groupTitleById[String((p as any).groupId)] || 'Без группы') : 'Моя группа';
+                          const sid = String((p as any).id);
+                          const canSwipe = (pg.key === 'all') || (scope.kind === 'group');
+                          const anchorIdPre = `scheduled-pre-${sid}`;
+                          injected.push(
+                            <div key={`scheduled-${sid}`} id={anchorIdPre} style={{ position:'relative' }}>
+                              {canSwipe && preSwipeUi.id === sid ? (
+                                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                  <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                </div>
+                              ) : null}
+                              <div
+                                style={{ position:'relative', background:'#121722', border:'1px dashed #334155', borderRadius:12, padding:12, color:'#cbd5e1', transition:'transform 160ms ease', transform: (canSwipe && preSwipeUi.id === sid) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)'}}
+                                onMouseDown={(e) => { if (canSwipe) beginPreSwipe(sid, e.clientX, e.clientY); }}
+                                onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                                onMouseUp={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                                onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                                onTouchStart={(e) => { try { const t0 = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t0) beginPreSwipe(sid, t0.clientX, t0.clientY); } catch {} }}
+                                onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                                onTouchEnd={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                                onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                              >
+                                <button
+                                  title="Удалить плановую"
+                                  onClick={async (e)=>{ e.stopPropagation(); if (!confirm('Удалить плановую карточку?')) return; try { await deletePreTask(String((p as any).id)); setPreTasks(prev => prev.filter(x => String((x as any).id)!==String((p as any).id))); } catch {} }}
+                                  style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
+                                >🗑️</button>
+                                <LongPressOutline targetId={anchorIdPre} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
+                                <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
+                                <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                                {(() => {
+                                  const w = (p as any)?.payload && (p as any).payload.weather;
+                                  if (!w) return null;
+                                  const op = String(w.op||'GE')==='LE' ? '<=' : '>=';
+                                  const city = String(w.city||'');
+                                  const val = Number(w.valueC||0);
+                                  return (
+                                    <div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>🌦️ {city}: t {op} {val}°</div>
+                                  );
+                                })()}
+                                {when && (
+                                  <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
+                                )}
+                                <div style={{ display:'inline-block', background: '#1b2234', color:'#c7d2fe', border:'1px solid #2a3346', padding:'3px 8px', borderRadius:8, fontSize:12 }}>
+                                  {gtitle}
+                                </div>
+                                {(() => {
+                                  const key = `P:${sid}`;
+                                  const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                                  const cnt = children.length;
+                                  if (!cnt) return null;
+                                  return (
+                                    <div style={{ marginTop: 8 }}>
+                                      <div
+                                        role="button"
+                                        onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !prev[key] })); try { logChildrenForPre(sid); } catch {}; if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); } }}
+                                        style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                      >
+                                        Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                              {(() => {
+                                const key = `P:${sid}`;
+                                if (!openAfter[key]) return null;
+                                const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                                if (!children.length) return null;
+                                return (
+                                  <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                                    {children.map((cp:any, idx:number) => {
+                                      const childKey = `P:${String(cp.id)}`;
+                                      const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
+                                      const foot2 = cnt2 ? (
+                                        <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>
+                                          Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
+                                        </div>
+                                      ) : null;
+                                      return (
+                                        <div key={`plink-child-${cp.id}`} style={{ position:'relative' }}>
+                                          {canSwipe && preSwipeUi.id === String(cp.id) ? (
+                                            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                              <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                            </div>
+                                          ) : null}
+                                          <div
+                                            style={{ position:'relative', transition:'transform 160ms ease', transform: (canSwipe && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                            onMouseDown={(e) => { if (canSwipe) beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
+                                            onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                            onMouseUp={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                            onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                                            onTouchStart={(e) => { try { const t1 = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t1) beginPreSwipe(String(cp.id), t1.clientX, t1.clientY); } catch {} }}
+                                            onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                            onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                            onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                                          >
+                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                          schedIdx++;
+                          continue;
+                        }
+                        break;
+                      }
+                    } catch {}
+                    // Предзадачи не показываем в ленте сами по себе — только в раскрывающихся списках
                     const ph = phaseOf(t);
                     const { bg: cardBg, brd: cardBrd, chip: groupChipBg } = colorsForPhase(ph);
                     const eventTypeRaw = String(
@@ -567,18 +1256,67 @@ export default function HomePage({
                       | string
                       | undefined;
                     const dateLine = isEvent && startAt ? `${fmtShort(startAt)}–${fmtShort(endAt || startAt)}` : null;
-                    const opened = openQBarId === t.id;
+                    const deadlineAt = (t as any).deadlineAt as string | undefined;
+                    const nextReminderAt = (t as any).nextReminderAt as string | undefined;
+                    const leftText = (() => {
+                      if (!deadlineAt) return null;
+                      const ms = new Date(deadlineAt).getTime() - Date.now();
+                      const signOverdue = ms < 0;
+                      const abs = Math.abs(ms);
+                      const d = Math.floor(abs / 86400000);
+                      const h = Math.floor((abs % 86400000) / 3600000);
+                      const m = Math.floor((abs % 3600000) / 60000);
+                      const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+                      return (signOverdue ? `просрочено: ${short}` : `осталось: ${short}`);
+                    })();
+                    const opened = openQBar?.id === t.id && openQBar?.page === pg.key;
                     const currentPhase = ph;
                     const groupId = (t as any)?.groupId ?? null;
-                    const badge = badgeForPhase(currentPhase);
+                  const badge = badgeForPhase(currentPhase);
+                    const needsPhoto = (t as any).acceptCondition === 'PHOTO';
+                    const cCount = Number(((t as any).commentsCount ?? 0));
+                    const hasComments = cCount > 0;
                     const activeRing = opened
                       ? '0 0 0 2px rgba(138,160,255,.45) inset, 0 8px 20px rgba(0,0,0,.20)'
                       : '0 2px 8px rgba(0,0,0,.06)';
                     const anchorId = `task-card-${pg.key}-${t.id}`;
 
                     return (
+                      <>
+                      {injected}
                       <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto' }}>
-                        {opened && (
+                        {/* Подложка для свайпа в "Все" */}
+                        {pg.key === 'all' && swipeUi.id === (t as any).id ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'flex-start',
+                              paddingLeft: 20,
+                              pointerEvents: 'none',
+                              zIndex: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                padding: '4px 10px',
+                                borderRadius: 999,
+                                border: '1px solid #c7f3d1',
+                                background: '#e7fbe9',
+                                color: '#0f5132',
+                                fontSize: 12,
+                                opacity: Math.min(1, swipeUi.dx / SWIPE_REVEAL),
+                                boxShadow: '0 2px 6px rgba(0,0,0,.06)'
+                              }}
+                            >
+                              Запустить после
+                            </span>
+                          </div>
+                        ) : null}
+                        {(openQBar?.id === t.id && openQBar?.page === pg.key) && (
                           <StageQuickBar
                             anchorId={anchorId}
                             taskId={t.id}
@@ -588,6 +1326,27 @@ export default function HomePage({
                             edgeInset={12}
                             onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
                             onRequestClose={closeQBar}
+                            onComplete={async () => {
+                              if ((t as any).acceptCondition === 'PHOTO') {
+                                setOpenQBar(null);
+                                setCompletePrompt({ id: t.id });
+                                return false;
+                              }
+                              if ((t as any).acceptCondition === 'APPROVAL') {
+                                try {
+                                  const board = await fetchBoard(meChatId, groupId ?? undefined);
+                                  const approvalCol = (board?.columns || []).find((c) => String(c.name) === 'Approval');
+                                  if (approvalCol) {
+                                    await moveTask(t.id, approvalCol.id, 0);
+                                    patchItem(t.id, { phase: 'Approval', status: 'Согласование' } as any);
+                                  }
+                                } catch {}
+                                finally {
+                                  setOpenQBar(null);
+                                }
+                                return false;
+                              }
+                            }}
                           />
                         )}
 
@@ -599,6 +1358,8 @@ export default function HomePage({
                             color: '#0f1216',
                             border: `1px solid ${opened ? '#30416d' : cardBrd}`,
                             borderRadius: 16,
+                            borderBottomLeftRadius: hasComments ? 0 : 16,
+                            borderBottomRightRadius: hasComments ? 0 : 16,
                             padding: 12,
                             cursor: 'pointer',
                             boxShadow: activeRing,
@@ -607,10 +1368,17 @@ export default function HomePage({
                             WebkitUserSelect: 'none' as const,
                             msUserSelect: 'none' as const,
                             touchAction: 'manipulation',
-                            transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease',
+                            transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease, transform 160ms ease',
+                            position: 'relative',
+                            transform: (pg.key === 'all' && swipeUi.id === (t as any).id) ? `translateX(${Math.min(swipeUi.dx, 180)}px)` : 'translateX(0px)',
                           }}
                           onClick={() => {
-                            if (!opened) {
+                            const sup = suppressClickRef.current;
+                            if (sup && sup.id === (t as any).id && sup.until > Date.now()) {
+                              suppressClickRef.current = null;
+                              return;
+                            }
+                            if (!(openQBar?.id === t.id && openQBar?.page === pg.key)) {
                               onOpenTask(t.id);
                               try {
                                 WebApp?.HapticFeedback?.impactOccurred?.('light');
@@ -619,17 +1387,87 @@ export default function HomePage({
                           }}
                           onMouseDown={(e) => {
                             e.preventDefault();
-                            startLongPress(t.id);
+                            if (pg.key === 'all') beginSwipe(t.id, e.clientX, e.clientY);
                           }}
-                          onMouseUp={cancelLongPress}
-                          onMouseLeave={cancelLongPress}
-                          onTouchStart={() => startLongPress(t.id)}
-                          onTouchEnd={cancelLongPress}
-                          onTouchCancel={cancelLongPress}
+                          onMouseMove={(e) => { if (pg.key === 'all') moveSwipe(e as any, t.id); }}
+                          onMouseUp={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(t.id, { text: (t as any).text, groupId }); else endSwipe(); }}
+                          onMouseLeave={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(); }}
+                          onTouchStart={(e) => {
+                            try {
+                              const touch = (e.touches && e.touches[0]) || (e as any).touches?.[0];
+                              if (pg.key === 'all' && touch) beginSwipe(t.id, touch.clientX, touch.clientY);
+                            } catch {}
+                          }}
+                          onTouchMove={(e) => { if (pg.key === 'all') moveSwipe(e as any, t.id); }}
+                          onTouchEnd={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(t.id, { text: (t as any).text, groupId }); else endSwipe(); }}
+                          onTouchCancel={() => { cancelLongPress(); if (pg.key === 'all') endSwipe(); }}
                           onContextMenu={(e) => e.preventDefault()}
                           onDragStart={(e) => e.preventDefault()}
                         >
-                          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4 }}>#{t.id.slice(0, 6)}</div>
+                          {/* Long press progress around the card */}
+                          <LongPressOutline
+                            targetId={anchorId}
+                            // 1 секунда удержания с яркой неоновой обводкой
+                            durationMs={1000}
+                            radius={hasComments ? 0 : 16}
+                            onComplete={() => {
+                              try {
+                                const detail = {
+                                  taskId: t.id,
+                                  text: (t as any).text || '',
+                                  groupId,
+                                  deadlineAt: (t as any).deadlineAt || null,
+                                  bountyStars: (t as any).bountyStars || 0,
+                                  acceptCondition: (t as any).acceptCondition || 'NONE',
+                                  anchorId,
+                                } as any;
+                                window.dispatchEvent(new CustomEvent('edit-task-open', { detail }));
+                              } catch {}
+                            }}
+                          />
+                          {/* Edge pre-task badge on task card */}
+                          {pg.key === 'all' ? (
+                            (() => {
+                              // Считаем предзадачи для задачи: прямые (links.taskId == task.id)
+                              // и «унаследованные» от FIRED-предзадачи (children, у которых links.depPreTaskId == fired.id с fired.targetTaskId == task.id)
+                              const tid = String((t as any).id);
+                              const ttext = String((t as any).text || '');
+                              let firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===tid);
+                              // Fallback: иногда backend может не проставить targetTaskId — попробуем сопоставить по тексту
+                              if (!firedOfTask.length) {
+                                firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'') === ttext);
+                              }
+                              const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                              const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===tid));
+                              const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                              const uniq = new Set<string>();
+                              for (const x of direct) uniq.add(String((x as any).id));
+                              for (const x of viaFired) uniq.add(String((x as any).id));
+                              const preCountForTask = uniq.size;
+                              return (
+                                <div style={{ position:'absolute', right: 0, top: 0, bottom: 0 }}>
+                                  <EdgePreTaskBadge
+                                    kind="task"
+                                    count={preCountForTask}
+                                    onClick={() => {
+                                      if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
+                                      else {
+                                        try {
+                                          window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
+                                        } catch {}
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })()
+                          ) : null}
+                          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
+                            {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
+                              <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
+                            ) : null}
+                            <span>#{t.id.slice(0, 6)}</span>
+                          </div>
 
                           <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
 <div style={{ fontSize: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
@@ -640,6 +1478,7 @@ export default function HomePage({
                             {badge && (
                               <span
                                 title={badge.text}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
                                 style={{
                                   background: badge.bg,
                                   color: badge.fg,
@@ -648,6 +1487,7 @@ export default function HomePage({
                                   borderRadius: 999,
                                   fontSize: 12,
                                   whiteSpace: 'nowrap',
+                                  cursor: 'pointer',
                                 }}
                               >
                                 {badge.text}
@@ -655,22 +1495,42 @@ export default function HomePage({
                             )}
                           </div>
 
-                          {dateLine && (
-                            <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
+                    {dateLine && (
+                      <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
+                    )}
+                          {deadlineAt && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeadlineEdit({ id: t.id, value: deadlineAt }); }}
+                              title="Изменить дедлайн"
+                              style={{ fontSize: 12, marginBottom: 6, color: new Date(deadlineAt).getTime() < Date.now() ? '#b91c1c' : '#1f2937', background:'transparent', border:'none', padding:0, textAlign:'left', cursor:'pointer' }}
+                            >
+                              🚩 {fmtShort(deadlineAt)} • {leftText}
+                            </button>
+                          )}
+                          {nextReminderAt && (
+                            <div style={{ fontSize: 12, marginBottom: 6, color: '#374151' }}>
+                              ⏰ {fmtShort(nextReminderAt)}
+                            </div>
+                          )}
+                          {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
+                            <span style={{ fontSize: 11, background:'#7f1d1d', color:'#fee2e2', border:'1px solid #dc2626', borderRadius:999, padding:'2px 6px', marginBottom:6 }}>
+                              ⚠️ Просрочен
+                            </span>
                           )}
 
                           <div
                             style={{
                               display: 'inline-block',
-                              background: groupChipBg,
-                              color: '#fff',
+                              background: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? 'transparent' : groupChipBg),
+                              color: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '#86efac' : '#fff'),
                               padding: '3px 8px',
                               borderRadius: 8,
                               fontSize: 12,
                               marginBottom: 6,
+                              border: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '1px solid #16a34a' : undefined),
                             }}
                           >
-                            {(t as any).groupTitle}
+                            {((((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : '')))}{(t as any).groupTitle}
                           </div>
 
                           {/* ярлыки карточки */}
@@ -725,23 +1585,382 @@ export default function HomePage({
                           })()}
 
                           <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', gap: 10 }}>
-                            <span>👤 {(t as any).creatorName}</span>
-                            {(t as any).assigneeName ? <span>→ {(t as any).assigneeName}</span> : null}
+                            {(t as any).assigneeName ? (
+                              <span>
+                                👤{' '}
+                                {String((t as any).assigneeChatId || '') === String(meChatId) && myRankIcon
+                                  ? `${myRankIcon} ${(t as any).assigneeName}`
+                                  : String((t as any).assigneeName)}
+                              </span>
+                            ) : null}
+                            {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
                             <span style={{ marginLeft: 'auto' }}>
                               {new Date((t as any).updatedAt).toLocaleString()}
                             </span>
                           </div>
+
+                          {/* Полоска «комментарии (N) →» будет приклеена снизу (absolute) */}
+
+                          {/* Внутри карточки: Полоска «Запустят после (N) ⬇/⬆» */}
+                          {(() => {
+                            const id = (t as any).id as string;
+                            // Прямые претаски + претаски, привязанные к FIRED-родителю этой задачи
+                            const firedOfTask = (() => {
+                              const base = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===String(id));
+                              if (base.length) return base;
+                              const t = pageItems.find((x:any)=> String(x.id)===String(id));
+                              const ttext = String((t as any)?.text || '');
+                              return preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+                            })();
+                            const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                            const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===String(id)));
+                            const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                            const map = new Map<string, any>();
+                            for (const x of direct) map.set(String((x as any).id), x);
+                            for (const x of viaFired) map.set(String((x as any).id), x);
+                            const linked = Array.from(map.values());
+                            const count = linked.length;
+                            if (count <= 0) return null;
+                            const key = `T:${id}`;
+                            const isOpen = !!openAfter[key];
+                            return (
+                              <div style={{ marginTop: 6 }}>
+                                <div
+                                  role="button"
+                                  onClick={async (e) => {
+                                    e.preventDefault(); e.stopPropagation();
+                                    setOpenAfter(prev => ({ ...prev, [key]: !isOpen }));
+                                    try { logChildrenForTask(String(id)); } catch {}
+                                    if (!isOpen) { // раскрываем — убедимся, что предзадачи актуальны
+                                      await refreshPreTasks();
+                                    }
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: '6px 10px',
+                                    borderRadius: 10,
+                                    border: '1px solid #d1e7dd',
+                                    background: '#ecfdf5',
+                                    color: '#065f46',
+                                    fontSize: 12,
+                                    cursor: 'pointer',
+                                  }}
+                                  title={isOpen ? 'Свернуть список предзадач' : 'Показать предзадачи'}
+                                >
+                                  Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </button>
+
+                        {/* ВНЕ карточки: полоска комментариев плотно под карточкой */}
+                        {hasComments ? (
+                          <div style={{ marginTop: 0 }}>
+                              <CommentsStrip
+                                count={cCount}
+                                // ширина ровно как у карточки
+                                style={{ width: '100%' }}
+                                onClick={() => setOpenComments({ id: t.id, text: (t as any).text || '', anchorId })}
+                              />
+                          </div>
+                        ) : null}
                       </div>
+                      {/* Вне карточки: список предзадач под карточкой */}
+                      {(() => {
+                        const id = (t as any).id as string;
+                        const key = `T:${id}`;
+                        const isOpen = !!openAfter[key];
+                        if (!isOpen) return null;
+                        // Собираем детей: прямые + через FIRED-предзадачи (родителя задачи)
+                        const firedOfTask = (() => {
+                          const base = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===String(id));
+                          if (base.length) return base;
+                          const t = items.find((x:any)=> String(x.id)===String(id));
+                          const ttext = String((t as any)?.text || '');
+                          return preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+                        })();
+                        const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                        const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===String(id)));
+                        const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                        const map = new Map<string, any>();
+                        for (const x of direct) map.set(String((x as any).id), x);
+                        for (const x of viaFired) map.set(String((x as any).id), x);
+                        const linked = Array.from(map.values());
+                        if (!linked.length) return null;
+                        return (
+                          <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
+                            {linked.map((p, idx) => (
+                              <div key={(p as any).id} style={{ position:'relative' }}>
+                                {pg.key==='all' && preSwipeUi.id === String((p as any).id) ? (
+                                  <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                    <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                  </div>
+                                ) : null}
+                                <div
+                                  style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String((p as any).id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: ((linked.length - idx) as number) }}
+                                  onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String((p as any).id), e.clientX, e.clientY); }}
+                                  onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String((p as any).id)); }}
+                                  onMouseUp={() => { if (pg.key==='all') endPreSwipe(String((p as any).id), { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                                  onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                  onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe(String((p as any).id), t.clientX, t.clientY); } catch {} }}
+                                  onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String((p as any).id)); }}
+                                  onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String((p as any).id), { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
+                                  onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                                >
+                                  {(() => {
+                                    const key = `P:${String((p as any).id)}`;
+                                    const children = preTasks.filter(x => String((x as any).id) !== String((p as any).id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String((p as any).id)));
+                                    const cnt = children.length;
+                                    const footer = cnt ? (
+                                      <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
+                                    ) : null;
+                                    return (
+                                      <PreTaskCard
+                                        p={p as any}
+                                        onOpen={(pp) => setOpenPreTask(pp)}
+                                        onEdit={(pp) => setEditPreTask(pp)}
+                                        nameByChat={nameByChat}
+                                        groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
+                                        tone="subtle"
+                                        footer={footer}
+                                        emphasis={cnt>0}
+                                        myChatId={meChatId}
+                                        myRankIcon={myRankIcon}
+                                        style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
+                                      />
+                                    );
+                                  })()}
+                                </div>
+                                {(() => {
+                                  const key = `P:${String((p as any).id)}`;
+                                  if (!openAfter[key]) return null;
+                                  const children = preTasks.filter(x => String((x as any).id) !== String((p as any).id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String((p as any).id)));
+                                  if (!children.length) return null;
+                                  return (
+                                    <div style={{ marginTop:4, display:'grid', gap:2 }}>
+                                      {children.map((cp:any, idx:number) => (
+                                        <div key={`plink-child-${cp.id}`} style={{ position:'relative' }}>
+                                          {pg.key==='all' && preSwipeUi.id === String(cp.id) ? (
+                                            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                              <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                            </div>
+                                          ) : null}
+                                          <div
+                                            style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                            onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
+                                            onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(cp.id)); }}
+                                            onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                            onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                            onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe(String(cp.id), t.clientX, t.clientY); } catch {} }}
+                                            onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(cp.id)); }}
+                                            onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                            onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                                          >
+                                            {(() => {
+                                              const childKey = `P:${String(cp.id)}`;
+                                              const baseGrand = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id)));
+                                              const eph = ephemeralChildren[String(cp.id)] || [];
+                                              const mapg = new Map<string, any>();
+                                              for (const g of baseGrand) mapg.set(String((g as any).id), g);
+                                              for (const g of eph) mapg.set(String((g as any).id), g);
+                                              const grand = Array.from(mapg.values());
+                                              const cnt2 = grand.length;
+                                              const foot2 = cnt2 ? (
+                                                <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</div>
+                                              ) : null;
+                                              return (
+                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
+                                              );
+                                            })()}
+                                          </div>
+                                          {(() => {
+                                            const childKey = `P:${String(cp.id)}`;
+                                            if (!openAfter[childKey]) return null;
+                                            const baseGrand = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id)));
+                                            const eph = ephemeralChildren[String(cp.id)] || [];
+                                            const mapg = new Map<string, any>();
+                                            for (const g of baseGrand) mapg.set(String((g as any).id), g);
+                                            for (const g of eph) mapg.set(String((g as any).id), g);
+                                            const grand = Array.from(mapg.values());
+                                            if (!grand.length) return null;
+                                            return (
+                                              <div style={{ marginTop:4, display:'grid', gap:2 }}>
+                                                {grand.map((gg:any, gidx:number) => (
+                                                  <div key={`plink-gchild-${gg.id}`} style={{ position:'relative' }}>
+                                                    {pg.key==='all' && preSwipeUi.id === String(gg.id) ? (
+                                                      <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                                        <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                                      </div>
+                                                    ) : null}
+                                                    <div
+                                                      style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(gg.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (grand.length - gidx) }}
+                                                      onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(gg.id), e.clientX, e.clientY); }}
+                                                      onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(gg.id)); }}
+                                                      onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
+                                                      onMouseLeave={() => { if (pg.key==='all') endPreSwipe(); }}
+                                                      onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (pg.key==='all' && t) beginPreSwipe(String(gg.id), t.clientX, t.clientY); } catch {} }}
+                                                      onTouchMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(gg.id)); }}
+                                                      onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
+                                                      onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
+                                                    >
+                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            );
+                                          })()}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                      </>
                     );
                   })
                 ) : (
                   <div style={{ opacity: 0.6, padding: '12px' }}>Нет задач</div>
                 )}
+                {/* Остаток «Плановых», которые старее всех задач на странице */}
+                {((pg.key==='all') || (scope.kind==='group')) && scheduledSorted.slice(schedIdx).map((p:any) => {
+                  const when = String((p as any).startAt||'');
+                  const ms = when ? (new Date(when).getTime() - now) : 0;
+                  const signOverdue = ms < 0;
+                  const abs = Math.abs(ms);
+                  const d = Math.floor(abs / 86400000);
+                  const h = Math.floor((abs % 86400000) / 3600000);
+                  const m = Math.floor((abs % 3600000) / 60000);
+                  const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+                  const leftText = when ? (signOverdue ? 'скоро' : `через ${short}`) : '';
+                  const gtitle = (p as any).groupId ? (groupTitleById[String((p as any).groupId)] || 'Без группы') : 'Моя группа';
+                  const anchorId = `scheduled-pre-${String((p as any).id)}`;
+                  const sid = String((p as any).id);
+                  const canSwipe = (pg.key === 'all') || (scope.kind === 'group');
+                  return (
+                    <div key={`scheduled-${sid}`} id={anchorId} style={{ position:'relative' }}>
+                      {canSwipe && preSwipeUi.id === sid ? (
+                        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                          <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          position:'relative',
+                          background:'#121722', border:'1px dashed #334155', borderRadius:12, padding:12,
+                          color:'#cbd5e1',
+                          transition:'transform 160ms ease',
+                          transform: (canSwipe && preSwipeUi.id === sid) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)'
+                        }}
+                        onMouseDown={(e) => { if (canSwipe) beginPreSwipe(sid, e.clientX, e.clientY); }}
+                        onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                        onMouseUp={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                        onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                        onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t) beginPreSwipe(sid, t.clientX, t.clientY); } catch {} }}
+                        onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                        onTouchEnd={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                        onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                      >
+                      <button
+                        title="Удалить плановую"
+                        onClick={async (e)=>{ e.stopPropagation(); if (!confirm('Удалить плановую карточку?')) return; try { await deletePreTask(String((p as any).id)); setPreTasks(prev => prev.filter(x => String((x as any).id)!==String((p as any).id))); } catch {} }}
+                        style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
+                      >🗑️</button>
+                      {/* long-press edit for scheduled pre-task */}
+                      <LongPressOutline targetId={anchorId} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
+                      <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
+                      <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                      {when && (
+                        <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
+                      )}
+                      <div style={{
+                        display:'inline-block', background: '#1b2234', color:'#c7d2fe', border:'1px solid #2a3346', padding:'3px 8px', borderRadius:8, fontSize:12,
+                      }}>{gtitle}</div>
+                      {/* children toggle for scheduled pre-task */}
+                      {(() => {
+                        const key = `P:${sid}`;
+                        const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                        const cnt = children.length;
+                        if (!cnt) return null;
+                        return (
+                          <div style={{ marginTop: 8 }}>
+                            <div
+                              role="button"
+                              onClick={async (e)=>{
+                                e.preventDefault(); e.stopPropagation();
+                                setOpenAfter(prev => ({ ...prev, [key]: !prev[key] }));
+                                try { logChildrenForPre(sid); } catch {}
+                                if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); }
+                              }}
+                              style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                            >
+                              Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      </div>
+                      {(() => {
+                        const key = `P:${sid}`;
+                        if (!openAfter[key]) return null;
+                        const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                        if (!children.length) return null;
+                        return (
+                          <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                            {children.map((cp:any, idx:number) => {
+                              const childKey = `P:${String(cp.id)}`;
+                              const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
+                              const foot2 = cnt2 ? (
+                                <div
+                                  role="button"
+                                  onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }}
+                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                >
+                                  Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
+                                </div>
+                              ) : null;
+                              return (
+                                <div key={`plink-child-${cp.id}`} style={{ position:'relative' }}>
+                                  {canSwipe && preSwipeUi.id === String(cp.id) ? (
+                                    <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                      <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                    </div>
+                                  ) : null}
+                                  <div
+                                    style={{ position:'relative', transition:'transform 160ms ease', transform: (canSwipe && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                    onMouseDown={(e) => { if (canSwipe) beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
+                                    onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                    onMouseUp={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                    onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                                    onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t) beginPreSwipe(String(cp.id), t.clientX, t.clientY); } catch {} }}
+                                    onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                    onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                    onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                                  >
+                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+                
               </div>
+                );
+              })()}
             </section>
           );
-        })}
+      })}
       </div>
 
       {/* Показать ещё */}
@@ -766,7 +1985,8 @@ export default function HomePage({
         )}
       </div>
 
-      {/* 📁 фильтр по группе */}
+      {/* 📁 фильтр по группе (скрыть, если открыт CreateTask) */}
+      {!isCreateTaskOpen && (
       <button
         onClick={() => setGroupPickerOpen(true)}
         aria-label="Фильтр по группе"
@@ -789,9 +2009,10 @@ export default function HomePage({
       >
         📁
       </button>
+      )}
 
       {/* 🏷️ появляется над 📁 только для группы и после клика по названию группы */}
-      {scope.kind === 'group' && showLabelFab && (
+      {scope.kind === 'group' && showLabelFab && !isCreateTaskOpen && (
         <button
           onClick={async () => {
             if (scope.kind !== 'group') return;
@@ -859,7 +2080,132 @@ export default function HomePage({
    // topOffset={88}
   />
 )}
+      {/* Завершение с фото */}
+      {completePrompt && (
+        <div
+          onClick={() => setCompletePrompt(null)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(480px, 92vw)' }}>
+            <div style={{ fontWeight:700, marginBottom:8 }}>Чтобы завершить задачу, прикрепите фото</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button
+                disabled={uploadBusy}
+                onClick={() => fileInputRef.current?.click()}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}
+              >🖼️ Выбрать</button>
+              <button
+                disabled={uploadBusy}
+                onClick={() => setCameraOpen(true)}
+                style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}
+              >📸 Камера</button>
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display:'none' }} onChange={async (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file || !completePrompt) return;
+                try {
+                  setUploadBusy(true);
+                  const up = await uploadTaskMedia(completePrompt.id, chatId, file);
+                  if ((up as any)?.ok && (up as any)?.media?.url) {
+                    await addComment(completePrompt.id, chatId, (up as any).media.url);
+                  }
+                  await completeTask(completePrompt.id);
+                  patchItem(completePrompt.id, { status: 'Готово', phase: 'Done' } as any);
+                  setCompletePrompt(null);
+                } catch {}
+                finally { setUploadBusy(false); }
+              }} />
+              <div style={{ fontSize: 12, opacity: 0.85 }}>{uploadBusy ? 'Загружаю фото…' : ''}</div>
+              <button
+                disabled={uploadBusy}
+                onClick={() => setCompletePrompt(null)}
+                style={{ marginLeft:'auto', padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: uploadBusy ? 0.6 : 1 }}
+              >Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (file) => {
+          if (!completePrompt) return;
+          try {
+            setUploadBusy(true);
+            const up = await uploadTaskMedia(completePrompt.id, chatId, file);
+            if ((up as any)?.ok && (up as any)?.media?.url) {
+              await addComment(completePrompt.id, chatId, (up as any).media.url);
+            }
+            await completeTask(completePrompt.id);
+            patchItem(completePrompt.id, { status: 'Готово', phase: 'Done' } as any);
+            setCameraOpen(false);
+            setCompletePrompt(null);
+          } catch {}
+          finally { setUploadBusy(false); }
+        }}
+      />
+
+      {payoutPrompt && (
+        <PayoutPromptModal
+          open={true}
+          taskId={payoutPrompt.id}
+          amountRub={payoutPrompt.rub}
+          chatId={chatId}
+          onPaid={() => {
+            setItems((prev) => prev.map((it) => (it.id === payoutPrompt.id ? ({ ...it, bountyStatus: 'PAID' } as any) : it)));
+            setPayoutPrompt(null);
+          }}
+        />
+      )}
+      {/* 🚩 Пикер дедлайна для карточек в ленте */}
+      <DeadlinePicker
+        open={!!deadlineEdit}
+        value={deadlineEdit?.value ?? null}
+        onClose={() => setDeadlineEdit(null)}
+        onChange={async (iso) => {
+          const id = deadlineEdit?.id;
+          if (!id) return;
+          try {
+            const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(id)}/deadline`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chatId, deadlineAt: iso }),
+            });
+            const j = await res.json();
+            if ((j as any)?.ok) {
+              patchItem(id, { deadlineAt: (j as any).task?.deadlineAt || null } as any);
+            }
+          } catch {}
+        }}
+      />
+
+      <PreTaskPreviewModal open={!!openPreTask} preTask={openPreTask} onClose={() => setOpenPreTask(null)} nameByChat={nameByChat} />
+      <PreTaskEditModal open={!!editPreTask} chatId={chatId} preTask={editPreTask} onClose={()=>setEditPreTask(null)} onSaved={async ()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }} />
+      <TaskPreTaskLinkManager
+        open={!!manageForTask}
+        chatId={chatId}
+        taskId={manageForTask?.id || ''}
+        onClose={()=>setManageForTask(null)}
+        onAdd={()=>{
+          const t = filteredItems.find((x:any)=>x.id===manageForTask?.id);
+          const groupId = (()=>{ const cn = (t as any)?.column?.name || ''; const i = cn.indexOf('::'); return i>0? cn.slice(0,i): null })();
+          try { window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: manageForTask?.id, text: (t as any)?.text || '', groupId } })); } catch {}
+          setManageForTask(null);
+        }}
+        onChanged={async()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }}
+      />
+
+      {/* Полноэкранный режим комментариев к задаче */}
+      <TaskCommentsOverlay
+        open={!!openComments}
+        onClose={() => setOpenComments(null)}
+        taskId={openComments?.id || ''}
+        taskText={openComments?.text || ''}
+        meChatId={meChatId}
+        animateFromAnchorId={openComments?.anchorId}
+      />
+
+      {/* Раньше тут была демо-модалка long-press */}
 
     </div>
   );

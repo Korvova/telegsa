@@ -24,11 +24,22 @@ model Column {
   @@index([chatId])
 }
 
-/* -------------------- NEW/UPDATED ENUMS -------------------- */
+/**
+ * -------------------- NEW/UPDATED ENUMS --------------------
+ */
 
 enum TaskType {
   TASK
   EVENT
+}
+
+// Приёмка задачи
+enum AcceptCondition {
+  NONE
+  PHOTO
+  APPROVAL
+  PHOTO_AND_APPROVAL
+  DOC_AND_APPROVAL
 }
 
 enum EventRole {
@@ -36,14 +47,36 @@ enum EventRole {
   PARTICIPANT
 }
 
-/* -------------------- TASKS -------------------- */
+// Rank enum for users
+enum UserRank {
+  ANT
+  FISH
+  SCORPION
+  SQUIRREL
+  CAT
+  DOG
+  WOLF
+  BEAR
+  EAGLE
+  HORSE
+  DRAGON
+  SHARK
+  ELEPHANT
+  TREX
+  TIGER
+  LION
+}
+
+/**
+ * -------------------- TASKS --------------------
+ */
 /**
  * Задачи.
  * Теперь поддерживает типы: обычная задача (TASK) и мероприятие (EVENT).
  * Для EVENT используем startAt/endAt, участников и отдельные инвайты.
  */
 model Task {
-  id          String   @id @default(cuid())
+  id String @id @default(cuid())
 
   chatId      String
   text        String
@@ -52,48 +85,88 @@ model Task {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Опциональный дедлайн задачи
+  deadlineAt DateTime?
+
+  // Кто создал задачу (chatId автора; может отличаться от chatId доски/владельца)
+  createdByChatId String?
+
   columnId String
   column   Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
 
   assigneeChatId String?
 
   // === NEW: тип задачи/события + даты (для EVENT)
-  type     TaskType @default(TASK)
-  startAt  DateTime?
-  endAt    DateTime?
+  type    TaskType  @default(TASK)
+  startAt DateTime?
+  endAt   DateTime?
+
+  // Условия приёмки
+  acceptCondition AcceptCondition @default(NONE)
 
   // Инвайты на TASK (как было)
-  inviteTickets       InviteTicket[] @relation("TaskInviteTickets")
+  inviteTickets      InviteTicket[] @relation("TaskInviteTickets")
   // NEW: инвайты на EVENT (отдельная связь на тот же Task, когда type=EVENT)
-  eventInviteTickets  InviteTicket[] @relation("EventInviteTickets")
+  eventInviteTickets InviteTicket[] @relation("EventInviteTickets")
 
   // NEW: участники мероприятия (только для EVENT, но связь не мешает TASK)
   participants EventParticipant[]
 
+  sourceChatId    String? // куда отправили исходное уведомление
+  sourceMessageId Int? // message_id исходного уведомления
+
+  reminders EventReminder[] // one-to-many: Task -> EventReminder
+
+  comments Comment[]
+
+  media TaskMedia[] // вложения из Telegram (photo/voice/document)
+
+  labels TaskLabel[] // NEW
+
+  fromProcess Boolean @default(false) // 🔀 задача создана через процесс
+
+  // === Bounty (virtual stars)
+  bountyStars    Int      @default(0)
+  bountyStatus   String   @default("NONE") // NONE | PLEDGED | PAID | REFUNDED
+  bountyByChatId String?
+
+  // (опционально) если реально используешь где-то прямой FK на узел,
+  // можешь оставить processNodeId; иначе лучше убрать, чтобы не плодить лишних уникальных ограничений
+  // processNodeId   String?  @unique
+
+  relFrom TaskRelation[] @relation("RelFrom")
+  relTo   TaskRelation[] @relation("RelTo")
+
+  ProcessNode ProcessNode[]
+
+  // relation back to StarLedger
+  ledgers StarLedger[]
+  likes   TaskLike[]
+  watchers TaskWatcher[]
+
+  // Напоминания по задачам (отдельно от EventReminder)
+  taskReminders TaskReminder[]
+
+  // Ссылки предзадач, которые зависят от этой задачи
+  preTaskLinks PreTaskLink[]
+
   @@index([chatId])
   @@index([columnId, order])
-
-  sourceChatId     String?  // куда отправили исходное уведомление
-  sourceMessageId  Int?     // message_id исходного уведомления
-
-   reminders    EventReminder[]   // one-to-many: Task -> EventReminder
-
-  comments  Comment[]
-
-  media TaskMedia[]   // вложения из Telegram (photo/voice/document)
-
-
-    labels    TaskLabel[]  // NEW
-
-
+  @@index([createdByChatId])
 }
 
-/* -------------------- GROUPS -------------------- */
+/**
+ * -------------------- GROUPS --------------------
+ */
 
 model Group {
   id          String   @id @default(cuid())
   ownerChatId String
   title       String
+  isTelegramGroup Boolean @default(false)
+  tgChatId    String?  @unique
+  isPublic    Boolean  @default(false)
+  publicSince DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -101,10 +174,25 @@ model Group {
   shortcuts     GroupShortcut[]
   inviteTickets InviteTicket[]  @relation("GroupInviteTickets")
 
+  labels GroupLabel[] // NEW
+
+  watchers GroupWatcher[]
+
   @@unique([ownerChatId, title])
   @@index([ownerChatId])
+}
 
-  labels    GroupLabel[] // NEW
+// Подписчики публичных групп
+model GroupWatcher {
+  id        String   @id @default(cuid())
+  groupId   String
+  chatId    String
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, chatId])
+  @@index([chatId])
 }
 
 model User {
@@ -112,6 +200,17 @@ model User {
   username  String?
   firstName String?
   lastName  String?
+  tonAddress    String?
+  tonNetwork    String?
+  tonWalletApp  String?
+  tonVerifiedAt DateTime?
+  tonVerifyNonce String?
+  // Rank snapshot
+  rank        UserRank @default(ANT)
+  // Rank/Rating snapshot (optional, for caching or manual overrides)
+  rankScore   Int      @default(0)   // итоговые очки 🦅/score
+  rankLevel   String?               // слаг/икон-уровень (например, "squirrel", "eagle")
+  rankUpdatedAt DateTime?           // когда обновлялся снапшот
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -148,7 +247,9 @@ model GroupShortcut {
   @@index([groupId])
 }
 
-/* -------------------- NOTIFICATIONS / COMMENTS -------------------- */
+/**
+ * -------------------- NOTIFICATIONS / COMMENTS --------------------
+ */
 
 model NotificationSetting {
   telegramId               String   @id
@@ -160,28 +261,33 @@ model NotificationSetting {
 }
 
 model Comment {
-  id            String   @id @default(cuid())
-  taskId        String
-  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  authorChatId  String
-  text          String
-  createdAt     DateTime @default(now())
+  id           String   @id @default(cuid())
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorChatId String
+  text         String
+  createdAt    DateTime @default(now())
+  likes        CommentLike[]
 }
 
-/* -------------------- LEGACY INVITE (оставляем как было) -------------------- */
+/**
+ * -------------------- LEGACY INVITE (оставляем как было) --------------------
+ */
 
 model Invite {
-  id         String   @id @default(cuid())
-  type       String   // 'TASK'
-  mode       String   // 'assign'
-  token      String   @unique
-  taskId     String
-  createdBy  String?
-  usedAt     DateTime?
-  createdAt  DateTime @default(now())
+  id        String    @id @default(cuid())
+  type      String // 'TASK'
+  mode      String // 'assign'
+  token     String    @unique
+  taskId    String
+  createdBy String?
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 }
 
-/* -------------------- INVITE TICKETS (расширены под EVENT) -------------------- */
+/**
+ * -------------------- INVITE TICKETS (расширены под EVENT) --------------------
+ */
 
 model InviteTicket {
   id     String       @id @default(cuid())
@@ -212,6 +318,7 @@ enum InviteType {
   TASK
   GROUP
   EVENT
+  WATCH
 }
 
 enum InviteStatus {
@@ -220,11 +327,16 @@ enum InviteStatus {
   EXPIRED
 }
 
-
-
 enum ProcessNodeType {
   TASK
   EVENT
+}
+
+/// Кому адресовано напоминание задачи
+enum ReminderTarget {
+  ME           // себе (создателю напоминания)
+  RESPONSIBLE  // ответственному по задаче (если есть)
+  ALL          // всем: наблюдатели + ответственный + постановщик
 }
 
 enum StartMode {
@@ -240,196 +352,187 @@ enum CancelMode {
   IF_ANY_SELECTED_CANCELED
 }
 
-
-
-
-/* -------------------- NEW: УЧАСТНИКИ СОБЫТИЯ -------------------- */
+/**
+ * -------------------- NEW: УЧАСТНИКИ СОБЫТИЯ --------------------
+ */
 
 model EventParticipant {
-  id       String    @id @default(cuid())
-  eventId  String
-  event    Task      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  eventId String
+  event   Task   @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  chatId   String
-  role     EventRole @default(PARTICIPANT)
+  chatId String
+  role   EventRole @default(PARTICIPANT)
 
   createdAt DateTime @default(now())
 
-  @@unique([eventId, chatId])  // один участник один раз в событии
+  @@unique([eventId, chatId]) // один участник один раз в событии
   @@index([chatId])
 }
 
-
-
 model EventReminder {
-  id              String   @id @default(cuid())
-  eventId         String
-  event           Task     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  eventId String
+  event   Task   @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  chatId          String            // участник, кому слать
-  offsetMinutes   Int               // 60, 10, 5
-  fireAt          DateTime          // когда именно слать (startAt - offset)
-  replyToMessageId Int?             // message_id базового сообщения про событие (для reply)
-  sentAt          DateTime?
-  tries           Int      @default(0)
-  createdAt       DateTime @default(now())
+  chatId           String // участник, кому слать
+  offsetMinutes    Int // 60, 10, 5
+  fireAt           DateTime // когда именно слать (startAt - offset)
+  replyToMessageId Int? // message_id базового сообщения про событие (для reply)
+  sentAt           DateTime?
+  tries            Int       @default(0)
+  createdAt        DateTime  @default(now())
 
   @@unique([eventId, chatId, offsetMinutes]) // по одному напоминанию каждого вида на участника
   @@index([fireAt])
   @@index([eventId, chatId])
 }
 
+/**
+ * -------------------- TASK REMINDERS --------------------
+ * Простые напоминания для задач (не событий): срабатывают в точное время fireAt.
+ * Не удаляются после отправки (sentAt != null), чтобы их можно было показывать перечёркнутыми в UI.
+ */
+model TaskReminder {
+  id       String @id @default(cuid())
 
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  target    ReminderTarget
+  fireAt    DateTime
+  createdBy String   // chatId автора напоминания
+
+  replyToMessageId Int?
+  sentAt           DateTime?
+  tries            Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId])
+  @@index([fireAt])
+}
 
 /// ==== Процессы (минимально, без FK на текущие модели) ====
 
 model GroupProcess {
   id            String   @id @default(cuid())
-  groupId       String   // ID существующей группы (пока без relation, привяжем позже)
-  title         String?  // заголовок процесса (необязателен)
+  groupId       String // ID существующей группы (пока без relation, привяжем позже)
+  title         String? // заголовок процесса (необязателен)
   runMode       String   @default("MANUAL") // MANUAL | SCHEDULE
-  scheduleRRule String?  // RRULE, если runMode=SCHEDULE
-  timezone      String?  // например, "Europe/Moscow"
+  scheduleRRule String? // RRULE, если runMode=SCHEDULE
+  timezone      String? // например, "Europe/Moscow"
   isActive      Boolean  @default(true)
-  createdBy     String   // chatId создателя
+  createdBy     String // chatId создателя
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
 
 model ProcessNode {
-  id               String   @id @default(cuid())
-  processId        String
-  title            String
-  posX             Float    @default(0)
-  posY             Float    @default(0)
+  id        String @id @default(cuid())
+  processId String
+  title     String
+  posX      Float  @default(0)
+  posY      Float  @default(0)
 
-  // жизненный цикл узла
-  status           String   @default("PLANNED")
-  type             ProcessNodeType @default(TASK)
+  status String          @default("PLANNED")
+  type   ProcessNodeType @default(TASK)
 
-  // роли
-  assigneeChatId   String?
-  createdByChatId  String?
+  assigneeChatId  String?
+  createdByChatId String?
 
-  // условия запуска
-  startMode        StartMode  @default(AFTER_ANY)
-  startDate        DateTime?
-  startAfterDays   Int?
+  startMode      StartMode @default(AFTER_ANY)
+  startDate      DateTime?
+  startAfterDays Int?
 
-  // условия отмены
-  cancelMode       CancelMode @default(NONE)
+  cancelMode CancelMode @default(NONE)
 
   // связь с реальной задачей (когда узел породил Task)
-  taskId           String?
-  // если хочешь — можно сделать relation: task Task? @relation(fields: [taskId], references: [id])
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
-  // расширяемый карман
-  metaJson         Json?
+  metaJson Json?
 
-  // наблюдатели
-  watchers         ProcessNodeWatcher[]
+  watchers ProcessNodeWatcher[]
 
-  createdAt        DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
-
 model ProcessEdge {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   processId    String
   sourceNodeId String
   targetNodeId String
   enabled      Boolean @default(true)
 }
 
-
-
-
 model TaskMedia {
-  id          String   @id @default(cuid())
-  taskId      String
-  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
-  kind        String   // 'photo' | 'voice' | 'document'
-  tgFileId    String
-  tgUniqueId  String?
-  mimeType    String?
-  fileName    String?
-  fileSize    Int?
-  width       Int?
-  height      Int?
-  duration    Int?
+  kind       String // 'photo' | 'voice' | 'document'
+  tgFileId   String
+  tgUniqueId String?
+  mimeType   String?
+  fileName   String?
+  fileSize   Int?
+  width      Int?
+  height     Int?
+  duration   Int?
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([taskId])
 }
 
-
-
-
-
-
-
-
-
-
 model ProcessNodeWatcher {
-  id      String @id @default(cuid())
-  nodeId  String
-  chatId  String
+  id     String @id @default(cuid())
+  nodeId String
+  chatId String
 
-  node    ProcessNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  node ProcessNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
 
   @@unique([nodeId, chatId])
   @@index([chatId])
 }
 
-
-
-
-
-
-
-
-
 model ProcessRun {
-  id         String   @id @default(cuid())
-  processId  String   // GroupProcess.id
-  startedAt  DateTime @default(now())
-  startedBy  String   // chatId, кто запустил
-  status     String   @default("RUNNING") // RUNNING | COMPLETED | CANCELED
-  note       String?
+  id        String   @id @default(cuid())
+  processId String // GroupProcess.id
+  startedAt DateTime @default(now())
+  startedBy String // chatId, кто запустил
+  status    String   @default("RUNNING") // RUNNING | COMPLETED | CANCELED
+  note      String?
 }
 
 model RunTask {
-  id                String   @id @default(cuid())
-  runId             String   // ProcessRun.id
-  nodeId            String   // ProcessNode.id
-  taskId            String?  // ID задачи (свяжем позже, когда создадим реальную задачу)
-  status            String   @default("PLANNED") // PLANNED | CREATED | IN_PROGRESS | DONE | CANCELED
+  id                 String    @id @default(cuid())
+  runId              String // ProcessRun.id
+  nodeId             String // ProcessNode.id
+  taskId             String? // ID задачи (свяжем позже, когда создадим реальную задачу)
+  status             String    @default("PLANNED") // PLANNED | CREATED | IN_PROGRESS | DONE | CANCELED
   checklistMessageId String? // Telegram message id чек-листа
   checklistItemId    String?
   telegramChatId     String? // кому отправили чек-лист
-  createdAt         DateTime @default(now())
-  doneAt            DateTime?
+  createdAt          DateTime  @default(now())
+  doneAt             DateTime?
 }
 
-
-
-
 model GroupLabel {
-  id        String      @id @default(cuid())
-  groupId   String
-  group     Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  groupId String
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
-  title     String
-  color     String?     // опционально: hex, например "#8BC34A"
-  order     Int         @default(0)
+  title String
+  color String? // опционально: hex, например "#8BC34A"
+  order Int     @default(0)
 
-  tasks     TaskLabel[]
+  tasks TaskLabel[]
 
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([groupId, title])
 }
@@ -437,11 +540,170 @@ model GroupLabel {
 model TaskLabel {
   taskId     String
   labelId    String
-  assignedBy String?     // chatId, кто назначил
-  assignedAt DateTime    @default(now())
+  assignedBy String? // chatId, кто назначил
+  assignedAt DateTime @default(now())
 
-  task       Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  label      GroupLabel  @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  task  Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label GroupLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
 
   @@id([taskId, labelId])
+}
+
+/**
+ * -------------------- PRE-TASKS (предзадачи) --------------------
+ * Предзадача — это «превью» задачи, которая запускается при выполнении условий.
+ * Поддерживает зависимости на обычные задачи И другие предзадачи (цепочки).
+ */
+
+/// Режимы запуска предзадачи
+enum PreTaskTriggerMode {
+  AFTER_ALL_DONE        // запустить, когда все выбранные перешли в Done
+  DATE_PLUS             // не раньше startAt и только после Done всех
+  DELAY_AFTER           // через N минут после Done всех
+  AFTER_ALL_CANCELED    // запустить, когда все выбранные отменены
+}
+
+/// Статус предзадачи
+enum PreTaskStatus {
+  PREVIEW
+  ARMED
+  FIRED
+  CANCELED
+  FAILED
+}
+
+model PreTask {
+  id                 String              @id @default(cuid())
+
+  // кто создал и где
+  creatorChatId      String
+  groupId            String?
+
+  // содержимое будущей задачи (минимум — текст)
+  text               String
+  payload            Json?
+
+  // роли
+  plannedAssigneeChatId String?
+
+  // режим запуска
+  triggerMode        PreTaskTriggerMode
+  startAt            DateTime?
+  delayMinutes       Int?
+
+  // Поведение при отмене одной из зависимостей (если включён чекбокс)
+  autoCancelOnAny    Boolean             @default(false)
+
+  // служебные поля
+  status             PreTaskStatus       @default(PREVIEW)
+  targetTaskId       String?             // id созданной реальной задачи (после FIRED)
+  timezone           String?
+  fireAt             DateTime?           // вычисленный момент запуска (для DATE_PLUS/DELAY_AFTER)
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  // связи
+  links              PreTaskLink[] @relation("PreTask_Owner")
+  usedInLinks        PreTaskLink[] @relation("PreTask_Dependency")
+
+  @@index([creatorChatId])
+  @@index([groupId])
+  @@index([status])
+}
+
+/// Связи предзадачи с зависимостями: либо на обычную задачу, либо на другую предзадачу
+model PreTaskLink {
+  id          String   @id @default(cuid())
+  preTaskId   String
+  taskId      String?  // зависимость на Task
+  depPreTaskId String? // зависимость на другую PreTask
+  createdAt   DateTime @default(now())
+
+  preTask     PreTask  @relation("PreTask_Owner", fields: [preTaskId], references: [id], onDelete: Cascade)
+  task        Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  depPreTask  PreTask? @relation("PreTask_Dependency", fields: [depPreTaskId], references: [id], onDelete: Cascade)
+
+  @@index([preTaskId])
+  @@index([taskId])
+  @@index([depPreTaskId])
+}
+
+model TaskRelation {
+  id String @id @default(cuid())
+
+  fromTaskId String
+  toTaskId   String
+
+  groupId   String?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  from Task @relation("RelFrom", fields: [fromTaskId], references: [id], onDelete: Cascade)
+  to   Task @relation("RelTo", fields: [toTaskId], references: [id], onDelete: Cascade)
+
+  @@index([fromTaskId])
+  @@index([toTaskId])
+}
+
+model TaskLike {
+  id        String   @id @default(cuid())
+  taskId    String
+  chatId    String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, chatId])
+  @@index([chatId])
+}
+
+// Watchers of task
+model TaskWatcher {
+  id        String   @id @default(cuid())
+  taskId    String
+  chatId    String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, chatId])
+  @@index([chatId])
+}
+
+model CommentLike {
+  id         String   @id @default(cuid())
+  commentId  String
+  chatId     String
+  createdAt  DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, chatId])
+  @@index([chatId])
+}
+
+/// Ledger of star operations
+model StarLedger {
+  id         String   @id @default(cuid())
+  taskId     String
+  fromChatId String
+  toChatId   String?
+  amount     Int
+  kind       String   // PLEDGE | PAYOUT | REFUND
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  @@index([taskId])
+  @@index([fromChatId])
+  @@index([toChatId])
+}
+
+/// User payout method (MVP: SBP phone)
+model UserPayoutMethod {
+  chatId    String @id
+  method    String @default("SBP")
+  phone     String
+  bankCode  String?
+  updatedAt DateTime @updatedAt
 }

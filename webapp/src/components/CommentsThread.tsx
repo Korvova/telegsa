@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
-import { addComment, deleteComment, listComments, type TaskComment } from '../api';
+import { addComment, deleteComment, listComments, type TaskComment, getCommentLikes, likeComment, unlikeComment } from '../api';
 
 export default function CommentsThread({
   taskId,
@@ -13,6 +13,24 @@ export default function CommentsThread({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [likes, setLikes] = useState<Record<string, { count: number; me: boolean }>>({});
+  const [likeBusy, setLikeBusy] = useState<Record<string, boolean>>({});
+
+  const scrollToBottom = () => {
+    try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {}
+  };
+
+  const ensureVisible = () => {
+    // Прокрутить список вниз и гарантированно показать инпут
+    scrollToBottom();
+    try { inputRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+    // Повторить после возможного появления клавиатуры/пересчёта верстки
+    setTimeout(scrollToBottom, 50);
+    setTimeout(scrollToBottom, 220);
+    setTimeout(() => { try { inputRef.current?.scrollIntoView({ block: 'nearest' }); } catch {} }, 220);
+    try { window.scrollTo({ top: document.body.scrollHeight }); } catch {}
+  };
 
   const load = async () => {
     try {
@@ -31,8 +49,27 @@ export default function CommentsThread({
 
   useEffect(() => {
     // автоскролл к последнему комменту
-    try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {}
+    scrollToBottom();
   }, [items.length]);
+
+  // Загрузить лайки для новых комментариев
+  useEffect(() => {
+    const ids = new Set(items.map((c) => c.id));
+    const need: string[] = [];
+    for (const id of ids) if (!(id in likes)) need.push(id);
+    if (need.length === 0) return;
+    let alive = true;
+    (async () => {
+      for (const id of need) {
+        try {
+          const r = await getCommentLikes(taskId, id, meChatId);
+          if (!alive) return;
+          if (r?.ok) setLikes((prev) => ({ ...prev, [id]: { count: r.count || 0, me: !!r.me } }));
+        } catch {}
+      }
+    })();
+    return () => { alive = false; };
+  }, [items, taskId, meChatId]);
 
   const send = async () => {
     const val = text.trim();
@@ -40,11 +77,14 @@ export default function CommentsThread({
     setBusy(true);
     try {
       const r = await addComment(taskId, meChatId, val);
-      if (r.ok && r.comment) {
-        setItems(prev => [...prev, r.comment!]);
+      if (r.ok) {
+        // Сразу очищаем поле и подгружаем актуальный список, чтобы комментарий появился
         setText('');
         WebApp?.HapticFeedback?.impactOccurred?.('light');
-      } 
+        await load();
+        // Вернуть фокус и прокрутить, чтобы инпут и последний коммент были видны
+        setTimeout(() => { try { inputRef.current?.focus(); } catch {}; ensureVisible(); }, 0);
+      }
     } finally {
       setBusy(false);
     }
@@ -54,6 +94,17 @@ export default function CommentsThread({
     if (e.key === 'Enter' && !e.shiftKey) send();
   };
 
+  useEffect(() => {
+    // Пересчёт видимой области при открытии клавиатуры
+    const onResize = () => ensureVisible();
+    try { window.addEventListener('resize', onResize); } catch {}
+    try { (window as any).visualViewport?.addEventListener?.('resize', onResize); } catch {}
+    return () => {
+      try { window.removeEventListener('resize', onResize); } catch {}
+      try { (window as any).visualViewport?.removeEventListener?.('resize', onResize); } catch {}
+    };
+  }, []);
+
   const remove = async (id: string) => {
     if (!confirm('Удалить комментарий?')) return;
     try {
@@ -61,6 +112,26 @@ export default function CommentsThread({
       if (r.ok) setItems(prev => prev.filter(x => x.id !== id));
     } catch {}
   };
+
+  const toggleLike = async (commentId: string) => {
+    if (likeBusy[commentId]) return;
+    setLikeBusy((b) => ({ ...b, [commentId]: true }));
+    try {
+      const cur = likes[commentId] || { count: 0, me: false };
+      if (cur.me) {
+        const r = await unlikeComment(taskId, commentId, meChatId);
+        if (r?.ok) setLikes((prev) => ({ ...prev, [commentId]: { count: r.count ?? Math.max(0, cur.count - 1), me: false } }));
+      } else {
+        const r = await likeComment(taskId, commentId, meChatId);
+        if (r?.ok) setLikes((prev) => ({ ...prev, [commentId]: { count: r.count ?? cur.count + 1, me: true } }));
+      }
+    } catch {}
+    finally {
+      setLikeBusy((b) => ({ ...b, [commentId]: false }));
+    }
+  };
+
+  const [badImg, setBadImg] = useState<Record<string, boolean>>({});
 
   return (
     <div style={wrap}>
@@ -78,12 +149,43 @@ export default function CommentsThread({
                   <div style={{ fontSize: 12, opacity: .6 }}>{new Date(c.createdAt).toLocaleString()}</div>
                 </div>
               </div>
-              <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>
-              {mine ? (
-                <div style={{ marginTop: 6 }}>
+              {(() => {
+                const txt = String(c.text || '');
+                const hasFile = txt.startsWith('/files/') || txt.includes('/files/');
+                if (!hasFile) return (<div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>);
+                const src = `${(import.meta as any).env.VITE_API_BASE}${txt}`;
+                if (badImg[src]) {
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      <a href={src} target="_blank" rel="noreferrer" style={{ color: '#8aa0ff' }}>📎 Открыть файл</a>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ marginTop: 6 }}>
+                    <img
+                      src={src}
+                      alt="Вложение"
+                      style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
+                      onLoad={() => { try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {} }}
+                      onError={() => setBadImg((prev) => ({ ...prev, [src]: true }))}
+                    />
+                  </div>
+                );
+              })()}
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  style={{ ...likeBtn, opacity: likeBusy[c.id] ? 0.6 : 1 }}
+                  onClick={() => toggleLike(c.id)}
+                  disabled={likeBusy[c.id]}
+                  title={likes[c.id]?.me ? 'Убрать лайк' : 'Нравится'}
+                >
+                  {likes[c.id]?.me ? '❤️' : '🤍'} {likes[c.id]?.count ?? 0}
+                </button>
+                {mine ? (
                   <button style={delBtn} onClick={() => remove(c.id)}>Удалить</button>
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
           );
         })}
@@ -94,9 +196,11 @@ export default function CommentsThread({
 
       <div style={inputRow}>
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
+          onFocus={ensureVisible}
           placeholder="Напишите комментарий…"
           style={input}
         />
@@ -165,5 +269,13 @@ const delBtn: React.CSSProperties = {
   background: '#2a1a1a',
   color: '#ffd7d7',
   border: '1px solid #442626',
+  cursor: 'pointer',
+};
+const likeBtn: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 10,
+  background: '#22283a',
+  color: '#e8eaed',
+  border: '1px solid #2a3346',
   cursor: 'pointer',
 };

@@ -7,6 +7,7 @@ type Group = {
   title: string;
   ownerChatId: string;
   kind?: 'own' | 'member';
+  isPublic?: boolean;
 };
 
 type Props = {
@@ -21,6 +22,7 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
   const isOwner = String(group.ownerChatId) === String(chatId) || group.kind === 'own';
   const [title, setTitle] = useState(group.title);
   const [busy, setBusy] = useState(false);
+  const [isPublic, setIsPublic] = useState(!!group.isPublic);
 
   const save = async () => {
     if (!isOwner) return;
@@ -66,6 +68,34 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
       console.error('[GroupEdit] delete error', e);
       alert('Не удалось удалить группу');
       WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const togglePublic = async () => {
+    if (!isOwner || busy) return;
+    const makePublic = !isPublic;
+    if (makePublic) {
+      const ok = confirm('Внимание!\nТочно сделать группу публичной?\n\nВсе задачи группы будут общедоступны.');
+      if (!ok) return;
+    } else {
+      const ok = confirm('Скрыть группу из публичного доступа? Подписчики будут отписаны автоматически.');
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      const r = await fetch(`${import.meta.env.VITE_API_BASE}/groups/${group.id}/public`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId, public: makePublic }),
+      }).then((r) => r.json());
+      if (!r?.ok) throw new Error(r?.error || 'toggle_failed');
+      setIsPublic(!!r.group?.isPublic);
+      alert(r.group?.isPublic ? 'Группа стала публичной.' : 'Группа стала приватной.');
+    } catch (e) {
+      console.error('[GroupEdit] toggle public error', e);
+      alert('Не удалось изменить публичность');
     } finally {
       setBusy(false);
     }
@@ -148,6 +178,22 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
           </button>
 
           <div style={{ flex: 1 }} />
+
+          <button
+            onClick={togglePublic}
+            disabled={!isOwner || busy}
+            title={isOwner ? (isPublic ? 'Сделать приватной' : 'Сделать публичной') : 'Только владелец'}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: isPublic ? '#20311a' : '#203025',
+              color: '#b7ffb7',
+              border: '1px solid #2a4a2a',
+              cursor: isOwner && !busy ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {isPublic ? 'Сделать приватной' : 'Сделать публичной 🌍'}
+          </button>
 
           <button
             onClick={remove}

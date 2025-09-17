@@ -28,3 +28,8 @@ export async function createAssignInvite(taskId: string) {
 export async function pingMemberDM(taskId: string, toChatId: string) {
   return post(`${API}/assign/ping`, { taskId, toChatId });
 }
+
+/** Убрать текущего ответственного */
+export async function unassign(taskId: string, chatId: string) {
+  return post(`${API}/assign/unassign`, { taskId, chatId });
+}
