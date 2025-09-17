@@ -210,7 +210,9 @@ export default function CreateTaskModal({
     const g = groups.find(g => g.id === groupId);
     if (!g) return 'Группа';
     const isTg = (g as any)?.title?.startsWith?.('tg::');
-    return (isTg ? '➡️📁 ' : '📁 ') + (g.title || 'Группа');
+    const isPublic = (g as any)?.isPublic === true;
+    const icon = isPublic ? '🌍 ' : (isTg ? '➡️📁 ' : '📁 ');
+    return icon + (g.title || 'Группа');
   }
 
   // pick files handlers
@@ -428,8 +430,8 @@ export default function CreateTaskModal({
         {/* header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button onClick={() => setPickerOpen(true)} title="Выбрать группу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', fontSize: 12, cursor: 'pointer' }}>
-              📁 <b>{groupLabel()}</b>
+            <button onClick={() => setPickerOpen(true)} title="Выбрать группу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: ((groupId && (groups.find(g=>g.id===groupId) as any)?.isPublic) ? '#86efac' : '#e8eaed'), fontSize: 12, cursor: 'pointer' }}>
+              <b>{groupLabel()}</b>
             </button>
             {groupId ? (
               <select value={selectedLabelId ?? ''} onChange={(e) => { setSelectedLabelId(e.target.value || null); focusText(); }} title="Выбрать ярлык" style={{ background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 999, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>

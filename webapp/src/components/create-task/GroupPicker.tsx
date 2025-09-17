@@ -93,14 +93,14 @@ export default function GroupPicker({
             ? ownGroups.map((g) => (
                 <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="radio" name="group" checked={groupId === g.id} onChange={() => setGroupId(g.id)} />
-                  <span>{g.title}</span>
+                  <span style={{ color: (g as any).isPublic ? '#86efac' : undefined }}>{(g as any).isPublic ? '🌍 ' : ''}{g.title}</span>
                 </label>
               ))
             : memberGroups.map((g) => (
                 <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="radio" name="group" checked={groupId === g.id} onChange={() => setGroupId(g.id)} />
                   <span>
-                    {g.title}
+                    <span style={{ color: (g as any).isPublic ? '#86efac' : undefined }}>{(g as any).isPublic ? '🌍 ' : ''}{g.title}</span>
                     {g.ownerName && <span style={{ opacity: 0.7, marginLeft: 6 }}>(👑 {g.ownerName})</span>}
                   </span>
                 </label>
