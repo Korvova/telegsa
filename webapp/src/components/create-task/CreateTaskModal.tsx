@@ -557,8 +557,30 @@ export default function CreateTaskModal({
           {/* existing media (edit) */}
           {isEdit && existingMedia.length>0 && (<ExistingMedia items={existingMedia as any} />)}
 
-          {/* deadline/reminders info */}
-          {deadlineAt ? (<div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>) : null}
+          {/* deadline/reminders/accept info */}
+          {deadlineAt ? (
+            <div style={{ fontSize: 12, opacity: 0.85 }}>🚩 Дедлайн: {new Date(deadlineAt).toLocaleString()}</div>
+          ) : null}
+          {acceptCondition && acceptCondition !== 'NONE' ? (
+            <div style={{ fontSize: 12, opacity: 0.9 }}>☝️ Условия: {
+              acceptCondition === 'PHOTO' ? 'нужно фото' :
+              acceptCondition === 'APPROVAL' ? 'нужно согласование' :
+              acceptCondition === 'PHOTO_AND_APPROVAL' ? 'фото + согласование' :
+              acceptCondition === 'DOC_AND_APPROVAL' ? 'документ + согласование' : '—'
+            }</div>
+          ) : null}
+          {remindersDraft.length > 0 ? (
+            <div style={{ fontSize: 12, opacity: 0.9 }}>
+              ⏰ Напоминания: {remindersDraft.map((r) => {
+                try {
+                  const d = new Date(r.fireAtIso);
+                  const v = isNaN(d.getTime()) ? r.fireAtIso : d.toLocaleString();
+                  const who = r.target === 'ME' ? 'мне' : (r.target === 'RESPONSIBLE' ? 'ответственному' : 'всем');
+                  return `${v} (${who})`;
+                } catch { return `${r.fireAtIso}`; }
+              }).join('; ')}
+            </div>
+          ) : null}
           {!isSimpleMode && scheduleInfo ? (
             <div style={{ fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6 }}>
               <span>🕒 Создастся: {scheduleInfo.when} • {scheduleInfo.left}</span>
