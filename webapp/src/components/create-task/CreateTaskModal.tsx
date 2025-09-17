@@ -441,6 +441,16 @@ export default function CreateTaskModal({
         {/* composer */}
         <div style={{ display: 'grid', gap: 10, marginBottom: 10 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            <div style={{ display:'flex', gap:8, alignItems:'start' }}>
+              {!isEdit && !scheduleAt && (
+                <button
+                  type="button"
+                  onClick={() => { setScheduleOpen(true); focusText(); }}
+                  title="Назначить время создания"
+                  style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#8aa0ff', cursor: 'pointer' }}
+                >🕒</button>
+              )}
+              <div style={{ position:'relative', flex:1, minWidth:0 }}>
             <TextComposer
               text={text}
               setText={setText}
@@ -462,7 +472,7 @@ export default function CreateTaskModal({
                     onClick={doSaveEdit}
                     style={{ width:'100%', height:'100%', borderRadius:999, background:'#2563eb', color:'#fff', border:'1px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}
                   >💾</button>
-                ) : preCfg && preCfg.links?.length ? (
+                ) : ((!isEdit && !!scheduleAt) || (preCfg && preCfg.links?.length)) ? (
                   <PreTaskActionsLauncher
                     label="➤"
                     meChatId={chatId}
@@ -475,7 +485,7 @@ export default function CreateTaskModal({
                         groupId: groupId ?? null,
                         text: title,
                         plannedAssigneeChatId: plannedAssigneeChatId ?? null,
-                        triggerMode: (scheduleAt ? 'DATE_PLUS' : ((preCfg as any)?.mode || 'AFTER_ALL_DONE')),
+                        triggerMode: (scheduleAt ? 'DATE_PLUS' : (((preCfg as any)?.mode) || 'AFTER_ALL_DONE')),
                         startAt: scheduleAt || (preCfg as any)?.startAt || null,
                         delayMinutes: (preCfg as any)?.delayMinutes ?? null,
                         autoCancelOnAny: (preCfg as any)?.autoCancelOnAny ?? false,
@@ -487,8 +497,9 @@ export default function CreateTaskModal({
                       const resp = await (api as any).createPreTask(body);
                       if (!(resp as any)?.ok) throw new Error((resp as any)?.error || 'pretask_create_failed');
                       try {
-                        const parentsTask = (preCfg.links || []).filter((l:any)=>l.taskId).map((l:any)=>String(l.taskId));
-                        const parentsPre = (preCfg.links || []).filter((l:any)=>l.preTaskId).map((l:any)=>String(l.preTaskId));
+                        const linksArr:any[] = (preCfg?.links || []) as any[];
+                        const parentsTask = linksArr.filter((l:any)=>l.taskId).map((l:any)=>String(l.taskId));
+                        const parentsPre = linksArr.filter((l:any)=>l.preTaskId).map((l:any)=>String(l.preTaskId));
                         window.dispatchEvent(new CustomEvent('pre-task-created', { detail: { preTask: (resp as any)?.preTask || null, parentTaskIds: parentsTask, parentPreTaskIds: parentsPre } }));
                       } catch {}
                       setText(''); setPreCfg(null); setScheduleAt(null); onCreated?.(); onClose();
@@ -512,7 +523,17 @@ export default function CreateTaskModal({
                 )
               )}
             />
+              </div>
+            </div>
           </div>
+
+          {/* scheduled info under textarea */}
+          {!isEdit && scheduleInfo ? (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6 }}>
+              <span>🕒 Создастся: {scheduleInfo.when} • {scheduleInfo.left}</span>
+              <button onClick={() => { setScheduleAt(null); setPreCfg(null); focusText(); }} title="Сбросить плановую дату" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
+            </div>
+          ) : null}
 
           {/* tools panel (basic) */}
           {toolsOpen && (
