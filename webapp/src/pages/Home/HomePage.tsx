@@ -992,9 +992,9 @@ export default function HomePage({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          marginBottom: 8,
-          paddingTop: 4,
-          paddingBottom: 6,
+          marginBottom: 4,
+          paddingTop: 2,
+          paddingBottom: 4,
           background: 'linear-gradient(180deg, rgba(11,14,22,0.98) 0%, rgba(11,14,22,0.85) 70%, rgba(11,14,22,0.0) 100%)',
           backdropFilter: 'blur(2px)',
         }}
@@ -1115,12 +1115,12 @@ export default function HomePage({
           return (
             <section
               key={pg.key}
-              style={{ minWidth: '100%', scrollSnapAlign: 'start', scrollSnapStop: 'always', paddingTop: 8 }}
+              style={{ minWidth: '100%', scrollSnapAlign: 'start', scrollSnapStop: 'always', paddingTop: 2 }}
             >
               {/* шапка страницы с фильтром-ярлыком */}
               <div
                 style={{
-                  padding: '6px 8px 8px',
+                  padding: '2px 8px 4px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
