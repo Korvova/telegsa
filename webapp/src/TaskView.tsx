@@ -201,9 +201,11 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   }, [isLightboxOpen, photos.length]);
 
   const [groupIsTg, setGroupIsTg] = useState<boolean>(false);
+  const [groupIsPublic, setGroupIsPublic] = useState<boolean>(false);
   const groupLabel = () => {
     if (!groupTitle) return 'Моя группа';
-    return (groupIsTg ? '➡️📁 ' : '📁 ') + groupTitle;
+    const icon = groupIsPublic ? '🌍 ' : (groupIsTg ? '➡️📁 ' : '📁 ');
+    return icon + groupTitle;
   };
 
   /* --- системная кнопка "Назад" --- */
@@ -280,6 +282,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           const g = r.groups.find((x: any) => x.id === groupId);
           setGroupTitle(g ? g.title : null);
           setGroupIsTg(Boolean((g as any)?.isTelegramGroup));
+          setGroupIsPublic(Boolean((g as any)?.isPublic));
         }
       })
       .catch(() => {});
@@ -560,10 +563,10 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             title="Выбрать другую группу"
             style={{
               background: 'transparent',
-             border: '1px solid #2a3346',
+             border: groupIsPublic ? '1px solid #2a4a2a' : '1px solid #2a3346',
               borderRadius: 8,
               padding: '2px 8px',
-              color: '#8aa0ff',
+              color: groupIsPublic ? '#86efac' : '#8aa0ff',
               cursor: 'pointer'
             }}
           >
