@@ -451,7 +451,7 @@ export default function CreateTaskModal({
               {!isEdit && !scheduleAt && (
                 <button
                   type="button"
-                  onClick={() => { setRobotOpen(true); }}
+                  onClick={() => { try { textAreaRef.current?.blur(); } catch {}; setRobotOpen(true); }}
                   title="Роботы"
                   style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#8aa0ff', cursor: 'pointer' }}
                 >🤖</button>
@@ -603,7 +603,7 @@ export default function CreateTaskModal({
 
         <RobotPicker
           open={robotOpen}
-          onClose={() => setRobotOpen(false)}
+          onClose={() => { setRobotOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
           onPickSchedule={() => { setRobotOpen(false); setScheduleOpen(true); }}
           onPickWeather={() => { setRobotOpen(false); setWeatherOpen(true); }}
         />
