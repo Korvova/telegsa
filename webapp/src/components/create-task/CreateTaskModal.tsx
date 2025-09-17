@@ -14,6 +14,8 @@ import useTonPayment from './hooks/useTonPayment';
 import PreTaskActionsLauncher from './PreTask/PreTaskActionsLauncher';
 import AcceptConditionsModal from './AcceptConditionsModal';
 import GroupPicker from './GroupPicker';
+import RobotPicker from './robots/RobotPicker';
+import WeatherScheduleModal from './robots/WeatherScheduleModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import WebApp from '@twa-dev/sdk';
 import {
@@ -105,6 +107,8 @@ export default function CreateTaskModal({
   // pretask config
   const [preCfg, setPreCfg] = useState<PreConfig | null>(null);
   const [edgeContext, setEdgeContext] = useState<null | { kind: 'TASK' | 'PRETASK'; text: string }>(null);
+  const [robotOpen, setRobotOpen] = useState(false);
+  const [weatherOpen, setWeatherOpen] = useState(false);
 
   // edit mode
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
@@ -447,10 +451,10 @@ export default function CreateTaskModal({
               {!isEdit && !scheduleAt && (
                 <button
                   type="button"
-                  onClick={() => { try { textAreaRef.current?.blur(); } catch {}; setScheduleOpen(true); }}
-                  title="Назначить время создания"
+                  onClick={() => { setRobotOpen(true); }}
+                  title="Роботы"
                   style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#8aa0ff', cursor: 'pointer' }}
-                >🕒</button>
+                >🤖</button>
               )}
               <div style={{ position:'relative', flex:1, minWidth:0 }}>
             <TextComposer
@@ -596,6 +600,14 @@ export default function CreateTaskModal({
         <DeadlinePicker open={deadlineOpen} value={deadlineAt} onChange={(v) => setDeadlineAt(v)} onClose={() => { setDeadlineOpen(false); focusText(); }} />
         <DeadlinePicker open={scheduleOpen} value={scheduleAt} title="Плановое создание" icon="🕒" onChange={(v) => { if (!v) { setScheduleAt(null); setPreCfg(null); return; } const dt = new Date(v); if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { alert('Нельзя выбрать прошлое время'); return; } setScheduleAt(v); setPreCfg({ links: [], mode: 'DATE_PLUS', startAt: v, delayMinutes: null, autoCancelOnAny: false } as any); }} onClose={() => { setScheduleOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }} />
         <AcceptConditionsModal open={acceptOpen} value={acceptCondition} onChange={(v)=>setAcceptConditionState(v)} onClose={() => { setAcceptOpen(false); focusText(); }} />
+
+        <RobotPicker
+          open={robotOpen}
+          onClose={() => setRobotOpen(false)}
+          onPickSchedule={() => { setRobotOpen(false); setScheduleOpen(true); }}
+          onPickWeather={() => { setRobotOpen(false); setWeatherOpen(true); }}
+        />
+        <WeatherScheduleModal open={weatherOpen} onClose={() => setWeatherOpen(false)} />
 
         <BountyPicker
           open={bountyOpen}
