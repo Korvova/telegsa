@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import StoriesBar from '../../components/stories/StoriesBar';
 import StoriesViewer from '../../components/stories/StoriesViewer';
-import StoriesMini from '../../components/stories/StoriesMini';
+import StoriesMorph from '../../components/stories/StoriesMorph';
 import { useStoriesData } from '../../components/stories/useStoriesData';
 import type { StoriesBarItem } from '../../components/stories/StoriesTypes';
 import {
@@ -231,12 +231,14 @@ export default function HomePage({
     setCurrentProject(item);
     setViewerOpen(true);
   };
-  // сворачивание/разворачивание сториз: у верхнего края показываем мини-вид (2 кружка), ниже — полный бар
-  const [storiesCollapsed, setStoriesCollapsed] = useState(true);
+  // Морфинг сториз: 0..1 — точка→круг; затем показываем полный бар
+  const [storiesProgress, setStoriesProgress] = useState(0); // 0..1
+  const BAR_THRESHOLD = 120; // px скролла до показа полного бара
   useEffect(() => {
     const onScroll = () => {
-      const y = window.scrollY || (document.documentElement && document.documentElement.scrollTop) || 0;
-      setStoriesCollapsed(y < 6);
+      const y = Math.max(0, window.scrollY || document.documentElement?.scrollTop || 0);
+      const p = Math.max(0, Math.min(1, y / BAR_THRESHOLD));
+      setStoriesProgress(p);
     };
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -985,9 +987,9 @@ export default function HomePage({
   const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
-      {/* Сториз: самый верх над шапкой — мини при вершине, полный при прокрутке */}
-      {storiesCollapsed ? (
-        <StoriesMini items={storyItems} onOpen={onOpenProjectStories} />
+      {/* Сториз: морфинг — точка→круг при прокрутке; дальше полный бар */}
+      {storiesProgress < 1 ? (
+        <StoriesMorph items={storyItems} progress={storiesProgress} onOpen={onOpenProjectStories} />
       ) : (
         <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
       )}
