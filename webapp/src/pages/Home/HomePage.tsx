@@ -233,14 +233,20 @@ export default function HomePage({
   };
   // Морфинг сториз: 0..1 — точка→круг; затем показываем полный бар
   const [storiesProgress, setStoriesProgress] = useState(0); // 0..1
-  const BAR_THRESHOLD = 120; // px скролла до показа полного бара
+  const BAR_THRESHOLD = 120; // px суммарного сдвига до показа полного бара
   useEffect(() => {
+    let lastY = Math.max(0, window.scrollY || document.documentElement?.scrollTop || 0);
     const onScroll = () => {
       const y = Math.max(0, window.scrollY || document.documentElement?.scrollTop || 0);
-      const p = Math.max(0, Math.min(1, y / BAR_THRESHOLD));
-      setStoriesProgress(p);
+      const dy = y - lastY;
+      lastY = y;
+      // Требуется инверсия: тяну вниз (dy < 0) — увеличивается; тяну вверх (dy > 0) — уменьшается
+      if (dy < -0.5) {
+        setStoriesProgress((prev) => Math.min(1, prev + Math.min(1, (-dy) / BAR_THRESHOLD)));
+      } else if (dy > 0.5) {
+        setStoriesProgress((prev) => Math.max(0, prev - Math.min(1, dy / BAR_THRESHOLD)));
+      }
     };
-    onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
