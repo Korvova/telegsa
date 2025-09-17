@@ -156,13 +156,6 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
       {/* Composer fixed bottom */}
       <div style={{ position: 'sticky', bottom: 0, background: '#0f1216', padding: 10, borderTop: '1px solid #2a3346' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            onClick={closeWithAnim}
-            title="Назад"
-            style={{ padding: '10px 12px', borderRadius: 12, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', cursor: 'pointer' }}
-          >
-            ←
-          </button>
           <input
             ref={inputRef}
             value={text}

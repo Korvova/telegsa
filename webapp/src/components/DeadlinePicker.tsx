@@ -7,6 +7,7 @@ type Props = {
   onClose: () => void;
   minNow?: boolean; // default true
   title?: string;
+  icon?: string; // header icon (default 🚩)
 };
 
 function toLocalInputValue(iso: string): string {
@@ -31,7 +32,7 @@ function fromLocalInputValue(v: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн' }: Props) {
+export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн', icon = '🚩' }: Props) {
   const [local, setLocal] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +58,7 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
     >
       <div onClick={(e) => e.stopPropagation()} style={{ background: '#1b2030', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 12, padding: 12, width: 'min(460px, 92vw)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontWeight: 700 }}>🚩 {title}</div>
+          <div style={{ fontWeight: 700 }}>{icon} {title}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}>✕</button>
         </div>
 
@@ -101,4 +102,3 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
     </div>
   );
 }
-

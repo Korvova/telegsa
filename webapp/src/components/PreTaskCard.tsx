@@ -46,6 +46,9 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
       >{cnt > 0 ? cnt : ''}</button>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 16, marginBottom: 6 }}>{p.text}</div>
+        {isSubtle ? (
+          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 6 }}>#{String(p.id || '').slice(0, 6)}</div>
+        ) : null}
         {groupTitle ? (
           <div style={{
             display: 'inline-block',

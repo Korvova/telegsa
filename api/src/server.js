@@ -14,7 +14,7 @@ import { deadlineRouter } from './routes/deadline.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { assignRouter } from './routes/assign.js';  
 import { eventsRouter } from './routes/events.js';
-import { initReminderScheduler, scheduleRemindersForEvent, initPreTaskScheduler, reevaluatePreTasksByTaskId } from './scheduler.js';
+import { initReminderScheduler, scheduleRemindersForEvent, initPreTaskScheduler, reevaluatePreTasksByTaskId, setSSEBroadcaster } from './scheduler.js';
 
 import processRouter from './routes/process.js';
 
@@ -2871,4 +2871,34 @@ app.post('/groups/:id/share-prepared', async (req, res) => {
 const PORT = process.env.PORT || 3300;
 app.listen(PORT, () => {
   console.log(`telegsar-api listening on :${PORT}`);
+});
+/* ---------- SSE simple bus ---------- */
+const sseClients = new Map(); // chatId -> Set(res)
+function sseBroadcast(chatId, payload) {
+  try {
+    const set = sseClients.get(String(chatId));
+    if (!set) return;
+    const data = `data: ${JSON.stringify(payload)}\n\n`;
+    for (const res of set) {
+      try { res.write(data); } catch {}
+    }
+  } catch {}
+}
+setSSEBroadcaster(sseBroadcast);
+
+app.get('/events/stream', (req, res) => {
+  try {
+    const chatId = String(req.query.chatId || '').trim();
+    if (!chatId) return res.status(400).end('chatId required');
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    res.write('retry: 5000\n\n');
+    const set = sseClients.get(chatId) || new Set();
+    set.add(res);
+    sseClients.set(chatId, set);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
+    req.on('close', () => { clearInterval(ping); try { set.delete(res); } catch {}; });
+  } catch { res.end(); }
 });

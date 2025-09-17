@@ -1,6 +1,12 @@
 // api/src/scheduler.js
 import schedule from 'node-schedule';
 
+// ===== SSE broadcaster (optional) =====
+let sseBroadcast = null;
+export function setSSEBroadcaster(fn) {
+  sseBroadcast = typeof fn === 'function' ? fn : null;
+}
+
 /* ===== helpers: фильтрация получателей и распознавание фатальных ошибок TG ===== */
 const DIGITS_RE = /^\d+$/;
 
@@ -490,18 +496,24 @@ async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = f
   if (row.triggerMode === 'AFTER_ALL_CANCELED') {
     const { allCanceled } = summary;
     if (!allCanceled) return false;
-  } else if (row.triggerMode === 'AFTER_ALL_DONE' || row.triggerMode === 'DATE_PLUS' || row.triggerMode === 'DELAY_AFTER') {
+  } else if (row.triggerMode === 'AFTER_ALL_DONE') {
+    const { allDone } = summary;
+    if (!allDone) return false;
+  } else if (row.triggerMode === 'DATE_PLUS' || row.triggerMode === 'DELAY_AFTER') {
     const { allDone, anyCanceled } = summary;
     if (row.autoCancelOnAny && anyCanceled) {
       const created = await createRealTaskForPre({ prisma, tg }, row, { canceledImmediate: true });
       await markPreTaskFired(prisma, row.id, created.id, { canceled: true });
       return true;
     }
-    if (!allDone) return false;
+    const noDeps = !row?.links || row.links.length === 0;
+    if (!noDeps && !allDone) return false;
   }
 
   const created = await createRealTaskForPre({ prisma, tg }, row, { canceledImmediate: canceledImmediate });
   await markPreTaskFired(prisma, row.id, created.id, { canceled: canceledImmediate });
+  try { console.log('[PRETASK][FIRED]', { id: preId, taskId: created.id, canceledImmediate }); } catch {}
+  try { if (sseBroadcast) sseBroadcast(String(row.creatorChatId||''), { type:'task_fired', preId: String(preId), taskId: String(created.id), groupId: row.groupId || null }); } catch {}
   return true;
 }
 
@@ -516,7 +528,7 @@ function planPreTaskAt({ prisma, tg }, preId, when) {
   if (d <= now) { attemptFirePreTask({ prisma, tg }, preId).catch(()=>{}); return true; }
   const job = schedule.scheduleJob(d, () => attemptFirePreTask({ prisma, tg }, preId));
   jobs.set(k, job);
-  log('scheduled PR', preId, 'at', d.toISOString());
+  try { console.log('[PRETASK][JOB]', { id: preId, at: d.toISOString() }); } catch {}
   return true;
 }
 
@@ -524,6 +536,8 @@ export async function evaluatePreTask(prisma, tg, preId) {
   const s = await computeDepsSummary(prisma, preId);
   if (!s) return false;
   const { row, allDone, anyCanceled, allCanceled } = s;
+  const noDeps = !row?.links || row.links.length === 0;
+  try { console.log('[PRETASK][EVAL]', { id: preId, mode: row.triggerMode, startAt: row.startAt, noDeps, allDone, anyCanceled, allCanceled }); } catch {}
   const k = keyPre(preId);
   jobs.get(k)?.cancel(); jobs.delete(k); // очистим предыдущие
 
@@ -544,9 +558,12 @@ export async function evaluatePreTask(prisma, tg, preId) {
 
   if (row.triggerMode === 'DATE_PLUS') {
     if (!row.startAt) return false; // неверная настройка
-    if (!allDone) return false; // ждем условий
+    // если зависимостей нет — не требуем allDone
+    if (!noDeps && !allDone) return false; // ждем условий
     await prisma.preTask.update({ where: { id: row.id }, data: { fireAt: new Date(row.startAt) } });
-    return planPreTaskAt({ prisma, tg }, preId, row.startAt);
+    const ok = planPreTaskAt({ prisma, tg }, preId, row.startAt);
+    try { console.log('[PRETASK][SCHEDULED]', { id: preId, at: new Date(row.startAt).toISOString(), ok }); } catch {}
+    return ok;
   }
 
   if (row.triggerMode === 'DELAY_AFTER') {

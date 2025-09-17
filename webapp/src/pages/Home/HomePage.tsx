@@ -14,7 +14,7 @@ import {
   fetchBoard,
   moveTask,
 } from '../../api';
-import { listPreTasks, type PreTaskDTO, getGroupMembers } from '../../api';
+import { listPreTasks, type PreTaskDTO, getGroupMembers, deletePreTask } from '../../api';
 import PreTaskCard from '../../components/PreTaskCard';
 import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
 import PreTaskEditModal from '../../components/PreTaskEditModal';
@@ -321,6 +321,7 @@ export default function HomePage({
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
   const [openComments, setOpenComments] = useState<{ id: string; text: string; anchorId: string } | null>(null);
+  const [sseTick, setSseTick] = useState(0);
   // const [lpModal, setLpModal] = useState(false); // deprecated demo modal
 
   // meChatId уже объявлен выше
@@ -442,7 +443,7 @@ export default function HomePage({
     return () => {
       alive = false;
     };
-  }, [chatId, search, reloadKey, achFilter]);
+  }, [chatId, search, reloadKey, achFilter, sseTick]);
 
   // После создания предзадачи — быстро перезагрузим список, чтобы подтянуть корректные связи (links)
   useEffect(() => {
@@ -758,6 +759,41 @@ export default function HomePage({
     return () => window.removeEventListener('task-patched', onPatched as any);
   }, []);
 
+  // SSE auto-refresh on task fired
+  useEffect(() => {
+    if (!chatId) return;
+    const url = `${API_BASE}/events/stream?chatId=${encodeURIComponent(chatId)}`;
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(url);
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data || '{}');
+          if (data && data.type === 'task_fired') {
+            setSseTick((x) => x + 1);
+            // refresh preTasks too
+            refreshPreTasks();
+          }
+        } catch {}
+      };
+      es.onerror = () => { try { es && es.close(); } catch {}; es = null; };
+    } catch {}
+    return () => { try { es && es.close(); } catch {} };
+  }, [chatId]);
+
+  // удалить карточку из ленты (после удаления задачи)
+  useEffect(() => {
+    const onRemoved = (e: any) => {
+      try {
+        const id = String((e && e.detail && e.detail.id) || '');
+        if (!id) return;
+        setItems(prev => prev.filter(it => it.id !== id));
+      } catch {}
+    };
+    window.addEventListener('task-removed', onRemoved as any);
+    return () => window.removeEventListener('task-removed', onRemoved as any);
+  }, []);
+
   // QUICK BAR (храним id задачи и ключ страницы, чтобы не дублировать в нескольких секциях)
   const [openQBar, setOpenQBar] = useState<{ id: string; page: PageKey } | null>(null);
   const lpTimer = useRef<any>(null);
@@ -1019,11 +1055,150 @@ export default function HomePage({
               </div>
 
               {(() => {
+                // Вставим плановые предзадачи (без links), созданные мной и попадающие в область
+                const scheduled = preTasks.filter((pp:any) => {
+                  const statusOk = String(pp.status||'')==='ARMED';
+                  const modeOk = String(pp.triggerMode||'')==='DATE_PLUS';
+                  const noLinks = !Array.isArray((pp as any).links) || ((pp as any).links).length===0;
+                  const mine = String((pp as any).creatorChatId||'')===String(meChatId);
+                  const inScope = (scope.kind==='all') || (String((pp as any).groupId||'')===String((scope as any).groupId||''));
+                  return statusOk && modeOk && noLinks && mine && inScope;
+                });
+                const now = Date.now();
+                // Выровняем «Плановые» по той же логике порядка, что и задачи (updated_at ↓)
+                const scheduledSorted = scheduled
+                  .slice()
+                  .sort((a:any, b:any) => {
+                    const tb = Date.parse(String((b as any).updatedAt || (b as any).createdAt || (b as any).startAt || 0)) || 0;
+                    const ta = Date.parse(String((a as any).updatedAt || (a as any).createdAt || (a as any).startAt || 0)) || 0;
+                    return tb - ta;
+                  });
+                let schedIdx = 0;
                 return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                
                 {pageItems.length ? (
                   pageItems.map((t) => {
                     const injected: any[] = [];
+                    // Вставим все «Плановые», которые новее текущей карточки
+                    try {
+                      const taskTs = Date.parse(String((t as any).updatedAt || 0)) || 0;
+                      while (schedIdx < scheduledSorted.length) {
+                        const p:any = scheduledSorted[schedIdx];
+                        const pTs = Date.parse(String((p as any).updatedAt || (p as any).createdAt || (p as any).startAt || 0)) || 0;
+                        if (pTs > taskTs) {
+                          const when = String((p as any).startAt||'');
+                          const ms = when ? (new Date(when).getTime() - now) : 0;
+                          const signOverdue = ms < 0;
+                          const abs = Math.abs(ms);
+                          const d = Math.floor(abs / 86400000);
+                          const h = Math.floor((abs % 86400000) / 3600000);
+                          const m = Math.floor((abs % 3600000) / 60000);
+                          const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+                          const leftText = when ? (signOverdue ? 'скоро' : `через ${short}`) : '';
+                          const gtitle = (p as any).groupId ? (groupTitleById[String((p as any).groupId)] || 'Без группы') : 'Моя группа';
+                          const sid = String((p as any).id);
+                          const canSwipe = (pg.key === 'all') || (scope.kind === 'group');
+                          const anchorIdPre = `scheduled-pre-${sid}`;
+                          injected.push(
+                            <div key={`scheduled-${sid}`} id={anchorIdPre} style={{ position:'relative' }}>
+                              {canSwipe && preSwipeUi.id === sid ? (
+                                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                  <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                </div>
+                              ) : null}
+                              <div
+                                style={{ position:'relative', background:'#121722', border:'1px dashed #334155', borderRadius:12, padding:12, color:'#cbd5e1', transition:'transform 160ms ease', transform: (canSwipe && preSwipeUi.id === sid) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)'}}
+                                onMouseDown={(e) => { if (canSwipe) beginPreSwipe(sid, e.clientX, e.clientY); }}
+                                onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                                onMouseUp={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                                onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                                onTouchStart={(e) => { try { const t0 = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t0) beginPreSwipe(sid, t0.clientX, t0.clientY); } catch {} }}
+                                onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                                onTouchEnd={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                                onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                              >
+                                <button
+                                  title="Удалить плановую"
+                                  onClick={async (e)=>{ e.stopPropagation(); if (!confirm('Удалить плановую карточку?')) return; try { await deletePreTask(String((p as any).id)); setPreTasks(prev => prev.filter(x => String((x as any).id)!==String((p as any).id))); } catch {} }}
+                                  style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
+                                >🗑️</button>
+                                <LongPressOutline targetId={anchorIdPre} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
+                                <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
+                                <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                                {when && (
+                                  <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
+                                )}
+                                <div style={{ display:'inline-block', background: '#1b2234', color:'#c7d2fe', border:'1px solid #2a3346', padding:'3px 8px', borderRadius:8, fontSize:12 }}>
+                                  {gtitle}
+                                </div>
+                                {(() => {
+                                  const key = `P:${sid}`;
+                                  const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                                  const cnt = children.length;
+                                  if (!cnt) return null;
+                                  return (
+                                    <div style={{ marginTop: 8 }}>
+                                      <div
+                                        role="button"
+                                        onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !prev[key] })); try { logChildrenForPre(sid); } catch {}; if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); } }}
+                                        style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                      >
+                                        Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                              {(() => {
+                                const key = `P:${sid}`;
+                                if (!openAfter[key]) return null;
+                                const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                                if (!children.length) return null;
+                                return (
+                                  <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                                    {children.map((cp:any, idx:number) => {
+                                      const childKey = `P:${String(cp.id)}`;
+                                      const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
+                                      const foot2 = cnt2 ? (
+                                        <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>
+                                          Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
+                                        </div>
+                                      ) : null;
+                                      return (
+                                        <div key={`plink-child-${cp.id}`} style={{ position:'relative' }}>
+                                          {canSwipe && preSwipeUi.id === String(cp.id) ? (
+                                            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                              <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                            </div>
+                                          ) : null}
+                                          <div
+                                            style={{ position:'relative', transition:'transform 160ms ease', transform: (canSwipe && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                            onMouseDown={(e) => { if (canSwipe) beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
+                                            onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                            onMouseUp={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                            onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                                            onTouchStart={(e) => { try { const t1 = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t1) beginPreSwipe(String(cp.id), t1.clientX, t1.clientY); } catch {} }}
+                                            onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                            onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                            onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                                          >
+                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                          schedIdx++;
+                          continue;
+                        }
+                        break;
+                      }
+                    } catch {}
                     // Предзадачи не показываем в ленте сами по себе — только в раскрывающихся списках
                     const ph = phaseOf(t);
                     const { bg: cardBg, brd: cardBrd, chip: groupChipBg } = colorsForPhase(ph);
@@ -1612,6 +1787,132 @@ export default function HomePage({
                 ) : (
                   <div style={{ opacity: 0.6, padding: '12px' }}>Нет задач</div>
                 )}
+                {/* Остаток «Плановых», которые старее всех задач на странице */}
+                {((pg.key==='all') || (scope.kind==='group')) && scheduledSorted.slice(schedIdx).map((p:any) => {
+                  const when = String((p as any).startAt||'');
+                  const ms = when ? (new Date(when).getTime() - now) : 0;
+                  const signOverdue = ms < 0;
+                  const abs = Math.abs(ms);
+                  const d = Math.floor(abs / 86400000);
+                  const h = Math.floor((abs % 86400000) / 3600000);
+                  const m = Math.floor((abs % 3600000) / 60000);
+                  const short = d > 0 ? `${d}д ${h}ч` : h > 0 ? `${h}ч ${m}м` : `${m}м`;
+                  const leftText = when ? (signOverdue ? 'скоро' : `через ${short}`) : '';
+                  const gtitle = (p as any).groupId ? (groupTitleById[String((p as any).groupId)] || 'Без группы') : 'Моя группа';
+                  const anchorId = `scheduled-pre-${String((p as any).id)}`;
+                  const sid = String((p as any).id);
+                  const canSwipe = (pg.key === 'all') || (scope.kind === 'group');
+                  return (
+                    <div key={`scheduled-${sid}`} id={anchorId} style={{ position:'relative' }}>
+                      {canSwipe && preSwipeUi.id === sid ? (
+                        <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                          <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          position:'relative',
+                          background:'#121722', border:'1px dashed #334155', borderRadius:12, padding:12,
+                          color:'#cbd5e1',
+                          transition:'transform 160ms ease',
+                          transform: (canSwipe && preSwipeUi.id === sid) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)'
+                        }}
+                        onMouseDown={(e) => { if (canSwipe) beginPreSwipe(sid, e.clientX, e.clientY); }}
+                        onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                        onMouseUp={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                        onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                        onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t) beginPreSwipe(sid, t.clientX, t.clientY); } catch {} }}
+                        onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, sid); }}
+                        onTouchEnd={() => { if (canSwipe) endPreSwipe(sid, { text: String((p as any).text||''), groupId: (p as any).groupId ?? null }); }}
+                        onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                      >
+                      <button
+                        title="Удалить плановую"
+                        onClick={async (e)=>{ e.stopPropagation(); if (!confirm('Удалить плановую карточку?')) return; try { await deletePreTask(String((p as any).id)); setPreTasks(prev => prev.filter(x => String((x as any).id)!==String((p as any).id))); } catch {} }}
+                        style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
+                      >🗑️</button>
+                      {/* long-press edit for scheduled pre-task */}
+                      <LongPressOutline targetId={anchorId} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
+                      <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
+                      <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                      {when && (
+                        <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
+                      )}
+                      <div style={{
+                        display:'inline-block', background: '#1b2234', color:'#c7d2fe', border:'1px solid #2a3346', padding:'3px 8px', borderRadius:8, fontSize:12,
+                      }}>{gtitle}</div>
+                      {/* children toggle for scheduled pre-task */}
+                      {(() => {
+                        const key = `P:${sid}`;
+                        const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                        const cnt = children.length;
+                        if (!cnt) return null;
+                        return (
+                          <div style={{ marginTop: 8 }}>
+                            <div
+                              role="button"
+                              onClick={async (e)=>{
+                                e.preventDefault(); e.stopPropagation();
+                                setOpenAfter(prev => ({ ...prev, [key]: !prev[key] }));
+                                try { logChildrenForPre(sid); } catch {}
+                                if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); }
+                              }}
+                              style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                            >
+                              Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      </div>
+                      {(() => {
+                        const key = `P:${sid}`;
+                        if (!openAfter[key]) return null;
+                        const children = preTasks.filter((x:any) => String((x as any).id) !== sid && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === sid));
+                        if (!children.length) return null;
+                        return (
+                          <div style={{ marginTop:6, display:'grid', gap:8 }}>
+                            {children.map((cp:any, idx:number) => {
+                              const childKey = `P:${String(cp.id)}`;
+                              const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
+                              const foot2 = cnt2 ? (
+                                <div
+                                  role="button"
+                                  onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }}
+                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                >
+                                  Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
+                                </div>
+                              ) : null;
+                              return (
+                                <div key={`plink-child-${cp.id}`} style={{ position:'relative' }}>
+                                  {canSwipe && preSwipeUi.id === String(cp.id) ? (
+                                    <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
+                                      <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                    </div>
+                                  ) : null}
+                                  <div
+                                    style={{ position:'relative', transition:'transform 160ms ease', transform: (canSwipe && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                    onMouseDown={(e) => { if (canSwipe) beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
+                                    onMouseMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                    onMouseUp={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                    onMouseLeave={() => { if (canSwipe) endPreSwipe(); }}
+                                    onTouchStart={(e) => { try { const t = (e.touches && e.touches[0]) || (e as any).touches?.[0]; if (canSwipe && t) beginPreSwipe(String(cp.id), t.clientX, t.clientY); } catch {} }}
+                                    onTouchMove={(e) => { if (canSwipe) movePreSwipe(e as any, String(cp.id)); }}
+                                    onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
+                                    onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
+                                  >
+                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
                 
               </div>
                 );

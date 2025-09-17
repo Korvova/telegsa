@@ -77,6 +77,7 @@ export function preTasksRouter({ prisma, tg }) {
           status: 'PREVIEW',
         },
       });
+      try { console.log('[PRETASK][CREATE]', { id: created.id, creatorChatId, triggerMode, startAt: startAt?.toISOString?.() || null, groupId }); } catch {}
 
       const deps = Array.isArray(body.links) ? body.links : [];
       if (deps.length) {
@@ -99,7 +100,7 @@ export function preTasksRouter({ prisma, tg }) {
       if (arm) {
         armed = await prisma.preTask.update({ where: { id: created.id }, data: { status: 'ARMED' } });
         // immediate evaluation
-        try { await evaluatePreTask(prisma, tg, created.id); } catch {}
+        try { console.log('[PRETASK][ARM]', { id: created.id }); await evaluatePreTask(prisma, tg, created.id); } catch (e) { console.log('[PRETASK][ARM][ERROR]', e?.message || e); }
       }
 
       res.status(201).json({ ok: true, preTask: armed });
