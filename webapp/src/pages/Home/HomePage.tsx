@@ -1494,14 +1494,14 @@ export default function HomePage({
                             style={{
                               display: 'inline-block',
                               background: groupChipBg,
-                              color: '#fff',
+                              color: ((t as any).isPublicGroup ? '#86efac' : '#fff'),
                               padding: '3px 8px',
                               borderRadius: 8,
                               fontSize: 12,
                               marginBottom: 6,
                             }}
                           >
-                            {((t as any).isTelegramGroup ? '➡️ ' : '')}{(t as any).groupTitle}
+                            {((t as any).isPublicGroup ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{(t as any).groupTitle}
                           </div>
 
                           {/* ярлыки карточки */}

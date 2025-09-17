@@ -94,6 +94,7 @@ export default function GroupList({
                 title={g.title}
                 ownerName={g.ownerName || '—'}
                 kind="own"
+                isPublic={(g as any).isPublic === true}
                 isTelegramGroup={(g as any).isTelegramGroup === true}
                 onClick={() => onOpen(g.id, false)}
               />
@@ -110,14 +111,15 @@ export default function GroupList({
                 ? `Личная группа ${g.ownerName || ''}`.trim()
                 : g.title;
               return (
-                <GroupCard
-                  key={g.id}
-                  title={displayTitle}
-                  ownerName={g.ownerName || '—'}
-                  kind="member"
-                  isTelegramGroup={(g as any).isTelegramGroup === true}
-                  onClick={() => onOpen(g.id, false)}
-                />
+              <GroupCard
+                key={g.id}
+                title={displayTitle}
+                ownerName={g.ownerName || '—'}
+                kind="member"
+                isPublic={(g as any).isPublic === true}
+                isTelegramGroup={(g as any).isTelegramGroup === true}
+                onClick={() => onOpen(g.id, false)}
+              />
               );
             })
           )}
@@ -171,18 +173,20 @@ function GroupCard({
   title,
   ownerName,
   kind,
+  isPublic = false,
   isTelegramGroup = false,
   onClick,
 }: {
   title: string;
   ownerName: string;
   kind: 'own' | 'member';
+  isPublic?: boolean;
   isTelegramGroup?: boolean;
   onClick: () => void;
 }) {
   const bg = kind === 'own' ? 'linear-gradient(180deg,#1b2030,#121722)' : 'linear-gradient(180deg,#182227,#10151d)';
-  const icon = isTelegramGroup ? '➡️📁' : (kind === 'own' ? '📁' : '🤝');
-  const titleColor = isTelegramGroup ? '#42aaff' : '#e8eaed';
+  const icon = isPublic ? '🌍' : (isTelegramGroup ? '➡️📁' : (kind === 'own' ? '📁' : '🤝'));
+  const titleColor = isPublic ? '#86efac' : (isTelegramGroup ? '#42aaff' : '#e8eaed');
   return (
     <button
       onClick={onClick}

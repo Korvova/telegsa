@@ -529,10 +529,11 @@ router.get('/feed', async (req, res) => {
       }).filter(Boolean)
     ));
     const groups = groupIds.length
-      ? await prisma.group.findMany({ where: { id: { in: groupIds } }, select: { id: true, title: true, isTelegramGroup: true } })
+      ? await prisma.group.findMany({ where: { id: { in: groupIds } }, select: { id: true, title: true, isTelegramGroup: true, isPublic: true } })
       : [];
     const gTitle = new Map(groups.map(g => [g.id, g.title]));
     const gIsTg  = new Map(groups.map(g => [g.id, !!g.isTelegramGroup]));
+    const gIsPublic = new Map(groups.map(g => [g.id, !!g.isPublic]));
 
     // имена людей
     const ids = Array.from(new Set([
@@ -582,6 +583,7 @@ const items = tasks.map(t => {
     groupId,
     groupTitle: groupId ? (gTitle.get(groupId) || 'Без группы') : 'Моя группа',
     isTelegramGroup: groupId ? (gIsTg.get(groupId) || false) : false,
+    isPublicGroup: groupId ? (gIsPublic.get(groupId) || false) : false,
     creatorChatId: creatorCid,
     creatorName: fullName(creatorCid),
     assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
