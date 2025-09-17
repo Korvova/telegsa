@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import StoriesBar from '../../components/stories/StoriesBar';
 import StoriesViewer from '../../components/stories/StoriesViewer';
+import StoriesMini from '../../components/stories/StoriesMini';
 import { useStoriesData } from '../../components/stories/useStoriesData';
 import type { StoriesBarItem } from '../../components/stories/StoriesTypes';
 import {
@@ -230,6 +231,17 @@ export default function HomePage({
     setCurrentProject(item);
     setViewerOpen(true);
   };
+  // сворачивание/разворачивание сториз: у верхнего края показываем мини-вид (2 кружка), ниже — полный бар
+  const [storiesCollapsed, setStoriesCollapsed] = useState(true);
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY || (document.documentElement && document.documentElement.scrollTop) || 0;
+      setStoriesCollapsed(y < 6);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Build dedicated view for achievements filter by scanning all boards (personal + groups)
   // ВАЖНО: объявление ниже хука useChatId, поэтому переносим ниже его вызова
@@ -973,8 +985,12 @@ export default function HomePage({
   const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
-      {/* Сториз: самый верх над шапкой */}
-      <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
+      {/* Сториз: самый верх над шапкой — мини при вершине, полный при прокрутке */}
+      {storiesCollapsed ? (
+        <StoriesMini items={storyItems} onOpen={onOpenProjectStories} />
+      ) : (
+        <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
+      )}
       {viewerOpen && currentProject && (
         <StoriesViewer
           project={currentProject}
