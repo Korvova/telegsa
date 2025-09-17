@@ -165,6 +165,8 @@ model Group {
   title       String
   isTelegramGroup Boolean @default(false)
   tgChatId    String?  @unique
+  isPublic    Boolean  @default(false)
+  publicSince DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -174,8 +176,23 @@ model Group {
 
   labels GroupLabel[] // NEW
 
+  watchers GroupWatcher[]
+
   @@unique([ownerChatId, title])
   @@index([ownerChatId])
+}
+
+// Подписчики публичных групп
+model GroupWatcher {
+  id        String   @id @default(cuid())
+  groupId   String
+  chatId    String
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, chatId])
+  @@index([chatId])
 }
 
 model User {

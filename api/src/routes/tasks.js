@@ -471,9 +471,17 @@ router.get('/feed', async (req, res) => {
     const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
     const limit  = Math.min(500, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
 
+    // include tasks I own/assigned + tasks from watched public groups
+    const watched = await prisma.groupWatcher.findMany({ where: { chatId: me }, select: { groupId: true } });
+    const watchedIds = watched.map(w => String(w.groupId));
+    const watchedOr = watchedIds.map(id => ({ column: { name: { startsWith: `${id}${GROUP_SEP}` } } }));
     const tasks = await prisma.task.findMany({
       where: {
-        OR: [{ chatId: me }, { assigneeChatId: me }],
+        OR: [
+          { chatId: me },
+          { assigneeChatId: me },
+          ...watchedOr,
+        ],
       },
       include: { column: { select: { name: true } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -521,10 +529,11 @@ router.get('/feed', async (req, res) => {
       }).filter(Boolean)
     ));
     const groups = groupIds.length
-      ? await prisma.group.findMany({ where: { id: { in: groupIds } }, select: { id: true, title: true, isTelegramGroup: true } })
+      ? await prisma.group.findMany({ where: { id: { in: groupIds } }, select: { id: true, title: true, isTelegramGroup: true, isPublic: true } })
       : [];
     const gTitle = new Map(groups.map(g => [g.id, g.title]));
     const gIsTg  = new Map(groups.map(g => [g.id, !!g.isTelegramGroup]));
+    const gIsPublic = new Map(groups.map(g => [g.id, !!g.isPublic]));
 
     // имена людей
     const ids = Array.from(new Set([
@@ -574,6 +583,7 @@ const items = tasks.map(t => {
     groupId,
     groupTitle: groupId ? (gTitle.get(groupId) || 'Без группы') : 'Моя группа',
     isTelegramGroup: groupId ? (gIsTg.get(groupId) || false) : false,
+    isPublicGroup: groupId ? (gIsPublic.get(groupId) || false) : false,
     creatorChatId: creatorCid,
     creatorName: fullName(creatorCid),
     assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
