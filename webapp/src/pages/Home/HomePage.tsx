@@ -210,6 +210,7 @@ export default function HomePage({
   const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
   const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
   const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
+  const [groupPublicById, setGroupPublicById] = useState<Record<string, boolean>>({});
   const [manageForTask, setManageForTask] = useState<{ id: string } | null>(null);
   const [achFilter, setAchFilter] = useState<AchFilterKey>('none');
   const [achItems, setAchItems] = useState<TaskFeedItem[] | null>(null);
@@ -533,8 +534,13 @@ export default function HomePage({
         const r = await listGroups(chatId);
         if ((r as any)?.ok) {
           const map: Record<string, string> = {};
-          for (const g of (r as any).groups || []) map[String(g.id)] = g.title;
+          const pub: Record<string, boolean> = {};
+          for (const g of (r as any).groups || []) {
+            map[String(g.id)] = g.title;
+            pub[String(g.id)] = !!(g as any).isPublic;
+          }
           setGroupTitleById(map);
+          setGroupPublicById(pub);
         }
       } catch {}
     })();
@@ -1493,16 +1499,16 @@ export default function HomePage({
                           <div
                             style={{
                               display: 'inline-block',
-                              background: (t as any).isPublicGroup ? 'transparent' : groupChipBg,
-                              color: (t as any).isPublicGroup ? '#86efac' : '#fff',
+                              background: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? 'transparent' : groupChipBg),
+                              color: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '#86efac' : '#fff'),
                               padding: '3px 8px',
                               borderRadius: 8,
                               fontSize: 12,
                               marginBottom: 6,
-                              border: (t as any).isPublicGroup ? '1px solid #16a34a' : undefined,
+                              border: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '1px solid #16a34a' : undefined),
                             }}
                           >
-                            {((t as any).isPublicGroup ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{(t as any).groupTitle}
+                            {((((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : '')))}{(t as any).groupTitle}
                           </div>
 
                           {/* ярлыки карточки */}
