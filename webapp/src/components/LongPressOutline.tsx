@@ -3,53 +3,72 @@ import { useEffect, useRef, useState } from 'react';
 type Props = {
   targetId: string;
   durationMs?: number; // hold time to complete
+  startDelayMs?: number; // delay before starting ring/progress
   onComplete?: () => void;
   color?: string;
   width?: number; // stroke width
   radius?: number; // border radius of card
   cancelMovePx?: number; // threshold to cancel on move
+  scrollCancelPx?: number; // window scroll delta to cancel
 };
 
 export default function LongPressOutline({
   targetId,
   durationMs = 3000,
+  startDelayMs = 250,
   onComplete,
   color = '#22d3ee',
   width = 8,
   radius = 16,
-  cancelMovePx = 10,
+  cancelMovePx = 16,
+  scrollCancelPx = 3,
 }: Props) {
   const [active, setActive] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [progress, setProgress] = useState(0);
   const rafRef = useRef<number | null>(null);
   const startRef = useRef<{ t: number; x: number; y: number } | null>(null);
+  const delayTimerRef = useRef<number | null>(null);
   const pointerIdRef = useRef<number | null>(null);
+  const waitRef = useRef<boolean>(false);
+  const scrollStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const el = document.getElementById(targetId);
     if (!el) return;
 
     const onDown = (e: PointerEvent) => {
-      // не блокируем скролл: не вызываем preventDefault и вешаем passive listeners
+      // не блокируем скролл: passive listeners; запускаем с задержкой
       if (!e.isPrimary) return;
       const r = el.getBoundingClientRect();
       setRect(r);
       setProgress(0);
-      setActive(true);
-      const t = performance.now();
+      setActive(false);
+      const now = performance.now();
       const x = e.clientX ?? r.left;
       const y = e.clientY ?? r.top;
-      startRef.current = { t, x, y };
+      startRef.current = { t: now, x, y };
+      scrollStartRef.current = { x: window.scrollX, y: window.scrollY };
       pointerIdRef.current = e.pointerId ?? null;
-      step();
+      waitRef.current = true;
+      if (delayTimerRef.current) window.clearTimeout(delayTimerRef.current);
+      delayTimerRef.current = window.setTimeout(() => {
+        // если во время ожидания уже отменили — выходим
+        if (!waitRef.current) return;
+        // старт анимации
+        startRef.current = { t: performance.now(), x, y };
+        setActive(true);
+        step();
+      }, Math.max(0, startDelayMs));
     };
     const onMove = (e: PointerEvent) => {
-      if (!startRef.current || !active) return;
-      const x = e.clientX ?? startRef.current.x;
-      const y = e.clientY ?? startRef.current.y;
-      const dx = Math.abs(x - startRef.current.x);
-      const dy = Math.abs(y - startRef.current.y);
+      if (!startRef.current || (!active && !waitRef.current)) return;
+      const sx = startRef.current.x;
+      const sy = startRef.current.y;
+      const x = e.clientX ?? sx;
+      const y = e.clientY ?? sy;
+      const dx = Math.abs(x - sx);
+      const dy = Math.abs(y - sy);
       if (dx > cancelMovePx || dy > cancelMovePx) cancel();
     };
     const onUp = () => cancel();
@@ -62,12 +81,22 @@ export default function LongPressOutline({
     el.addEventListener('pointercancel', onUp as any, { passive: true });
     el.addEventListener('mouseleave', onLeave as any, { passive: true });
 
+    const onScroll = () => {
+      if (!scrollStartRef.current) return;
+      if (!active && !waitRef.current) return;
+      const dx = Math.abs(window.scrollX - scrollStartRef.current.x);
+      const dy = Math.abs(window.scrollY - scrollStartRef.current.y);
+      if (dx > scrollCancelPx || dy > scrollCancelPx) cancel();
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+
     return () => {
       el.removeEventListener('pointerdown', onDown as any);
       el.removeEventListener('pointermove', onMove as any);
       el.removeEventListener('pointerup', onUp as any);
       el.removeEventListener('pointercancel', onUp as any);
       el.removeEventListener('mouseleave', onLeave as any);
+      window.removeEventListener('scroll', onScroll as any);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, active, cancelMovePx]);
@@ -75,7 +104,11 @@ export default function LongPressOutline({
   const cancel = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
+    if (delayTimerRef.current) window.clearTimeout(delayTimerRef.current);
+    delayTimerRef.current = null;
     startRef.current = null;
+    waitRef.current = false;
+    scrollStartRef.current = null;
     setActive(false);
     setProgress(0);
   };
