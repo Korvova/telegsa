@@ -914,6 +914,15 @@ export default function HomePage({
   }, []);
 
   // ---- UI ----
+  // липкая шапка: замеряем её высоту, чтобы сдвинуть липкий заголовок колонки ниже
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [stickyOffset, setStickyOffset] = useState(0);
+  useEffect(() => {
+    const measure = () => setStickyOffset(headerRef.current?.offsetHeight || 0);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
@@ -926,8 +935,23 @@ export default function HomePage({
           onSeen={(slideIndex) => markSeen(currentProject.projectId, slideIndex)}
         />
       )}
-      {/* Хедер: Все | <группа>  🔎 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      {/* Хедер: Все | <группа>  🔎 — закреплён сверху */}
+      <div
+        ref={headerRef}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 6,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 8,
+          paddingTop: 4,
+          paddingBottom: 6,
+          background: 'linear-gradient(180deg, rgba(11,14,22,0.98) 0%, rgba(11,14,22,0.85) 70%, rgba(11,14,22,0.0) 100%)',
+          backdropFilter: 'blur(2px)',
+        }}
+      >
         <button
           onClick={() => {
             setScope({ kind: 'all' });
@@ -1013,9 +1037,9 @@ export default function HomePage({
               <div
                 style={{
                   position: 'sticky',
-                  top: 0,
-                  zIndex: 2,
-                padding: '6px 8px 8px',
+                  top: stickyOffset,
+                  zIndex: 5,
+                  padding: '6px 8px 8px',
                   background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
                   backdropFilter: 'blur(2px)',
                   display: 'flex',
