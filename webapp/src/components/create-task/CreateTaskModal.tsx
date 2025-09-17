@@ -232,6 +232,8 @@ export default function CreateTaskModal({
   // schedule info (create later)
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleAt, setScheduleAt] = useState<string | null>(null);
+  // когда открываем планировщик 🕒 — временно убираем фокус, чтобы потом вернуть и поднять клавиатуру
+  useEffect(() => { if (scheduleOpen) { try { textAreaRef.current?.blur(); } catch {} } }, [scheduleOpen]);
 
   // UI modals
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -445,7 +447,7 @@ export default function CreateTaskModal({
               {!isEdit && !scheduleAt && (
                 <button
                   type="button"
-                  onClick={() => { setScheduleOpen(true); focusText(); }}
+                  onClick={() => { try { textAreaRef.current?.blur(); } catch {}; setScheduleOpen(true); }}
                   title="Назначить время создания"
                   style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#8aa0ff', cursor: 'pointer' }}
                 >🕒</button>
@@ -570,7 +572,7 @@ export default function CreateTaskModal({
         <RemindersModal open={remindersOpen} onClose={() => setRemindersOpen(false)} onPick={({ target, fireAtIso }) => { setRemindersDraft(prev => [...prev, { target, fireAtIso }]); setRemindersOpen(false); }} />
         <CameraCaptureModal open={cameraOpen} onClose={() => { setCameraOpen(false); focusText(); }} onCapture={(file) => { setPendingFiles((prev) => [...prev, file]); focusText(); }} />
         <DeadlinePicker open={deadlineOpen} value={deadlineAt} onChange={(v) => setDeadlineAt(v)} onClose={() => { setDeadlineOpen(false); focusText(); }} />
-        <DeadlinePicker open={scheduleOpen} value={scheduleAt} title="Плановое создание" icon="🕒" onChange={(v) => { if (!v) { setScheduleAt(null); setPreCfg(null); return; } const dt = new Date(v); if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { alert('Нельзя выбрать прошлое время'); return; } setScheduleAt(v); setPreCfg({ links: [], mode: 'DATE_PLUS', startAt: v, delayMinutes: null, autoCancelOnAny: false } as any); }} onClose={() => setScheduleOpen(false)} />
+        <DeadlinePicker open={scheduleOpen} value={scheduleAt} title="Плановое создание" icon="🕒" onChange={(v) => { if (!v) { setScheduleAt(null); setPreCfg(null); return; } const dt = new Date(v); if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { alert('Нельзя выбрать прошлое время'); return; } setScheduleAt(v); setPreCfg({ links: [], mode: 'DATE_PLUS', startAt: v, delayMinutes: null, autoCancelOnAny: false } as any); }} onClose={() => { setScheduleOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }} />
         <AcceptConditionsModal open={acceptOpen} value={acceptCondition} onChange={(v)=>setAcceptConditionState(v)} onClose={() => { setAcceptOpen(false); focusText(); }} />
 
         <BountyPicker
