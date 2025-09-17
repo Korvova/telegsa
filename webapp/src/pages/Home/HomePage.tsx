@@ -922,7 +922,23 @@ export default function HomePage({
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, []);
+  }, [searchOpen]);
+  // активная страница по горизонтальному скроллу
+  const [activePage, setActivePage] = useState(0);
+  useEffect(() => {
+    const el = sliderRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const pageW = el.clientWidth + COLUMN_GAP;
+      const page = Math.round(el.scrollLeft / Math.max(1, pageW));
+      const clamped = Math.max(0, Math.min(page, PAGES.length - 1));
+      setActivePage((prev) => (prev === clamped ? prev : clamped));
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sliderRef.current]);
   const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
@@ -989,6 +1005,34 @@ export default function HomePage({
         </button>
       </div>
 
+      {/* Липкий заголовок текущей колонки */}
+      <div
+        style={{
+          position: 'sticky',
+          top: stickyOffset,
+          zIndex: 5,
+          padding: '6px 8px 8px',
+          background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
+          backdropFilter: 'blur(2px)',
+        }}
+      >
+        <span
+          style={{
+            display: 'inline-block',
+            background: '#1b2234',
+            color: '#c7d2fe',
+            border: '1px solid #2a3346',
+            padding: '4px 10px',
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: 0.2,
+          }}
+        >
+          {PAGES[activePage]?.label || 'Все'}
+        </span>
+      </div>
+
       {searchOpen && (
         <div style={{ marginBottom: 8 }}>
           <input
@@ -1036,12 +1080,7 @@ export default function HomePage({
               {/* шапка страницы с фильтром-ярлыком */}
               <div
                 style={{
-                  position: 'sticky',
-                  top: stickyOffset,
-                  zIndex: 5,
                   padding: '6px 8px 8px',
-                  background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
-                  backdropFilter: 'blur(2px)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
