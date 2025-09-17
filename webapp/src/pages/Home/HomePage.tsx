@@ -1,6 +1,10 @@
 // webapp/src/pages/Home/HomePage.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
+import StoriesBar from '../../components/stories/StoriesBar';
+import StoriesViewer from '../../components/stories/StoriesViewer';
+import { useStoriesData } from '../../components/stories/useStoriesData';
+import type { StoriesBarItem } from '../../components/stories/StoriesTypes';
 import {
   listMyFeed,
   type TaskFeedItem,
@@ -216,6 +220,15 @@ export default function HomePage({
   // Используем переданный chatId, чтобы не расходиться с настройками
   const meChatId = String(chatId || '');
   const myRankIcon = useMyRankIcon(meChatId);
+
+  // ── Stories (сегодняшние изменения) ──
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [currentProject, setCurrentProject] = useState<StoriesBarItem | null>(null);
+  const { items: storyItems, markSeen } = useStoriesData(meChatId);
+  const onOpenProjectStories = (item: StoriesBarItem) => {
+    setCurrentProject(item);
+    setViewerOpen(true);
+  };
 
   // Build dedicated view for achievements filter by scanning all boards (personal + groups)
   // ВАЖНО: объявление ниже хука useChatId, поэтому переносим ниже его вызова
@@ -898,6 +911,15 @@ export default function HomePage({
   const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
+      {/* Сториз: самый верх над шапкой */}
+      <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
+      {viewerOpen && currentProject && (
+        <StoriesViewer
+          project={currentProject}
+          onClose={() => setViewerOpen(false)}
+          onSeen={(slideIndex) => markSeen(currentProject.projectId, slideIndex)}
+        />
+      )}
       {/* Хедер: Все | <группа>  🔎 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <button
