@@ -48,6 +48,7 @@ export type Group = {
   title: string;
   kind: 'own' | 'member';
   isTelegramGroup?: boolean;
+  isPublic?: boolean;
   ownerName?: string | null;
 };
 
@@ -159,6 +160,43 @@ export function renameGroupTitle(id: string, chatId: string, title: string) {
   return ky
     .patch(`${API_BASE}/groups/${id}`, { json: { chatId, title } })
     .json<{ ok: boolean; group: Group }>();
+}
+
+export async function toggleGroupPublic(id: string, chatId: string, makePublic: boolean) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(id)}/public`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, public: makePublic }),
+  });
+  return r.json() as Promise<{ ok: boolean; group?: { id: string; isPublic: boolean }; error?: string }>;
+}
+
+export async function listPublicGroups(params?: { search?: string; offset?: number; limit?: number }) {
+  const sp = new URLSearchParams();
+  if (params?.search) sp.set('search', params.search);
+  if (typeof params?.offset === 'number') sp.set('offset', String(params.offset));
+  if (typeof params?.limit === 'number') sp.set('limit', String(params.limit));
+  const r = await fetch(`${API_BASE}/groups/public?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; groups: Array<{ id: string; title: string; ownerChatId: string; ownerName?: string | null; isPublic: boolean }>; nextOffset?: number; hasMore?: boolean }>;
+}
+
+export async function getWatchStatus(groupId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/watch?chatId=${encodeURIComponent(chatId)}`);
+  return r.json() as Promise<{ ok: boolean; watching: boolean }>;
+}
+
+export async function watchGroup(groupId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/watch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId }),
+  });
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+export async function unwatchGroup(groupId: string, chatId: string) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/watch?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+  return r.json() as Promise<{ ok: boolean }>;
 }
 
 export function deleteGroup(id: string, chatId: string) {

@@ -609,11 +609,10 @@ app.get('/tasks', async (req, res) => {
     }
 
     // ГРУППОВАЯ ДОСКА (владелец = единый бэклог)
-    const allowed = await userIsGroupMemberOrOwner(chatId, groupId);
-    if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
-
     const g = await prisma.group.findUnique({ where: { id: groupId } });
     if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    const allowed = await userIsGroupMemberOrOwner(chatId, groupId);
+    if (!allowed && !g.isPublic) return res.status(403).json({ ok: false, error: 'forbidden' });
 
     const boardChatId = g.ownerChatId;
 
@@ -2442,6 +2441,7 @@ app.get('/groups', async (req, res) => {
       ownerChatId: g.ownerChatId,
       isTelegramGroup: !!g.isTelegramGroup,
       tgChatId: g.tgChatId || null,
+      isPublic: !!g.isPublic,
       kind: g.kind,
       ownerName: nameByChat.get(g.ownerChatId) || null,
     }));
@@ -2450,6 +2450,99 @@ app.get('/groups', async (req, res) => {
   } catch (e) {
     console.error('GET /groups error:', e);
     res.status(500).json({ ok: false });
+  }
+});
+
+// Toggle public flag (owner only)
+app.post('/groups/:id/public', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const byChatId = String(req.body?.chatId || '');
+    const makePublic = !!req.body?.public;
+    if (!byChatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const g = await prisma.group.findUnique({ where: { id } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    if (String(g.ownerChatId) !== byChatId) return res.status(403).json({ ok: false, error: 'only_owner_allowed' });
+    const patch = makePublic
+      ? { isPublic: true, publicSince: new Date() }
+      : { isPublic: false, publicSince: null };
+    const updated = await prisma.group.update({ where: { id }, data: patch });
+    if (!makePublic) {
+      // авто-отписка всех наблюдателей
+      await prisma.groupWatcher.deleteMany({ where: { groupId: id } });
+    }
+    res.json({ ok: true, group: { id: updated.id, isPublic: updated.isPublic } });
+  } catch (e) {
+    console.error('POST /groups/:id/public error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// Public groups list (simple sort by createdAt desc; optional search)
+app.get('/groups/public', async (req, res) => {
+  try {
+    const q = String(req.query.search || '').trim().toLowerCase();
+    const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
+    const limit  = Math.min(100, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
+    const where = q
+      ? { isPublic: true, title: { contains: q, mode: 'insensitive' } }
+      : { isPublic: true };
+    const rows = await prisma.group.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      skip: offset,
+      take: limit,
+    });
+    const owners = await prisma.user.findMany({ where: { chatId: { in: Array.from(new Set(rows.map(r => r.ownerChatId))) } } });
+    const nameByChat = new Map(owners.map(u => [u.chatId, [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.chatId]));
+    const list = rows.map(r => ({ id: r.id, title: r.title, ownerChatId: r.ownerChatId, ownerName: nameByChat.get(r.ownerChatId) || null, isPublic: !!r.isPublic }));
+    res.json({ ok: true, groups: list, nextOffset: offset + list.length, hasMore: list.length === limit });
+  } catch (e) {
+    console.error('GET /groups/public error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// Watchers endpoints
+app.get('/groups/:id/watch', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const chatId = String(req.query.chatId || '');
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const watching = await prisma.groupWatcher.findUnique({ where: { groupId_chatId: { groupId: id, chatId } } });
+    res.json({ ok: true, watching: !!watching });
+  } catch (e) {
+    console.error('GET /groups/:id/watch error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+app.post('/groups/:id/watch', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const chatId = String(req.body?.chatId || '');
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const g = await prisma.group.findUnique({ where: { id } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    if (!g.isPublic) return res.status(403).json({ ok: false, error: 'not_public' });
+    await prisma.groupWatcher.upsert({ where: { groupId_chatId: { groupId: id, chatId } }, update: {}, create: { groupId: id, chatId } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /groups/:id/watch error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+app.delete('/groups/:id/watch', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const chatId = String(req.query.chatId || '');
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    await prisma.groupWatcher.deleteMany({ where: { groupId: id, chatId } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /groups/:id/watch error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
 

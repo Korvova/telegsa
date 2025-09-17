@@ -471,9 +471,17 @@ router.get('/feed', async (req, res) => {
     const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
     const limit  = Math.min(500, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
 
+    // include tasks I own/assigned + tasks from watched public groups
+    const watched = await prisma.groupWatcher.findMany({ where: { chatId: me }, select: { groupId: true } });
+    const watchedIds = watched.map(w => String(w.groupId));
+    const watchedOr = watchedIds.map(id => ({ column: { name: { startsWith: `${id}${GROUP_SEP}` } } }));
     const tasks = await prisma.task.findMany({
       where: {
-        OR: [{ chatId: me }, { assigneeChatId: me }],
+        OR: [
+          { chatId: me },
+          { assigneeChatId: me },
+          ...watchedOr,
+        ],
       },
       include: { column: { select: { name: true } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
