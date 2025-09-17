@@ -510,6 +510,59 @@ async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = f
     if (!noDeps && !allDone) return false;
   }
 
+  // Weather gate (DATE_PLUS + payload.weather)
+  if (row.triggerMode === 'DATE_PLUS' && row.startAt && row.payload && row.payload.weather) {
+    try {
+      const w = row.payload.weather || {};
+      const lat = Number(w.lat), lon = Number(w.lon);
+      const op = String(w.op || 'GE').toUpperCase() === 'LE' ? 'LE' : 'GE';
+      const thr = Number(w.valueC);
+      const city = String(w.city || '');
+      const at = new Date(row.startAt);
+      // Normalize to exact hour in UTC (Open‑Meteo hourly grid)
+      const hourUtc = new Date(Math.floor(at.getTime() / 3600000) * 3600000);
+      const yyyy = hourUtc.getUTCFullYear();
+      const pad = (n) => String(n).padStart(2, '0');
+      const mm = pad(hourUtc.getUTCMonth() + 1);
+      const dd = pad(hourUtc.getUTCDate());
+      const HH = pad(hourUtc.getUTCHours());
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const hourStr = `${yyyy}-${mm}-${dd}T${HH}:00`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&hourly=temperature_2m&models=ecmwf_ifs04&start_date=${dateStr}&end_date=${dateStr}&timezone=UTC`;
+      let passed = false; let fact = null;
+      try {
+        const resp = await fetch(url);
+        const j = await resp.json().catch(()=>({}));
+        const times = (j && j.hourly && Array.isArray(j.hourly.time)) ? j.hourly.time : [];
+        const temps = (j && j.hourly && Array.isArray(j.hourly.temperature_2m)) ? j.hourly.temperature_2m : [];
+        const idx = times.findIndex((t) => String(t) === hourStr);
+        if (idx >= 0 && idx < temps.length) {
+          fact = Number(temps[idx]);
+          passed = (op === 'GE') ? (fact >= thr) : (fact <= thr);
+        }
+      } catch {}
+
+      if (!passed) {
+        // cancel pre-task and notify creator
+        await prisma.preTask.update({ where: { id: String(row.id) }, data: { status: 'CANCELED', fireAt: new Date() } });
+        try {
+          const can = await canDM(prisma, String(row.creatorChatId||''));
+          if (can) {
+            const opSign = op === 'GE' ? '>=' : '<=';
+            const factText = (fact === null || Number.isNaN(fact)) ? '' : `\nФакт: ${fact.toFixed(1)}°`;
+            const text = `🌦️ Плановая задача не создана — условие не выполнено\n${row.text}\n\nУсловие: в ${city || 'указанном городе'} t ${opSign} ${thr}°${factText}`;
+            await tg('sendMessage', { chat_id: String(row.creatorChatId), text, disable_web_page_preview: true });
+          }
+        } catch {}
+        try { if (sseBroadcast) sseBroadcast(String(row.creatorChatId||''), { type:'pre_task_canceled', preId: String(row.id), reason: 'weather_not_matched' }); } catch {}
+        return true;
+      }
+    } catch (e) {
+      // On unexpected error — do not block creation (fail-open)
+      try { console.warn('[PRETASK][WEATHER] check failed', e?.message || e); } catch {}
+    }
+  }
+
   const created = await createRealTaskForPre({ prisma, tg }, row, { canceledImmediate: canceledImmediate });
   await markPreTaskFired(prisma, row.id, created.id, { canceled: canceledImmediate });
   try { console.log('[PRETASK][FIRED]', { id: preId, taskId: created.id, canceledImmediate }); } catch {}
