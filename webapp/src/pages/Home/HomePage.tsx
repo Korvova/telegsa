@@ -1126,6 +1126,16 @@ export default function HomePage({
                                 <LongPressOutline targetId={anchorIdPre} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
                                 <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
                                 <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                                {(() => {
+                                  const w = (p as any)?.payload && (p as any).payload.weather;
+                                  if (!w) return null;
+                                  const op = String(w.op||'GE')==='LE' ? '<=' : '>=';
+                                  const city = String(w.city||'');
+                                  const val = Number(w.valueC||0);
+                                  return (
+                                    <div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>🌦️ {city}: t {op} {val}°</div>
+                                  );
+                                })()}
                                 {when && (
                                   <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
                                 )}

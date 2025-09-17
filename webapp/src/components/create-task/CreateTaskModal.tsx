@@ -238,6 +238,8 @@ export default function CreateTaskModal({
   const [scheduleAt, setScheduleAt] = useState<string | null>(null);
   // когда открываем планировщик 🕒 — временно убираем фокус, чтобы потом вернуть и поднять клавиатуру
   useEffect(() => { if (scheduleOpen) { try { textAreaRef.current?.blur(); } catch {} } }, [scheduleOpen]);
+  // weather config
+  const [weatherCfg, setWeatherCfg] = useState<null | { atIso: string; city: string; lat: number; lon: number; op: 'GE'|'LE'; valueC: number }>(null);
 
   // UI modals
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -255,6 +257,18 @@ export default function CreateTaskModal({
     const left = signOverdue ? 'скоро' : (dd > 0 ? `${dd}д ${hh}ч` : (hh > 0 ? `${hh}ч ${mm}м` : `${mm}м`));
     return { when: d.toLocaleString(), left };
   }, [scheduleAt]);
+
+  const scheduledBanner = (!isEdit && weatherCfg) ? (
+    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+      <span>{`🌦️ Если ${new Date(weatherCfg.atIso).toLocaleString()} в (${weatherCfg.city}) погода (${weatherCfg.op==='GE'?'>=':'<='}) ${weatherCfg.valueC}°`}</span>
+      <button onClick={() => { setWeatherCfg(null); setScheduleAt(null); setPreCfg(null); }} title="Сбросить погодное условие" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
+    </div>
+  ) : ((!isEdit && scheduleInfo) ? (
+    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6 }}>
+      <span>🕒 Создастся: {scheduleInfo.when} • {scheduleInfo.left}</span>
+      <button onClick={() => { setScheduleAt(null); setPreCfg(null); focusText(); }} title="Сбросить плановую дату" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
+    </div>
+  ) : null);
 
   // const sendRef = useRef<HTMLDivElement | null>(null);
   const MAX_LINES = 6; const LINE_PX = 20; const MAX_HEIGHT_PX = MAX_LINES * LINE_PX + 16;
@@ -448,7 +462,7 @@ export default function CreateTaskModal({
         <div style={{ display: 'grid', gap: 10, marginBottom: 10 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
             <div style={{ display:'flex', gap:8, alignItems:'start' }}>
-              {!isEdit && !scheduleAt && (
+              {!isEdit && !scheduleAt && !weatherCfg && (
                 <button
                   type="button"
                   onClick={() => { try { textAreaRef.current?.blur(); } catch {}; setRobotOpen(true); }}
@@ -478,7 +492,7 @@ export default function CreateTaskModal({
                     onClick={doSaveEdit}
                     style={{ width:'100%', height:'100%', borderRadius:999, background:'#2563eb', color:'#fff', border:'1px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}
                   >💾</button>
-                ) : ((!isEdit && !!scheduleAt) || (preCfg && preCfg.links?.length)) ? (
+                ) : ((!isEdit && (!!scheduleAt || !!weatherCfg)) || (preCfg && preCfg.links?.length)) ? (
                   <PreTaskActionsLauncher
                     label="➤"
                     meChatId={chatId}
@@ -499,6 +513,9 @@ export default function CreateTaskModal({
                         arm: true,
                         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                       };
+                      if (weatherCfg) {
+                        body.payload = { ...(body.payload||{}), weather: { kind: 'TEMP_AT_2M', lat: weatherCfg.lat, lon: weatherCfg.lon, city: weatherCfg.city, op: weatherCfg.op, valueC: weatherCfg.valueC } };
+                      }
                       const api = await import('../../api');
                       const resp = await (api as any).createPreTask(body);
                       if (!(resp as any)?.ok) throw new Error((resp as any)?.error || 'pretask_create_failed');
@@ -508,7 +525,7 @@ export default function CreateTaskModal({
                         const parentsPre = linksArr.filter((l:any)=>l.preTaskId).map((l:any)=>String(l.preTaskId));
                         window.dispatchEvent(new CustomEvent('pre-task-created', { detail: { preTask: (resp as any)?.preTask || null, parentTaskIds: parentsTask, parentPreTaskIds: parentsPre } }));
                       } catch {}
-                      setText(''); setPreCfg(null); setScheduleAt(null); onCreated?.(); onClose();
+                      setText(''); setPreCfg(null); setScheduleAt(null); setWeatherCfg(null); onCreated?.(); onClose();
                     }}
                     style={{ width: '100%', height: '100%' }}
                   />
@@ -534,12 +551,7 @@ export default function CreateTaskModal({
           </div>
 
           {/* scheduled info under textarea */}
-          {!isEdit && scheduleInfo ? (
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6 }}>
-              <span>🕒 Создастся: {scheduleInfo.when} • {scheduleInfo.left}</span>
-              <button onClick={() => { setScheduleAt(null); setPreCfg(null); focusText(); }} title="Сбросить плановую дату" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
-            </div>
-          ) : null}
+          {scheduledBanner}
 
           {/* tools panel (basic) */}
           {toolsOpen && (
@@ -607,7 +619,11 @@ export default function CreateTaskModal({
           onPickSchedule={() => { setRobotOpen(false); setScheduleOpen(true); }}
           onPickWeather={() => { setRobotOpen(false); setWeatherOpen(true); }}
         />
-        <WeatherScheduleModal open={weatherOpen} onClose={() => setWeatherOpen(false)} />
+        <WeatherScheduleModal
+          open={weatherOpen}
+          onClose={() => { setWeatherOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
+          onApply={(p) => { setWeatherOpen(false); setWeatherCfg(p); setScheduleAt(p.atIso); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
+        />
 
         <BountyPicker
           open={bountyOpen}
