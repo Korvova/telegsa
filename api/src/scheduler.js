@@ -519,26 +519,70 @@ async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = f
       const thr = Number(w.valueC);
       const city = String(w.city || '');
       const at = new Date(row.startAt);
-      // Normalize to exact hour in UTC (Open‑Meteo hourly grid)
-      const hourUtc = new Date(Math.floor(at.getTime() / 3600000) * 3600000);
-      const yyyy = hourUtc.getUTCFullYear();
+      // Candidates: nearest hour, floor hour, ceil hour (UTC)
+      const ms = at.getTime();
+      const floorMs = Math.floor(ms / 3600000) * 3600000;
+      const ceilMs  = floorMs + 3600000;
+      const nearestMs = (ms - floorMs) < (ceilMs - ms) ? floorMs : ceilMs;
+      const hours = [nearestMs, floorMs, ceilMs];
+
+      // Request for the date range (UTC date covers both floor/ceil)
+      const dForRange = new Date(floorMs);
+      const yyyy = dForRange.getUTCFullYear();
       const pad = (n) => String(n).padStart(2, '0');
-      const mm = pad(hourUtc.getUTCMonth() + 1);
-      const dd = pad(hourUtc.getUTCDate());
-      const HH = pad(hourUtc.getUTCHours());
+      const mm = pad(dForRange.getUTCMonth() + 1);
+      const dd = pad(dForRange.getUTCDate());
       const dateStr = `${yyyy}-${mm}-${dd}`;
-      const hourStr = `${yyyy}-${mm}-${dd}T${HH}:00`;
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&hourly=temperature_2m&models=ecmwf_ifs04&start_date=${dateStr}&end_date=${dateStr}&timezone=UTC`;
-      let passed = false; let fact = null;
+      let passed = false; let fact = null; let hadData = false;
       try {
         const resp = await fetch(url);
         const j = await resp.json().catch(()=>({}));
         const times = (j && j.hourly && Array.isArray(j.hourly.time)) ? j.hourly.time : [];
         const temps = (j && j.hourly && Array.isArray(j.hourly.temperature_2m)) ? j.hourly.temperature_2m : [];
-        const idx = times.findIndex((t) => String(t) === hourStr);
+        // Try candidates and neighbors ±1h to guard against small shifts
+        const makeHourStr = (ms) => {
+          const d = new Date(ms);
+          return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:00`;
+        };
+        const candidates = [];
+        hours.forEach((h)=>{ candidates.push(h); });
+        hours.forEach((h)=>{ candidates.push(h-3600000, h+3600000); });
+        let idx = -1; let pickedStr = '';
+        for (const h of candidates) {
+          const s = makeHourStr(h);
+          idx = times.findIndex((t) => String(t) === s);
+          if (idx >= 0 && idx < temps.length) { pickedStr = s; break; }
+        }
         if (idx >= 0 && idx < temps.length) {
-          fact = Number(temps[idx]);
-          passed = (op === 'GE') ? (fact >= thr) : (fact <= thr);
+          const raw = temps[idx];
+          if (raw !== null && raw !== undefined && Number.isFinite(Number(raw))) {
+            fact = Number(raw);
+            hadData = true;
+            passed = (op === 'GE') ? (fact >= thr) : (fact <= thr);
+          }
+        }
+        // If ECMWF returned no data at all for this date/time — try without model filter once
+        if (!hadData) {
+          const url2 = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&hourly=temperature_2m&start_date=${dateStr}&end_date=${dateStr}&timezone=UTC`;
+          const resp2 = await fetch(url2);
+          const j2 = await resp2.json().catch(()=>({}));
+          const times2 = (j2 && j2.hourly && Array.isArray(j2.hourly.time)) ? j2.hourly.time : [];
+          const temps2 = (j2 && j2.hourly && Array.isArray(j2.hourly.temperature_2m)) ? j2.hourly.temperature_2m : [];
+          let idx2 = -1;
+          for (const h of candidates) {
+            const s = makeHourStr(h);
+            idx2 = times2.findIndex((t) => String(t) === s);
+            if (idx2 >= 0 && idx2 < temps2.length) { break; }
+          }
+          if (idx2 >= 0 && idx2 < temps2.length) {
+            const raw2 = temps2[idx2];
+            if (raw2 !== null && raw2 !== undefined && Number.isFinite(Number(raw2))) {
+              fact = Number(raw2);
+              hadData = true;
+              passed = (op === 'GE') ? (fact >= thr) : (fact <= thr);
+            }
+          }
         }
       } catch {}
 
@@ -549,7 +593,7 @@ async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = f
           const can = await canDM(prisma, String(row.creatorChatId||''));
           if (can) {
             const opSign = op === 'GE' ? '>=' : '<=';
-            const factText = (fact === null || Number.isNaN(fact)) ? '' : `\nФакт: ${fact.toFixed(1)}°`;
+            const factText = (hadData && Number.isFinite(fact)) ? `\nФакт: ${fact.toFixed(1)}°` : `\nНет данных для проверки`;
             const text = `🌦️ Плановая задача не создана — условие не выполнено\n${row.text}\n\nУсловие: в ${city || 'указанном городе'} t ${opSign} ${thr}°${factText}`;
             await tg('sendMessage', { chat_id: String(row.creatorChatId), text, disable_web_page_preview: true });
           }
@@ -558,8 +602,18 @@ async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = f
         return true;
       }
     } catch (e) {
-      // On unexpected error — do not block creation (fail-open)
-      try { console.warn('[PRETASK][WEATHER] check failed', e?.message || e); } catch {}
+      // On unexpected error — fail closed: cancel and notify (no creation)
+      try {
+        console.warn('[PRETASK][WEATHER] check failed', e?.message || e);
+        await prisma.preTask.update({ where: { id: String(row.id) }, data: { status: 'CANCELED', fireAt: new Date() } });
+        const can = await canDM(prisma, String(row.creatorChatId||''));
+        if (can) {
+          const text = `🌦️ Плановая задача не создана — ошибка проверки погоды`;
+          await tg('sendMessage', { chat_id: String(row.creatorChatId), text, disable_web_page_preview: true });
+        }
+        try { if (sseBroadcast) sseBroadcast(String(row.creatorChatId||''), { type:'pre_task_canceled', preId: String(row.id), reason: 'weather_check_error' }); } catch {}
+        return true;
+      } catch {}
     }
   }
 
