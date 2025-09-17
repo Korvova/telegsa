@@ -880,9 +880,10 @@ export default function HomePage({
       if (wheelLock) return;
       wheelLock = true;
       const dir = e.deltaX > 0 ? 1 : -1;
-      const page = Math.round(el.scrollLeft / el.clientWidth);
+      const pageW = el.clientWidth + COLUMN_GAP;
+      const page = Math.round(el.scrollLeft / pageW);
       const next = Math.max(0, Math.min(page + dir, PAGES.length - 1));
-      el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
+      el.scrollTo({ left: next * pageW, behavior: 'smooth' });
       setTimeout(() => {
         wheelLock = false;
       }, 350);
@@ -894,6 +895,7 @@ export default function HomePage({
   }, []);
 
   // ---- UI ----
+  const COLUMN_GAP = 30; // px — визуальный зазор между колонками
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
       {/* Хедер: Все | <группа>  🔎 */}
@@ -963,7 +965,7 @@ export default function HomePage({
           overscrollBehaviorX: 'contain' as any,
           scrollSnapType: 'x mandatory',
           WebkitOverflowScrolling: 'touch',
-          gap: 0,
+          gap: COLUMN_GAP,
           scrollBehavior: 'smooth',
         }}
       >
