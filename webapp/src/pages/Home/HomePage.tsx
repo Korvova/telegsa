@@ -1493,12 +1493,13 @@ export default function HomePage({
                           <div
                             style={{
                               display: 'inline-block',
-                              background: groupChipBg,
-                              color: ((t as any).isPublicGroup ? '#86efac' : '#fff'),
+                              background: (t as any).isPublicGroup ? 'transparent' : groupChipBg,
+                              color: (t as any).isPublicGroup ? '#86efac' : '#fff',
                               padding: '3px 8px',
                               borderRadius: 8,
                               fontSize: 12,
                               marginBottom: 6,
+                              border: (t as any).isPublicGroup ? '1px solid #16a34a' : undefined,
                             }}
                           >
                             {((t as any).isPublicGroup ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{(t as any).groupTitle}
