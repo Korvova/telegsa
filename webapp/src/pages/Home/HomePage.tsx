@@ -914,15 +914,46 @@ export default function HomePage({
   }, []);
 
   // ---- UI ----
-  // липкая шапка: замеряем её высоту, чтобы сдвинуть липкий заголовок колонки ниже
+  // липкая шапка: ссылка на верхний хедер, чтобы знать его высоту
   const headerRef = useRef<HTMLDivElement | null>(null);
-  const [stickyOffset, setStickyOffset] = useState(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [showFixedPageLabel, setShowFixedPageLabel] = useState(false);
+  // следим за изменением высоты хедера через resize (не сохраняем, читаем по месту)
   useEffect(() => {
-    const measure = () => setStickyOffset(headerRef.current?.offsetHeight || 0);
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    const onResize = () => {};
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, [searchOpen]);
+  useEffect(() => {
+    const update = () => {
+      const s = sentinelRef.current;
+      if (!s) return;
+      const headH = headerRef.current?.getBoundingClientRect().height || 0;
+      const top = s.getBoundingClientRect().top;
+      setShowFixedPageLabel(top <= headH + 1);
+    };
+    update();
+    // scroll/resize fallback
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    // IntersectionObserver for better reliability in TWA/iOS
+    let io: IntersectionObserver | null = null;
+    try {
+      if (typeof IntersectionObserver !== 'undefined' && sentinelRef.current) {
+        io = new IntersectionObserver((entries) => {
+          const e = entries[0];
+          // when sentinel leaves viewport (not intersecting), show label
+          setShowFixedPageLabel(!e.isIntersecting);
+        }, { root: null, threshold: [0] });
+        io.observe(sentinelRef.current);
+      }
+    } catch {}
+    return () => {
+      window.removeEventListener('scroll', update as any);
+      window.removeEventListener('resize', update as any);
+      try { io && io.disconnect(); } catch {}
+    };
+  }, []);
   // активная страница по горизонтальному скроллу
   const [activePage, setActivePage] = useState(0);
   useEffect(() => {
@@ -1005,33 +1036,42 @@ export default function HomePage({
         </button>
       </div>
 
-      {/* Липкий заголовок текущей колонки */}
-      <div
-        style={{
-          position: 'sticky',
-          top: stickyOffset,
-          zIndex: 5,
-          padding: '6px 8px 8px',
-          background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
-          backdropFilter: 'blur(2px)',
-        }}
-      >
-        <span
+      {/* Сентинел — точка, после которой показываем фиксированный заголовок */}
+      <div ref={sentinelRef} style={{ height: 1 }} />
+      {/* Фиксированный (JS) заголовок текущей колонки — надёжно для TWA */}
+      {showFixedPageLabel ? (
+        <div
           style={{
-            display: 'inline-block',
-            background: '#1b2234',
-            color: '#c7d2fe',
-            border: '1px solid #2a3346',
-            padding: '4px 10px',
-            borderRadius: 999,
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: 0.2,
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            top: 0,
+            zIndex: 999,
+            padding: '6px 8px 8px',
+            paddingLeft: 12,
+            paddingRight: 12,
+            pointerEvents: 'none',
+            background: 'linear-gradient(180deg, rgba(11,14,22,0.9) 0%, rgba(11,14,22,0.0) 100%)',
+            backdropFilter: 'blur(2px)',
           }}
         >
-          {PAGES[activePage]?.label || 'Все'}
-        </span>
-      </div>
+          <span
+            style={{
+              display: 'inline-block',
+              background: '#1b2234',
+              color: '#c7d2fe',
+              border: '1px solid #2a3346',
+              padding: '4px 10px',
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: 0.2,
+            }}
+          >
+            {PAGES[activePage]?.label || 'Все'}
+          </span>
+        </div>
+      ) : null}
 
       {searchOpen && (
         <div style={{ marginBottom: 8 }}>
