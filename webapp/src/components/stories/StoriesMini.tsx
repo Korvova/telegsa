@@ -23,11 +23,16 @@ export default function StoriesMini({ items, onOpen }: Props) {
   const label1 = (first?.title || '').slice(0, 2);
   const label2 = (second?.title || '').slice(0, 2);
 
+  const FRONT = 44;   // передний круг
+  const BACK = 40;    // задний круг
+  const SHIFT = Math.round(FRONT / 2); // горизонтальный сдвиг заднего круга
+  const BACK_TOP = Math.max(0, Math.round((FRONT - BACK) / 2)); // чтобы центры совпали по вертикали
+
   return (
     <div
       style={{
         position: 'relative',
-        height: 56,
+        height: FRONT,
         marginBottom: 4,
       }}
     >
@@ -37,10 +42,10 @@ export default function StoriesMini({ items, onOpen }: Props) {
           onClick={() => second && onOpen?.(second)}
           style={{
             position: 'absolute',
-            left: 22,
-            top: 10,
-            width: 40,
-            height: 40,
+            left: SHIFT,
+            top: BACK_TOP,
+            width: BACK,
+            height: BACK,
             borderRadius: '50%',
             background: 'transparent',
             border: 'none',
@@ -49,7 +54,7 @@ export default function StoriesMini({ items, onOpen }: Props) {
           }}
           title={second.title}
         >
-          <StoriesRing segments={second.segments || []} centerLabel={label2} size={40} stroke={3} gapDeg={6} />
+          <StoriesRing segments={second.segments || []} centerLabel={label2} size={BACK} stroke={3} gapDeg={6} />
         </button>
       ) : null}
 
@@ -61,8 +66,8 @@ export default function StoriesMini({ items, onOpen }: Props) {
             position: 'absolute',
             left: 0,
             top: 0,
-            width: 44,
-            height: 44,
+            width: FRONT,
+            height: FRONT,
             borderRadius: '50%',
             background: 'transparent',
             border: 'none',
@@ -71,10 +76,9 @@ export default function StoriesMini({ items, onOpen }: Props) {
           }}
           title={first.title}
         >
-          <StoriesRing segments={first.segments || []} centerLabel={label1} size={44} stroke={3} gapDeg={6} />
+          <StoriesRing segments={first.segments || []} centerLabel={label1} size={FRONT} stroke={3} gapDeg={6} />
         </button>
       ) : null}
     </div>
   );
 }
-
