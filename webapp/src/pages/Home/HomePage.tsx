@@ -25,7 +25,7 @@ import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
 import PreTaskEditModal from '../../components/PreTaskEditModal';
 // duplicate import removed
 import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
-import EdgePreTaskBadgePortal from '../../components/EdgePreTaskBadgePortal';
+import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
 import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
 import { useMyRankIcon } from '../../hooks/useMyRankIcon';
@@ -1411,7 +1411,7 @@ export default function HomePage({
                     return (
                       <>
                       {injected}
-                      <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto', overflow: 'visible' }}>
+                      <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto', overflow: 'visible', isolation: 'isolate' }}>
                         {/* Подложка для свайпа в "Все" */}
                         {pg.key === 'all' && swipeUi.id === (t as any).id ? (
                           <div
@@ -1477,7 +1477,7 @@ export default function HomePage({
                           />
                         )}
 
-                        {/* Индикатор через портальный слой (фиксированное позиционирование по rect карточки) */}
+                        {/* Индикатор на краю карточки — как отдельный абсолютный div-сосед (без портала) */}
                         {pg.key === 'all' ? (() => {
                           const tid = String((t as any).id);
                           const ttext = String((t as any).text || '');
@@ -1493,8 +1493,8 @@ export default function HomePage({
                           for (const x of viaFired) uniq.add(String((x as any).id));
                           const preCountForTask = uniq.size;
                           return (
-                            <EdgePreTaskBadgePortal
-                              anchorId={anchorId}
+                            <EdgePreTaskBadge
+                              kind="task"
                               count={preCountForTask}
                               onClick={() => {
                                 if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
