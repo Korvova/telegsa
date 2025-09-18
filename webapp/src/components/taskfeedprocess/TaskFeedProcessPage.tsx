@@ -24,7 +24,7 @@ function Inner({ task, onClose }: { task: { id: string; text: string }; onClose:
       id: String(task.id),
       type: 'feedTask',
       position: { x: 100, y: 120 },
-      data: { text: task.text },
+      data: { id: String(task.id), text: task.text },
     },
   ], [task.id, task.text]);
 
