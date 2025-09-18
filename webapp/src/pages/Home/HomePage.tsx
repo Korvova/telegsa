@@ -1494,6 +1494,7 @@ export default function HomePage({
                             userSelect: 'none' as const,
                             WebkitUserSelect: 'none' as const,
                             msUserSelect: 'none' as const,
+                            overflow: 'visible', // allow edge badge & arrow outside
                             touchAction: 'manipulation',
                             transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease, transform 160ms ease',
                             position: 'relative',
