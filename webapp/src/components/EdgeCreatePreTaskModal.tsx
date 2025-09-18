@@ -15,7 +15,7 @@ export default function EdgeCreatePreTaskModal({
   chatId: string;
   task: { id: string; text: string; groupId?: string | null };
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (preTask: any) => void;
 }) {
   const [links, setLinks] = useState<Link[]>([{ taskId: task.id }]);
   const [mode, setMode] = useState<'AFTER_ALL_DONE'|'DATE_PLUS'|'DELAY_AFTER'|'AFTER_ALL_CANCELED'>('AFTER_ALL_DONE');
@@ -61,7 +61,8 @@ export default function EdgeCreatePreTaskModal({
     };
     const r = await createPreTask(body as any);
     if (!(r as any)?.ok) throw new Error((r as any)?.error || 'pretask_create_failed');
-    onCreated(); onClose();
+    try { onCreated((r as any)?.preTask || null); } catch { onCreated(null as any); }
+    onClose();
   }
 
   if (!open) return null;

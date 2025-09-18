@@ -44,6 +44,9 @@ import PayoutPromptModal from '../../components/PayoutPromptModal';
 
 // const LONG_PRESS_MS = 500; // отключено: открываем быстрые действия по клику на статус
 
+// Feature flags
+const STORIES_ENABLED = false; // временно отключаем сториз в шапке ленты
+
 function fmtShort(iso?: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -356,15 +359,15 @@ export default function HomePage({
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
   const [openComments, setOpenComments] = useState<{ id: string; text: string; anchorId: string } | null>(null);
-  const [processCanvas, setProcessCanvas] = useState<{ id: string; text: string } | null>(null);
+  const [processCanvas, setProcessCanvas] = useState<any | null>(null);
   useEffect(() => {
     const handler = (e: Event) => {
       try {
         const d = (e as CustomEvent<any>).detail || {};
-        const id = String(d.taskId || '');
-        const text = String(d.text || '');
-        if (!id) return;
-        setProcessCanvas({ id, text });
+        if (d && d.card) {
+          try { console.log('[FEED] open-taskfeed-process received', { taskId: String(d.card.id), groupId: (d.card as any)?.groupId ?? null }); } catch {}
+          setProcessCanvas(d.card);
+        }
       } catch {}
     };
     window.addEventListener('open-taskfeed-process', handler as EventListener);
@@ -1008,18 +1011,22 @@ export default function HomePage({
   const COLUMN_GAP = 0; // px — убираем зазор между страницами, чтобы ширина просмотра = ширине экрана
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
-      {/* Сториз: морфинг — точка→круг при прокрутке; дальше полный бар */}
-      {storiesProgress < 1 ? (
-        <StoriesMorph items={storyItems} progress={storiesProgress} onOpen={onOpenProjectStories} />
-      ) : (
-        <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
-      )}
-      {viewerOpen && currentProject && (
-        <StoriesViewer
-          project={currentProject}
-          onClose={() => setViewerOpen(false)}
-          onSeen={(slideIndex) => markSeen(currentProject.projectId, slideIndex)}
-        />
+      {/* Сториз — скрываем по флагу */}
+      {STORIES_ENABLED && (
+        <>
+          {storiesProgress < 1 ? (
+            <StoriesMorph items={storyItems} progress={storiesProgress} onOpen={onOpenProjectStories} />
+          ) : (
+            <StoriesBar items={storyItems} onOpen={onOpenProjectStories} />
+          )}
+          {viewerOpen && currentProject && (
+            <StoriesViewer
+              project={currentProject}
+              onClose={() => setViewerOpen(false)}
+              onSeen={(slideIndex) => markSeen(currentProject.projectId, slideIndex)}
+            />
+          )}
+        </>
       )}
       {/* Хедер: Все | <группа>  🔎 — закреплён сверху */}
       <div
@@ -1375,7 +1382,7 @@ export default function HomePage({
                                             onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
                                             onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
                                           >
-                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} />
+                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} />
                                           </div>
                                         </div>
                                       );
@@ -1531,13 +1538,51 @@ export default function HomePage({
                                 <EdgePreTaskBadge
                                   kind="task"
                                   count={preCountForTask}
-                                  onClick={() => {
-                                    if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
-                                    else {
-                                      try {
-                                        window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
-                                      } catch {}
-                                    }
+                                  onClick={async () => {
+                                    try {
+                                      // Переключаемся на ПЕРСОНИФИЦИРОВАННЫЙ СКОУП ЗАДАЧИ: groupId := `task:${taskId}`
+                                      const scopeId = `task:${String((t as any).id)}`;
+                                      const card = ((): any => {
+                                        const cardBadge = badge;
+                                        const dl = deadlineAt ? { iso: deadlineAt, leftText: leftText || '', overdue: new Date(deadlineAt).getTime() < Date.now() } : null;
+                                        const labs = (() => {
+                                          const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+                                          const titles = (t as any).labelTitles as string[] | undefined;
+                                          const arr: { id?: string; title: string }[] = Array.isArray(raw) ? raw : Array.isArray(titles) ? titles.map((title) => ({ title })) : (labelsByTask[t.id] || []);
+                                          return arr.map((l:any) => String(l.title));
+                                        })();
+                                        const grp = { title: (t as any).groupTitle, public: !!((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])), telegram: !!(t as any).isTelegramGroup, chipBg: groupChipBg };
+                                        const bnty = { stars: (t as any).bountyStars || 0, status: (t as any).bountyStatus || 'NONE' };
+                                        return {
+                                          id: t.id,
+                                          text: (t as any).text,
+                                          isEvent,
+                                          fromProcess: !!(t as any).fromProcess,
+                                          badge: cardBadge,
+                                          dateLine,
+                                          deadline: dl,
+                                          nextReminderAt: nextReminderAt || null,
+                                          acceptCondition: (t as any).acceptCondition || 'NONE',
+                                          bounty: bnty,
+                                          group: grp,
+                                          labels: labs,
+                                          assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                          bg: (colorsForPhase(phaseOf(t)).bg),
+                                          brd: (colorsForPhase(phaseOf(t)).brd),
+                                          phase: String(phaseOf(t)),
+                                          groupId: scopeId,
+                                        };
+                                      })();
+                                      try { console.log('[FEED] badge click → open process', { taskId: String((t as any).id), groupId: (card as any).groupId, preCount: preCountForTask, scope: 'task' }); } catch {}
+                                      window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                      // подсветим связи для этой задачи
+                                      setTimeout(() => {
+                                        try {
+                                          console.log('[FEED] dispatch focus-process-edge', { nodeId: String((t as any).id) });
+                                          window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((t as any).id) } }));
+                                        } catch {}
+                                      }, 150);
+                                    } catch {}
                                   }}
                                 />
                               </div>
@@ -1863,7 +1908,7 @@ export default function HomePage({
                                   </div>
                                 ) : null}
                                 <div
-                                  style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String((p as any).id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: ((linked.length - idx) as number) }}
+                                  style={{ position:'relative', width:'100%', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String((p as any).id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: ((linked.length - idx) as number) }}
                                   onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String((p as any).id), e.clientX, e.clientY); }}
                                   onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String((p as any).id)); }}
                                   onMouseUp={() => { if (pg.key==='all') endPreSwipe(String((p as any).id), { text: (p as any).text, groupId: (p as any).groupId ?? null }); }}
@@ -1888,6 +1933,7 @@ export default function HomePage({
                                         nameByChat={nameByChat}
                                         groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
                                         tone="subtle"
+                                        feedStyle={true}
                                         footer={footer}
                                         emphasis={cnt>0}
                                         myChatId={meChatId}
@@ -1912,7 +1958,7 @@ export default function HomePage({
                                             </div>
                                           ) : null}
                                           <div
-                                            style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
+                                            style={{ position:'relative', width:'100%', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(cp.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (children.length - idx) }}
                                             onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(cp.id), e.clientX, e.clientY); }}
                                             onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(cp.id)); }}
                                             onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
@@ -1935,7 +1981,7 @@ export default function HomePage({
                                                 <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</div>
                                               ) : null;
                                               return (
-                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
+                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
                                               );
                                             })()}
                                           </div>
@@ -1959,7 +2005,7 @@ export default function HomePage({
                                                       </div>
                                                     ) : null}
                                                     <div
-                                                      style={{ position:'relative', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(gg.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (grand.length - gidx) }}
+                                                      style={{ position:'relative', width:'100%', transition:'transform 160ms ease', transform: (pg.key==='all' && preSwipeUi.id === String(gg.id)) ? `translateX(${Math.min(preSwipeUi.dx, 180)}px)` : 'translateX(0px)', zIndex: (grand.length - gidx) }}
                                                       onMouseDown={(e) => { if (pg.key==='all') beginPreSwipe(String(gg.id), e.clientX, e.clientY); }}
                                                       onMouseMove={(e) => { if (pg.key==='all') movePreSwipe(e as any, String(gg.id)); }}
                                                       onMouseUp={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
@@ -1969,7 +2015,7 @@ export default function HomePage({
                                                       onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
                                                       onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
                                                     >
-                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
                                                     </div>
                                                   </div>
                                                 ))}
@@ -2107,7 +2153,7 @@ export default function HomePage({
                                     onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
                                     onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
                                   >
-                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} />
+                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} />
                                   </div>
                                 </div>
                               );
@@ -2369,7 +2415,7 @@ export default function HomePage({
         animateFromAnchorId={openComments?.anchorId}
       />
 
-      <TaskFeedProcessPage open={!!processCanvas} task={processCanvas} onClose={() => setProcessCanvas(null)} />
+      <TaskFeedProcessPage open={!!processCanvas} card={processCanvas} chatId={meChatId} onClose={() => setProcessCanvas(null)} />
 
       {/* Раньше тут была демо-модалка long-press */}
 

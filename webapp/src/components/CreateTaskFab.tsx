@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CreateTaskModal from './create-task/CreateTaskModal';
 import type { Group } from '../api';
 
@@ -18,6 +18,7 @@ export default function CreateTaskFab({
   const [open, setOpen] = useState(false);
   const [edgeInit, setEdgeInit] = useState<null | { text: string; groupId: string | null; links: Array<{ taskId?: string; preTaskId?: string }>; mode?: string; startAt?: string | null; delayMinutes?: number | null; autoCancelOnAny?: boolean }>(null);
   const [editInit, setEditInit] = useState<null | any>(null);
+  const processOpenRef = useRef(false);
 
   const openModal = () => setOpen(true);
 
@@ -25,6 +26,18 @@ export default function CreateTaskFab({
   useEffect(() => {
     try { window.dispatchEvent(new CustomEvent('create-task-open', { detail: open })); } catch {}
   }, [open]);
+
+  // track process overlay to suppress edit modal in feed when process is open
+  useEffect(() => {
+    const onOpened = () => { processOpenRef.current = true; };
+    const onClosed = () => { processOpenRef.current = false; };
+    window.addEventListener('taskfeed-process-opened', onOpened as any);
+    window.addEventListener('taskfeed-process-closed', onClosed as any);
+    return () => {
+      window.removeEventListener('taskfeed-process-opened', onOpened as any);
+      window.removeEventListener('taskfeed-process-closed', onClosed as any);
+    };
+  }, []);
 
   // open modal on external events used by feed (edit or edge pretask)
   useEffect(() => {
@@ -43,6 +56,7 @@ export default function CreateTaskFab({
       } catch { setOpen(true); }
     };
     const onEdit = (e: Event) => {
+      if (processOpenRef.current) return; // не открываем редактор из ленты, если открыт процесс
       try { setEditInit((e as any).detail || {}); } catch {}
       setOpen(true);
     };

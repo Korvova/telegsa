@@ -92,6 +92,32 @@ export function preTasksRouter({ prisma, tg }) {
             if (d.preTaskId || d.depPreTaskId) row.depPreTaskId = String(d.preTaskId || d.depPreTaskId);
             await tx.preTaskLink.create({ data: row });
           }
+          // denormalized neighbor lists
+          const leftKeys = [];
+          for (const d of deps) {
+            if (d.taskId) {
+              const k = `task:${String(d.taskId)}`;
+              leftKeys.push(k);
+              // push to task.processRightKeys
+              try {
+                const parent = await tx.task.findUnique({ where: { id: String(d.taskId) }, select: { processRightKeys: true } });
+                const arr = Array.isArray(parent?.processRightKeys) ? parent.processRightKeys : [];
+                if (!arr.includes(`pretask:${created.id}`)) arr.push(`pretask:${created.id}`);
+                await tx.task.update({ where: { id: String(d.taskId) }, data: { processRightKeys: arr } });
+              } catch {}
+            } else if (d.preTaskId || d.depPreTaskId) {
+              const pid = String(d.preTaskId || d.depPreTaskId);
+              const k = `pretask:${pid}`;
+              leftKeys.push(k);
+              try {
+                const parent = await tx.preTask.findUnique({ where: { id: pid }, select: { processRightKeys: true } });
+                const arr = Array.isArray(parent?.processRightKeys) ? parent.processRightKeys : [];
+                if (!arr.includes(`pretask:${created.id}`)) arr.push(`pretask:${created.id}`);
+                await tx.preTask.update({ where: { id: pid }, data: { processRightKeys: arr } });
+              } catch {}
+            }
+          }
+          await tx.preTask.update({ where: { id: created.id }, data: { processLeftKeys: leftKeys } });
         });
       }
 
@@ -186,12 +212,75 @@ export function preTasksRouter({ prisma, tg }) {
       if (willCycle) return res.status(400).json({ ok: false, error: 'зацикленый алгоритм' });
 
       await prisma.$transaction(async (tx) => {
+        // snapshot previous parents for reciprocal cleanup
+        const prev = await tx.preTaskLink.findMany({ where: { preTaskId: id } });
+        const prevTaskParents = new Set(prev.filter((l) => !!l.taskId).map((l) => String(l.taskId)));
+        const prevPreParents = new Set(prev.filter((l) => !!l.depPreTaskId).map((l) => String(l.depPreTaskId)));
+
         await tx.preTaskLink.deleteMany({ where: { preTaskId: id } });
         for (const d of links) {
           const row = { preTaskId: id, taskId: null, depPreTaskId: null };
           if (d.taskId) row.taskId = String(d.taskId);
           if (d.preTaskId || d.depPreTaskId) row.depPreTaskId = String(d.preTaskId || d.depPreTaskId);
           await tx.preTaskLink.create({ data: row });
+        }
+        // rebuild left keys for this pretask
+        const leftKeys = [];
+        const newTaskParents = new Set();
+        const newPreParents = new Set();
+        for (const d of links) {
+          if (d.taskId) {
+            const tid = String(d.taskId);
+            leftKeys.push(`task:${tid}`);
+            newTaskParents.add(tid);
+            // ensure reciprocal
+            try {
+              const parent = await tx.task.findUnique({ where: { id: tid }, select: { processRightKeys: true } });
+              const arr = Array.isArray(parent?.processRightKeys) ? parent.processRightKeys : [];
+              if (!arr.includes(`pretask:${id}`)) arr.push(`pretask:${id}`);
+              await tx.task.update({ where: { id: tid }, data: { processRightKeys: arr } });
+            } catch {}
+          }
+          if (d.preTaskId || d.depPreTaskId) {
+            const pid = String(d.preTaskId || d.depPreTaskId);
+            leftKeys.push(`pretask:${pid}`);
+            newPreParents.add(pid);
+            try {
+              const parent = await tx.preTask.findUnique({ where: { id: pid }, select: { processRightKeys: true } });
+              const arr = Array.isArray(parent?.processRightKeys) ? parent.processRightKeys : [];
+              if (!arr.includes(`pretask:${id}`)) arr.push(`pretask:${id}`);
+              await tx.preTask.update({ where: { id: pid }, data: { processRightKeys: arr } });
+            } catch {}
+          }
+        }
+        await tx.preTask.update({ where: { id }, data: { processLeftKeys: leftKeys } });
+
+        // cleanup reciprocal from parents that are no longer linked
+        try {
+          // tasks no longer parenting this pretask
+          for (const tid of prevTaskParents) {
+            if (newTaskParents.has(tid)) continue;
+            const row = await tx.task.findUnique({ where: { id: tid }, select: { processRightKeys: true } });
+            const arr = Array.isArray(row?.processRightKeys) ? row.processRightKeys : [];
+            const idx = arr.indexOf(`pretask:${id}`);
+            if (idx >= 0) {
+              arr.splice(idx, 1);
+              await tx.task.update({ where: { id: tid }, data: { processRightKeys: arr } });
+            }
+          }
+          // pretasks no longer parenting this pretask
+          for (const pid of prevPreParents) {
+            if (newPreParents.has(pid)) continue;
+            const row = await tx.preTask.findUnique({ where: { id: pid }, select: { processRightKeys: true } });
+            const arr = Array.isArray(row?.processRightKeys) ? row.processRightKeys : [];
+            const idx = arr.indexOf(`pretask:${id}`);
+            if (idx >= 0) {
+              arr.splice(idx, 1);
+              await tx.preTask.update({ where: { id: pid }, data: { processRightKeys: arr } });
+            }
+          }
+        } catch (e) {
+          console.warn('[pretask.links] reciprocal cleanup failed', e?.message || e);
         }
       });
       res.json({ ok: true });

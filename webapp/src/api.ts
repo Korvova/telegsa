@@ -1011,6 +1011,18 @@ export async function getTaskRelations(taskId: string): Promise<{ ok: boolean; o
   return r.json();
 }
 
+export async function getTaskGraph(taskId: string): Promise<{
+  ok: boolean;
+  root: string; // 'task:<id>'
+  tasks: Array<{ id: string; text: string }>;
+  pretasks: Array<{ id: string; text: string; status?: string; targetTaskId?: string | null }>;
+  edges: Array<{ source: string; target: string }>; // keys 'task:<id>'/'pretask:<id>'
+  positions?: Record<string, { x: number; y: number }>;
+}> {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/graph`);
+  return r.json();
+}
+
 /* ---------- Pre-Tasks API ---------- */
 export type PreTaskDTO = {
   id: string;

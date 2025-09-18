@@ -631,3 +631,55 @@ router.get('/created/count', async (req, res) => {
 });
 
 export { router as tasksRouter };
+// Build task graph for a root task using denormalized keys (fallback to relations if absent)
+router.get('/:id/graph', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const task = await prisma.task.findUnique({ where: { id }, select: { id: true, text: true, processLeftKeys: true, processRightKeys: true } });
+    if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const keys = new Set([`task:${id}`]);
+    const left = Array.isArray(task.processLeftKeys) ? task.processLeftKeys : [];
+    const right = Array.isArray(task.processRightKeys) ? task.processRightKeys : [];
+    left.forEach(k => keys.add(String(k)));
+    right.forEach(k => keys.add(String(k)));
+
+    // Gather nodes data
+    const taskIds = Array.from(keys).filter(k => k.startsWith('task:')).map(k => k.slice(5));
+    const preIds = Array.from(keys).filter(k => k.startsWith('pretask:')).map(k => k.slice(8));
+    const tasks = taskIds.length ? await prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, text: true } }) : [];
+    const pretasks = preIds.length ? await prisma.preTask.findMany({ where: { id: { in: preIds } }, select: { id: true, text: true, status: true, targetTaskId: true } }) : [];
+
+    // Build edges from denormalized arrays for root only
+    const edges = [];
+    right.forEach((k) => edges.push({ source: `task:${id}`, target: String(k) }));
+    left.forEach((k) => edges.push({ source: String(k), target: `task:${id}` }));
+
+    // Positions (if any) from ProcessNode by scope groupId = `task:${id}`
+    const proc = await prisma.groupProcess.findFirst({ where: { groupId: `task:${id}`, isActive: true }, orderBy: { createdAt: 'desc' } });
+    const positions = {};
+    if (proc) {
+      const nodes = await prisma.processNode.findMany({ where: { processId: proc.id }, select: { posX: true, posY: true, metaJson: true, taskId: true } });
+      for (const n of nodes) {
+        let key = n?.metaJson?.key;
+        if (!key) {
+          const pre = n?.metaJson?.preTaskId ? String(n.metaJson.preTaskId) : null;
+          if (pre) key = `pretask:${pre}`;
+        }
+        if (!key && n?.taskId) key = `task:${String(n.taskId)}`;
+        // Fallback by clientRef → infer kind by membership in sets
+        if (!key && n?.metaJson?.clientRef) {
+          const ref = String(n.metaJson.clientRef);
+          if (preIds.includes(ref)) key = `pretask:${ref}`;
+          else if (taskIds.includes(ref)) key = `task:${ref}`;
+        }
+        if (key) positions[String(key)] = { x: n.posX || 0, y: n.posY || 0 };
+      }
+    }
+
+    res.json({ ok: true, root: `task:${id}`, tasks, pretasks, edges, positions });
+  } catch (e) {
+    console.error('GET /tasks/:id/graph error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});

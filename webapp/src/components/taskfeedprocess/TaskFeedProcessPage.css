@@ -1,0 +1,13 @@
+.rf-feed-scope .react-flow__handle {
+  width: 24px !important;
+  height: 24px !important;
+  border: 2px solid var(--xy-handle-border-color-default, #aaa) !important;
+}
+.rf-feed-scope .react-flow__handle-right { transform: translate(50%, -50%) !important; }
+.rf-feed-scope .react-flow__handle-left  { transform: translate(-50%, -50%) !important; }
+
+/* Selected edge highlight */
+.rf-feed-scope .react-flow__edge.selected .react-flow__edge-path {
+  stroke: #3b82f6 !important;
+  stroke-width: 2.5 !important;
+}

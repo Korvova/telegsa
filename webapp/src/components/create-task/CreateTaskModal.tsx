@@ -417,6 +417,21 @@ export default function CreateTaskModal({
         }
       } catch {}
       try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+      // уведомим ленту/полотно о локальных изменениях карточки
+      try {
+        const g = (groups || []).find((x:any) => String(x.id) === String(groupId || '')) as any;
+        const groupTitle = g ? String(g.title || '') : undefined;
+        const isPublicGroup = g ? Boolean((g as any).isPublic) : undefined;
+        window.dispatchEvent(new CustomEvent('task-patched', { detail: {
+          id: editTaskId,
+          text: val || undefined,
+          deadlineAt: deadlineAt ?? undefined,
+          acceptCondition,
+          groupId: groupId ?? null,
+          groupTitle,
+          isPublicGroup,
+        }}));
+      } catch {}
       onCreated?.(); onClose();
     } finally { setBusy(false); }
   }

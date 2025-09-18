@@ -481,8 +481,8 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
     const prevBodyBg = document.body.style.background;
     html.style.overflowX = 'hidden';
     document.body.style.overflowX = 'hidden';
-    html.style.background = 'transparent';
-    document.body.style.background = 'transparent';
+    html.style.background = '#0f1216';
+    document.body.style.background = '#0f1216';
     return () => {
       html.style.overflowX = prevHtml;
       document.body.style.overflowX = prevBody;
@@ -1087,7 +1087,9 @@ setPersistSeedSession(false);
             minHeight: '100vh',
             background: '#0f1216',
             color: '#e8eaed',
-            padding: 16,
+            paddingTop: 16,
+            paddingLeft: 0,
+            paddingRight: 0,
             paddingBottom: 'calc(76px + env(safe-area-inset-bottom, 0px))',
           }}
         >

@@ -1203,6 +1203,9 @@ app.get('/tasks/:id', async (req, res) => {
 
     let groupId = null;
     let phase = null;
+    let groupTitle = null;
+    let isPublicGroup = false;
+    let isTelegramGroup = false;
     try {
       const col = await prisma.column.findUnique({ where: { id: task.columnId } });
       if (col) {
@@ -1210,6 +1213,18 @@ app.get('/tasks/:id', async (req, res) => {
         phase = nm;
         const i = col.name.indexOf(GROUP_SEP);
         groupId = i > 0 ? col.name.slice(0, i) : null;
+      }
+    } catch {}
+
+    // resolve group fields for richer UI (used by canvas FeedTaskCard)
+    try {
+      if (groupId) {
+        const g = await prisma.group.findUnique({ where: { id: String(groupId) }, select: { title: true, isPublic: true, isTelegramGroup: true } });
+        if (g) {
+          groupTitle = g.title || null;
+          isPublicGroup = !!g.isPublic;
+          isTelegramGroup = !!g.isTelegramGroup;
+        }
       }
     } catch {}
 
@@ -1254,10 +1269,10 @@ app.get('/tasks/:id', async (req, res) => {
 
     res.json({
       ok: true,
-      task: { ...task, assigneeName, creatorName },
+      task: { ...task, assigneeName, creatorName, groupTitle, isPublicGroup, isTelegramGroup },
       groupId,
       phase,
-      media, // <-- добавили
+      media,
     });
   } catch (e) {
     console.error('GET /tasks/:id error', e);

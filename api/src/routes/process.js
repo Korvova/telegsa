@@ -74,153 +74,193 @@ router.post('/groups/:groupId/process', async (req, res) => {
   if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
 
   try {
-    // 1) найти/создать активный процесс
-    let proc = await prisma.groupProcess.findFirst({
-      where: { groupId: String(groupId), isActive: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!proc) {
-      proc = await prisma.groupProcess.create({
-        data: {
-          groupId: String(groupId),
-          createdBy: String(chatId),
-          runMode: 'MANUAL',
-          isActive: true,
-        },
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) найти/создать активный процесс
+      let proc = await tx.groupProcess.findFirst({
+        where: { groupId: String(groupId), isActive: true },
+        orderBy: { createdAt: 'desc' },
       });
-    }
-
-    // 2) снести старую схему процесса
-    await prisma.processEdge.deleteMany({ where: { processId: proc.id } });
-    await prisma.processNode.deleteMany({ where: { processId: proc.id } });
-
-    // 3) подготовка мапов
-    const idMap = new Map();          // clientId -> dbNodeId
-    const nodeTaskId = new Map();     // dbNodeId  -> taskId (если есть)
-
-    // ленивое получение Inbox (только если встретится seed_new_)
-    let inboxInfo = null;
-    const getInbox = async () => {
-      if (!inboxInfo) inboxInfo = await resolveInbox(prisma, groupId);
-      return inboxInfo;
-    };
-
-    // 4) создать узлы (и при необходимости задачи)
-    for (const n of nodes) {
-      const clientId = n?.id ? String(n.id) : null;
-      const title = String(n?.title || 'Новая задача').slice(0, 100);
-      const createdBy = n?.createdByChatId ? String(n.createdByChatId) : String(chatId);
-
-      let taskId = null;
-
-      // seed_task_<ID> → существующая задача
-      if (clientId && clientId.startsWith('seed_task_')) {
-        taskId = clientId.slice('seed_task_'.length);
-      }
-      // seed_new_* → создать новую задачу в Inbox
-      else if (clientId && clientId.startsWith('seed_new_')) {
-        const info = await getInbox(); // { boardChatId, inbox, nextOrder }
-        const assignee = n?.assigneeChatId ? String(n.assigneeChatId) : String(chatId);
-
-        const t = await prisma.task.create({
+      if (!proc) {
+        proc = await tx.groupProcess.create({
           data: {
-            chatId: info.boardChatId,
-            columnId: info.inbox.id,
-            order: info.nextOrder,
-            text: title,
-            assigneeChatId: assignee,
-            type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
-            fromProcess: true, // 🔀
+            groupId: String(groupId),
+            createdBy: String(chatId),
+            runMode: 'MANUAL',
+            isActive: true,
           },
         });
-        taskId = t.id;
-        // следующий order на будущее создание
-        inboxInfo.nextOrder++;
-      }
-      // если фронт прислал явный taskId — привяжем
-      else if (n?.taskId) {
-        taskId = String(n.taskId);
       }
 
-      // создаём сам узел процесса
-      const created = await prisma.processNode.create({
-        data: {
+      // 2) снести старую схему процесса (одним махом)
+      await tx.processEdge.deleteMany({ where: { processId: proc.id } });
+      await tx.processNode.deleteMany({ where: { processId: proc.id } });
+
+      // 3) подготовка
+      const idMap = new Map();      // clientRef -> dbNodeId
+      const taskByClient = new Map();// clientRef -> taskId
+      const watchersByClient = new Map(); // clientRef -> watchers[]
+
+      // ленивое получение Inbox (только если встретится seed_new_)
+      let inboxInfo = null;
+      const getInbox = async () => {
+        if (!inboxInfo) inboxInfo = await resolveInbox(tx, groupId);
+        return inboxInfo;
+      };
+
+      // 4) подготовить список нод к createMany (после возможного создания задач)
+      const nodeRows = [];
+
+      // Подготовим список всех taskId из входящих нод, чтобы валидационно обнулить несуществующие и не ловить P2003
+      const candidateTaskIds = new Set();
+      for (const n of nodes) {
+        const clientRef = n?.id ? String(n.id) : null;
+        if (clientRef && clientRef.startsWith('seed_task_')) {
+          candidateTaskIds.add(clientRef.slice('seed_task_'.length));
+        } else if (n?.taskId) {
+          candidateTaskIds.add(String(n.taskId));
+        }
+      }
+      const validTaskIdSet = new Set();
+      if (candidateTaskIds.size > 0) {
+        const check = await tx.task.findMany({
+          where: { id: { in: Array.from(candidateTaskIds) } },
+          select: { id: true },
+        });
+        for (const t of check) validTaskIdSet.add(String(t.id));
+      }
+      for (const n of nodes) {
+        const clientRef = n?.id ? String(n.id) : null;
+        const title = String(n?.title || 'Новая задача').slice(0, 100);
+        const createdBy = n?.createdByChatId ? String(n.createdByChatId) : String(chatId);
+        let taskId = null;
+
+        if (clientRef && clientRef.startsWith('seed_task_')) {
+          const cand = clientRef.slice('seed_task_'.length);
+          taskId = validTaskIdSet.has(cand) ? cand : null;
+        } else if (clientRef && clientRef.startsWith('seed_new_')) {
+          const info = await getInbox();
+          const assignee = n?.assigneeChatId ? String(n.assigneeChatId) : String(chatId);
+          const t = await tx.task.create({
+            data: {
+              chatId: info.boardChatId,
+              columnId: info.inbox.id,
+              order: info.nextOrder,
+              text: title,
+              assigneeChatId: assignee,
+              type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
+              fromProcess: true,
+            },
+          });
+          taskId = t.id;
+          inboxInfo.nextOrder++;
+        } else if (n?.taskId) {
+          const cand = String(n.taskId);
+          taskId = validTaskIdSet.has(cand) ? cand : null;
+        }
+
+        if (clientRef && taskId) taskByClient.set(clientRef, taskId);
+        if (clientRef && Array.isArray(n?.watchers) && n.watchers.length) {
+          watchersByClient.set(clientRef, n.watchers.filter(Boolean).map((w) => String(w)));
+        }
+
+        const meta = (n?.metaJson && typeof n.metaJson === 'object') ? n.metaJson : (n?.metaJson ? { raw: n.metaJson } : {});
+        if (clientRef) meta.clientRef = clientRef;
+
+        nodeRows.push({
           processId: proc.id,
           title,
           posX: Number.isFinite(n?.posX) ? Number(n.posX) : 0,
           posY: Number.isFinite(n?.posY) ? Number(n.posY) : 0,
-
           assigneeChatId: n?.assigneeChatId ?? null,
           createdByChatId: createdBy,
-
           type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
           status: String(n?.status || 'PLANNED'),
-
           startMode: (n?.startMode ?? 'AFTER_ANY'),
           startDate: n?.startDate ? new Date(n.startDate) : null,
           startAfterDays: (Number.isFinite(n?.startAfterDays) ? Number(n.startAfterDays) : null),
-
           cancelMode: (n?.cancelMode ?? 'NONE'),
-
-          taskId,                    // ← связь с реальной задачей (если есть/создали)
-          metaJson: n?.metaJson ?? null,
-        },
-      });
-
-      if (clientId) idMap.set(clientId, created.id);
-      if (taskId) nodeTaskId.set(created.id, taskId);
-
-      // watchers (если пришли)
-      if (Array.isArray(n?.watchers) && n.watchers.length) {
-        await prisma.processNodeWatcher.createMany({
-          data: n.watchers
-            .filter(Boolean)
-            .map((w) => ({ nodeId: created.id, chatId: String(w) })),
-          skipDuplicates: true,
+          taskId,
+          metaJson: meta,
         });
       }
-    }
 
-    // 5) создать рёбра и связи задач (TaskRelation)
-    for (const e of edges) {
-      if (!e?.source || !e?.target) continue;
+      if (nodeRows.length) {
+        await tx.processNode.createMany({ data: nodeRows });
+      }
 
-      const rawSrc = String(e.source);
-      const rawTgt = String(e.target);
-      const srcDbId = idMap.get(rawSrc) ?? rawSrc;
-      const tgtDbId = idMap.get(rawTgt) ?? rawTgt;
+      // прочитать созданные ноды и собрать мап clientRef -> id и id -> taskId
+      const createdNodes = await tx.processNode.findMany({ where: { processId: proc.id } });
+      for (const cn of createdNodes) {
+        const clientRef = (cn.metaJson && cn.metaJson.clientRef) ? String(cn.metaJson.clientRef) : null;
+        if (clientRef) idMap.set(clientRef, cn.id);
+      }
 
-      await prisma.processEdge.create({
-        data: {
-          processId: proc.id,
-          sourceNodeId: srcDbId,
-          targetNodeId: tgtDbId,
-          enabled: (e?.enabled !== false),
-        },
-      });
+      // watchers bulk
+      const watcherRows = [];
+      for (const [clientRef, lst] of watchersByClient.entries()) {
+        const nodeId = idMap.get(clientRef);
+        if (!nodeId) continue;
+        for (const chatIdStr of lst) watcherRows.push({ nodeId, chatId: chatIdStr });
+      }
+      if (watcherRows.length) {
+        await tx.processNodeWatcher.createMany({ data: watcherRows, skipDuplicates: true });
+      }
 
-      // если оба узла привязаны к задачам — добавим связь задач (без дублей)
-      const srcTaskId = nodeTaskId.get(srcDbId);
-      const tgtTaskId = nodeTaskId.get(tgtDbId);
-      if (srcTaskId && tgtTaskId) {
-        const exists = await prisma.taskRelation.findFirst({
-          where: { fromTaskId: srcTaskId, toTaskId: tgtTaskId },
-          select: { id: true },
-        });
+      // 5) создать рёбра (bulk)
+      const edgeRows = [];
+      const taskRelPairs = [];
+      for (const e of edges) {
+        if (!e?.source || !e?.target) continue;
+        const rawSrc = String(e.source);
+        const rawTgt = String(e.target);
+        const srcDbId = idMap.get(rawSrc) ?? rawSrc;
+        const tgtDbId = idMap.get(rawTgt) ?? rawTgt;
+        edgeRows.push({ processId: proc.id, sourceNodeId: srcDbId, targetNodeId: tgtDbId, enabled: (e?.enabled !== false) });
+
+        const srcTaskId = taskByClient.get(rawSrc) || null;
+        const tgtTaskId = taskByClient.get(rawTgt) || null;
+        if (srcTaskId && tgtTaskId) taskRelPairs.push({ fromTaskId: srcTaskId, toTaskId: tgtTaskId });
+      }
+      if (edgeRows.length) {
+        await tx.processEdge.createMany({ data: edgeRows });
+      }
+
+      // 6) связи задач (минимизируем дубли) + обновление денорм-кэша соседей
+      for (const pair of taskRelPairs) {
+        const exists = await tx.taskRelation.findFirst({ where: { fromTaskId: pair.fromTaskId, toTaskId: pair.toTaskId }, select: { id: true } });
         if (!exists) {
-          await prisma.taskRelation.create({
-            data: {
-              fromTaskId: srcTaskId,
-              toTaskId: tgtTaskId,
-              groupId: String(groupId),
-              createdBy: String(chatId),
-            },
-          });
+          await tx.taskRelation.create({ data: { fromTaskId: pair.fromTaskId, toTaskId: pair.toTaskId, groupId: String(groupId), createdBy: String(chatId) } });
+        }
+
+        // Update denormalized neighbor lists for fast graph build
+        try {
+          const fromId = String(pair.fromTaskId);
+          const toId = String(pair.toTaskId);
+          // from.processRightKeys += `task:${toId}`
+          const fromRow = await tx.task.findUnique({ where: { id: fromId }, select: { processRightKeys: true } });
+          const right = Array.isArray(fromRow?.processRightKeys) ? fromRow.processRightKeys : [];
+          const keyR = `task:${toId}`;
+          if (!right.includes(keyR)) {
+            right.push(keyR);
+            await tx.task.update({ where: { id: fromId }, data: { processRightKeys: right } });
+          }
+          // to.processLeftKeys += `task:${fromId}`
+          const toRow = await tx.task.findUnique({ where: { id: toId }, select: { processLeftKeys: true } });
+          const left = Array.isArray(toRow?.processLeftKeys) ? toRow.processLeftKeys : [];
+          const keyL = `task:${fromId}`;
+          if (!left.includes(keyL)) {
+            left.push(keyL);
+            await tx.task.update({ where: { id: toId }, data: { processLeftKeys: left } });
+          }
+        } catch (e) {
+          console.warn('[process/save] denorm TaskRelation cache update failed', e?.message || e);
         }
       }
-    }
 
-    res.json({ ok: true, processId: proc.id });
+      return { ok: true, processId: proc.id };
+    }, { timeout: 20000, maxWait: 5000 });
+
+    res.json(result);
   } catch (e) {
     console.error('[process] POST error', e);
     res.status(500).json({ ok: false, error: 'process_save_failed' });

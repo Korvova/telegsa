@@ -51,21 +51,30 @@ export default function StageQuickBar({
   useEffect(() => {
     if (!meChatId) return;
     let alive = true;
-    fetchBoard(meChatId, groupId ?? undefined)
+    const effGroupId = (groupId && String(groupId).startsWith('task:')) ? undefined : groupId ?? undefined;
+    fetchBoard(meChatId, effGroupId)
       .then((r) => {
         if (!alive || !r?.ok) return;
         const map: Record<string, string> = {};
-        for (const c of r.columns) map[c.name] = c.id;
+        for (const c of r.columns) {
+          const name = String(c.name || '');
+          map[name] = c.id;
+          const i = name.indexOf('::');
+          const base = i >= 0 ? name.slice(i + 2) : name;
+          if (base) map[base] = c.id; // нормализованное имя стадии
+        }
+        try { console.log('[StageQuickBar] columns', { groupId, keys: Object.keys(map) }); } catch {}
         setColMap(map);
       })
       .catch(() => {});
     return () => { alive = false; };
   }, [meChatId, groupId]);
 
-  const stages: StageKey[] = useMemo(
-    () => ORDER.filter((s) => !!colMap[s]),
-    [colMap]
-  );
+  const stages: StageKey[] = useMemo(() => {
+    const arr = ORDER.filter((s) => !!colMap[s]);
+    try { console.log('[StageQuickBar] stages', arr); } catch {}
+    return arr;
+  }, [colMap]);
 
   const active: StageKey | undefined =
     (ORDER as string[]).includes(String(currentPhase)) ? (currentPhase as StageKey) : undefined;

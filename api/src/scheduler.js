@@ -456,7 +456,8 @@ async function createRealTaskForPre({ prisma, tg }, pre, { canceledImmediate = f
       columnId: targetColumn.id,
       createdByChatId: String(pre.creatorChatId || boardChatId),
       assigneeChatId: assignee,
-      fromProcess: false,
+      // помечаем задачу как созданную из процесса, чтобы в ленте/полотне отображалась как «из процесса»
+      fromProcess: true,
     },
   });
 
@@ -483,7 +484,48 @@ async function createRealTaskForPre({ prisma, tg }, pre, { canceledImmediate = f
 
 async function markPreTaskFired(prisma, preId, taskId, { canceled = false } = {}) {
   const newStatus = canceled ? 'CANCELED' : 'FIRED';
-  await prisma.preTask.update({ where: { id: String(preId) }, data: { status: newStatus, targetTaskId: String(taskId), fireAt: new Date() } });
+  // update pretask status+target
+  const pre = await prisma.preTask.update({ where: { id: String(preId) }, data: { status: newStatus, targetTaskId: String(taskId), fireAt: new Date() } });
+  try {
+    // denormalized neighbor updates
+    const full = await prisma.preTask.findUnique({ where: { id: String(preId) }, include: { links: true } });
+    const parentKeys = [];
+    for (const l of (full?.links || [])) {
+      if (l.taskId) parentKeys.push(`task:${String(l.taskId)}`);
+      if (l.depPreTaskId) parentKeys.push(`pretask:${String(l.depPreTaskId)}`);
+    }
+    // Task(target)
+    const t0 = await prisma.task.findUnique({ where: { id: String(taskId) }, select: { processLeftKeys: true } });
+    const leftArr = Array.isArray(t0?.processLeftKeys) ? t0.processLeftKeys : [];
+    for (const k of parentKeys) if (!leftArr.includes(k)) leftArr.push(k);
+    await prisma.task.update({ where: { id: String(taskId) }, data: { processLeftKeys: leftArr, originPreTaskId: String(preId) } });
+    // Parents: replace 'pretask:preId' → 'task:taskId' in right keys
+    for (const k of parentKeys) {
+      if (k.startsWith('task:')) {
+        const tid = k.slice('task:'.length);
+        const row = await prisma.task.findUnique({ where: { id: tid }, select: { processRightKeys: true } });
+        const arr = Array.isArray(row?.processRightKeys) ? row.processRightKeys : [];
+        const needle = `pretask:${String(preId)}`;
+        const repl = `task:${String(taskId)}`;
+        const idx = arr.indexOf(needle);
+        if (idx >= 0) arr.splice(idx, 1);
+        if (!arr.includes(repl)) arr.push(repl);
+        await prisma.task.update({ where: { id: tid }, data: { processRightKeys: arr } });
+      } else if (k.startsWith('pretask:')) {
+        const pid = k.slice('pretask:'.length);
+        const row = await prisma.preTask.findUnique({ where: { id: pid }, select: { processRightKeys: true } });
+        const arr = Array.isArray(row?.processRightKeys) ? row.processRightKeys : [];
+        const needle = `pretask:${String(preId)}`;
+        const repl = `task:${String(taskId)}`;
+        const idx = arr.indexOf(needle);
+        if (idx >= 0) arr.splice(idx, 1);
+        if (!arr.includes(repl)) arr.push(repl);
+        await prisma.preTask.update({ where: { id: pid }, data: { processRightKeys: arr } });
+      }
+    }
+  } catch (e) {
+    console.warn('[pretask fired] denorm update failed', e?.message || e);
+  }
 }
 
 async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = false } = {}) {
