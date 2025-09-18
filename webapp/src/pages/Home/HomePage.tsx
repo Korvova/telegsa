@@ -38,6 +38,7 @@ import LabelFilterWheel from '../../components/LabelFilterWheel';
 import StarBadge from '../../components/StarBadge';
 import CommentsStrip from '../../components/CommentsStrip';
 import TaskCommentsOverlay from '../../components/TaskCommentsOverlay';
+import TaskFeedProcessPage from '../../components/taskfeedprocess/TaskFeedProcessPage';
 import LongPressOutline from '../../components/LongPressOutline';
 import PayoutPromptModal from '../../components/PayoutPromptModal';
 
@@ -355,6 +356,20 @@ export default function HomePage({
   const [search, setSearch] = useState('');
   const [deadlineEdit, setDeadlineEdit] = useState<{ id: string; value: string | null } | null>(null);
   const [openComments, setOpenComments] = useState<{ id: string; text: string; anchorId: string } | null>(null);
+  const [processCanvas, setProcessCanvas] = useState<{ id: string; text: string } | null>(null);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const d = (e as CustomEvent<any>).detail || {};
+        const id = String(d.taskId || '');
+        const text = String(d.text || '');
+        if (!id) return;
+        setProcessCanvas({ id, text });
+      } catch {}
+    };
+    window.addEventListener('open-taskfeed-process', handler as EventListener);
+    return () => window.removeEventListener('open-taskfeed-process', handler as EventListener);
+  }, []);
   const [sseTick, setSseTick] = useState(0);
   // const [lpModal, setLpModal] = useState(false); // deprecated demo modal
 
@@ -1520,7 +1535,7 @@ export default function HomePage({
                                     if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
                                     else {
                                       try {
-                                        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
+                                        window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
                                       } catch {}
                                     }
                                   }}
@@ -2353,6 +2368,8 @@ export default function HomePage({
         meChatId={meChatId}
         animateFromAnchorId={openComments?.anchorId}
       />
+
+      <TaskFeedProcessPage open={!!processCanvas} task={processCanvas} onClose={() => setProcessCanvas(null)} />
 
       {/* Раньше тут была демо-модалка long-press */}
 
