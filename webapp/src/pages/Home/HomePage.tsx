@@ -1411,7 +1411,7 @@ export default function HomePage({
                     return (
                       <>
                       {injected}
-                      <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto' }}>
+                      <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto', overflow: 'visible' }}>
                         {/* Подложка для свайпа в "Все" */}
                         {pg.key === 'all' && swipeUi.id === (t as any).id ? (
                           <div
@@ -1476,6 +1476,41 @@ export default function HomePage({
                             }}
                           />
                         )}
+
+                        {/* Внешний индикатор предзадач на самом краю карточки (над карточкой) */}
+                        {pg.key === 'all' ? (() => {
+                          const tid = String((t as any).id);
+                          const ttext = String((t as any).text || '');
+                          let firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===tid);
+                          if (!firedOfTask.length) {
+                            firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'') === ttext);
+                          }
+                          const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
+                          const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===tid));
+                          const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
+                          const uniq = new Set<string>();
+                          for (const x of direct) uniq.add(String((x as any).id));
+                          for (const x of viaFired) uniq.add(String((x as any).id));
+                          const preCountForTask = uniq.size;
+                          return (
+                            <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 2 }}>
+                              <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                                <EdgePreTaskBadge
+                                  kind="task"
+                                  count={preCountForTask}
+                                  onClick={() => {
+                                    if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
+                                    else {
+                                      try {
+                                        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
+                                      } catch {}
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })() : null}
 
                         <button
                           id={anchorId}
@@ -1553,43 +1588,7 @@ export default function HomePage({
                               } catch {}
                             }}
                           />
-                          {/* Edge pre-task badge on task card */}
-                          {pg.key === 'all' ? (
-                            (() => {
-                              // Считаем предзадачи для задачи: прямые (links.taskId == task.id)
-                              // и «унаследованные» от FIRED-предзадачи (children, у которых links.depPreTaskId == fired.id с fired.targetTaskId == task.id)
-                              const tid = String((t as any).id);
-                              const ttext = String((t as any).text || '');
-                              let firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===tid);
-                              // Fallback: иногда backend может не проставить targetTaskId — попробуем сопоставить по тексту
-                              if (!firedOfTask.length) {
-                                firedOfTask = preTasks.filter((p:any) => String(p.status||'')==='FIRED' && String(p.text||'') === ttext);
-                              }
-                              const firedIds = new Set(firedOfTask.map((p:any)=>String(p.id)));
-                              const direct = preTasks.filter((p:any) => Array.isArray(p.links) && p.links.some((l:any)=> String(l.taskId||'')===tid));
-                              const viaFired = preTasks.filter((p:any) => String(p.status||'')!=='FIRED' && Array.isArray(p.links) && p.links.some((l:any)=> firedIds.has(String(l.depPreTaskId||''))));
-                              const uniq = new Set<string>();
-                              for (const x of direct) uniq.add(String((x as any).id));
-                              for (const x of viaFired) uniq.add(String((x as any).id));
-                              const preCountForTask = uniq.size;
-                              return (
-                                <div style={{ position:'absolute', right: 0, top: 0, bottom: 0 }}>
-                                  <EdgePreTaskBadge
-                                    kind="task"
-                                    count={preCountForTask}
-                                    onClick={() => {
-                                      if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
-                                      else {
-                                        try {
-                                          window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
-                                        } catch {}
-                                      }
-                                    }}
-                                  />
-                                </div>
-                              );
-                            })()
-                          ) : null}
+                          {/* Edge pre-task badge теперь рендерится вне кнопки (выше) */}
                           <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
                             {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
                               <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
