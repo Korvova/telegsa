@@ -32,12 +32,12 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
       style={{
         position: 'absolute',
         top: '50%',
-        right: -arrowW, // let the arrow protrude outside card
+        right: 0,
         transform: 'translateY(-50%)',
         width: size + arrowW,
         height: size,
         cursor: onClick ? 'pointer' : 'default',
-        zIndex: 3,
+        zIndex: 60,
         ...style,
       }}
     >
@@ -45,8 +45,9 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
       <div
         style={{
           position: 'absolute',
-          right: arrowW - 2, // slightly overlap with card edge
-          top: 0,
+          right: 0,
+          top: '50%',
+          transform: 'translate(50%, -50%)', // center sits exactly on card edge
           width: size,
           height: size,
           borderRadius: 999,
@@ -61,8 +62,9 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
         <div
           style={{
             position: 'absolute',
-            right: 0,
-            top: size / 2 - 7,
+            right: -arrowW,
+            top: '50%',
+            transform: 'translateY(-50%)',
             width: 0,
             height: 0,
             borderTop: '7px solid transparent',

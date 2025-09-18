@@ -25,7 +25,7 @@ import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
 import PreTaskEditModal from '../../components/PreTaskEditModal';
 // duplicate import removed
 import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
-import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
+import EdgePreTaskBadgePortal from '../../components/EdgePreTaskBadgePortal';
 import StageQuickBar from '../../components/StageQuickBar';
 import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
 import { useMyRankIcon } from '../../hooks/useMyRankIcon';
@@ -1477,7 +1477,7 @@ export default function HomePage({
                           />
                         )}
 
-                        {/* Внешний индикатор предзадач на самом краю карточки (над карточкой) */}
+                        {/* Индикатор через портальный слой (фиксированное позиционирование по rect карточки) */}
                         {pg.key === 'all' ? (() => {
                           const tid = String((t as any).id);
                           const ttext = String((t as any).text || '');
@@ -1493,22 +1493,18 @@ export default function HomePage({
                           for (const x of viaFired) uniq.add(String((x as any).id));
                           const preCountForTask = uniq.size;
                           return (
-                            <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 2 }}>
-                              <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
-                                <EdgePreTaskBadge
-                                  kind="task"
-                                  count={preCountForTask}
-                                  onClick={() => {
-                                    if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
-                                    else {
-                                      try {
-                                        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
-                                      } catch {}
-                                    }
-                                  }}
-                                />
-                              </div>
-                            </div>
+                            <EdgePreTaskBadgePortal
+                              anchorId={anchorId}
+                              count={preCountForTask}
+                              onClick={() => {
+                                if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
+                                else {
+                                  try {
+                                    window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
+                                  } catch {}
+                                }
+                              }}
+                            />
                           );
                         })() : null}
 
