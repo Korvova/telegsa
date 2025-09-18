@@ -265,6 +265,7 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
       ref={rootRef}
       style={{
         position: 'relative',
+        overflow: 'visible', // не клипать круги-хендлы поверх границы
         minWidth: 160,
         maxWidth: 260,
         padding: 10,

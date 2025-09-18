@@ -49,3 +49,12 @@
   }
 }
 
+/* Важно: узлы НЕ должны клипать хендлы (круги) по радиусу карточки */
+.rf-scope .react-flow__node {
+  overflow: visible !important;
+}
+
+/* Поднимем хендлы над карточкой, чтобы они были видны полностью */
+.rf-scope .react-flow__handle {
+  z-index: 5 !important;
+}
