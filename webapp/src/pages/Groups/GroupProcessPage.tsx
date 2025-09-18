@@ -395,9 +395,27 @@ function EditableNode({ id, data, selected }: NodeProps<EditableData>) {
         </div>
       )}
 
-      {/* Handles */}
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      {/* Handles — помещаем в отдельный абсолютный слой поверх, чтобы их не обрезало */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'visible',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}
+      >
+        <Handle
+          type="target"
+          position={Position.Left}
+          style={{ zIndex: 20, pointerEvents: 'auto' }}
+        />
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={{ zIndex: 20, pointerEvents: 'auto' }}
+        />
+      </div>
 
       {/* связи (вход/выход) */}
       <RelationsBadge prevTitles={data.prevTitles} nextTitles={data.nextTitles} />
