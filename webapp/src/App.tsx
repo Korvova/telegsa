@@ -472,18 +472,22 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
     }).catch(() => {});
   }, []);
 
-  // убираем белые поля по X
+  // Убираем белые поля по X и делаем края прозрачными (без чёрных боков)
   useEffect(() => {
     const html = document.documentElement;
     const prevHtml = html.style.overflowX;
     const prevBody = document.body.style.overflowX;
+    const prevHtmlBg = html.style.background;
+    const prevBodyBg = document.body.style.background;
     html.style.overflowX = 'hidden';
     document.body.style.overflowX = 'hidden';
-    html.style.background = '#0f1216';
-    document.body.style.background = '#0f1216';
+    html.style.background = 'transparent';
+    document.body.style.background = 'transparent';
     return () => {
       html.style.overflowX = prevHtml;
       document.body.style.overflowX = prevBody;
+      html.style.background = prevHtmlBg;
+      document.body.style.background = prevBodyBg;
     };
   }, []);
 
