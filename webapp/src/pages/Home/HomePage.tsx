@@ -990,7 +990,7 @@ export default function HomePage({
     return () => el.removeEventListener('scroll', onScroll as any);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sliderRef.current]);
-  const COLUMN_GAP = 30; // px — визуальный зазор между колонками
+  const COLUMN_GAP = 0; // px — убираем зазор между страницами, чтобы ширина просмотра = ширине экрана
   return (
     <div style={{ padding: 12, paddingBottom: 96 }}>
       {/* Сториз: морфинг — точка→круг при прокрутке; дальше полный бар */}
@@ -1127,6 +1127,7 @@ export default function HomePage({
           WebkitOverflowScrolling: 'touch',
           gap: COLUMN_GAP,
           scrollBehavior: 'smooth',
+          background: '#0f1216', // избегаем белых просветов между страницами
         }}
       >
         {PAGES.map((pg) => {
@@ -1139,7 +1140,16 @@ export default function HomePage({
           return (
             <section
               key={pg.key}
-              style={{ minWidth: '100%', scrollSnapAlign: 'start', scrollSnapStop: 'always', paddingTop: 2 }}
+              style={{
+                minWidth: '100%',
+                scrollSnapAlign: 'start',
+                scrollSnapStop: 'always',
+                paddingTop: 2,
+                overflow: 'visible',
+                // минимальный карман под 1/2 круга (9–10 px), визуально незаметен
+                paddingRight: 12,
+                marginRight: -12,
+              }}
             >
               {/* шапка страницы с фильтром-ярлыком */}
               <div
@@ -1411,7 +1421,15 @@ export default function HomePage({
                     return (
                       <>
                       {injected}
-                      <div key={`${pg.key}-${t.id}`} style={{ position: 'relative', zIndex: opened ? 1200 : 'auto', overflow: 'visible', isolation: 'isolate' }}>
+                      <div
+                        key={`${pg.key}-${t.id}`}
+                        style={{
+                          position: 'relative',
+                          zIndex: opened ? 1200 : 'auto',
+                          overflow: 'visible',
+                          isolation: 'isolate',
+                        }}
+                      >
                         {/* Подложка для свайпа в "Все" */}
                         {pg.key === 'all' && swipeUi.id === (t as any).id ? (
                           <div
@@ -1493,18 +1511,22 @@ export default function HomePage({
                           for (const x of viaFired) uniq.add(String((x as any).id));
                           const preCountForTask = uniq.size;
                           return (
-                            <EdgePreTaskBadge
-                              kind="task"
-                              count={preCountForTask}
-                              onClick={() => {
-                                if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
-                                else {
-                                  try {
-                                    window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
-                                  } catch {}
-                                }
-                              }}
-                            />
+                            <div style={{ position:'absolute', right: 16, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 80 }}>
+                              <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                                <EdgePreTaskBadge
+                                  kind="task"
+                                  count={preCountForTask}
+                                  onClick={() => {
+                                    if (preCountForTask > 0) setManageForTask({ id: (t as any).id });
+                                    else {
+                                      try {
+                                        window.dispatchEvent(new CustomEvent('edge-pre-open', { detail: { taskId: (t as any).id, text: (t as any).text, groupId } }));
+                                      } catch {}
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
                           );
                         })() : null}
 
@@ -1521,7 +1543,9 @@ export default function HomePage({
                             padding: 12,
                             cursor: 'pointer',
                             boxShadow: activeRing,
-                            width: '100%',
+                            width: 'calc(100% - 32px)',
+                            marginLeft: 16,
+                            marginRight: 16,
                             userSelect: 'none' as const,
                             WebkitUserSelect: 'none' as const,
                             msUserSelect: 'none' as const,
@@ -1529,6 +1553,8 @@ export default function HomePage({
                             touchAction: 'manipulation',
                             transition: 'box-shadow 140ms ease, border-color 140ms ease, margin-top 140ms ease, transform 160ms ease',
                             position: 'relative',
+                            outline: 'none',
+                            WebkitTapHighlightColor: 'transparent',
                             transform: (pg.key === 'all' && swipeUi.id === (t as any).id) ? `translateX(${Math.min(swipeUi.dx, 180)}px)` : 'translateX(0px)',
                           }}
                           onClick={() => {

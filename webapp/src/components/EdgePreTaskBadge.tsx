@@ -4,6 +4,7 @@ type Props = {
   title?: string;
   onClick?: () => void;
   style?: React.CSSProperties;
+  compact?: boolean; // true = не выходить за пределы контейнера (вся геометрия внутри)
 };
 
 export default function EdgePreTaskBadge({ kind, count, title, onClick, style }: Props) {
@@ -14,11 +15,10 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
   // Colors tuned for light feed cards. Works on dark too.
   const grayFill = '#d1d5db';      // gray-300
   const grayBorder = '#9ca3af';    // gray-400
-  const blueFill = '#3b82f6';      // blue-500
-  const blueBorder = '#1d4ed8';    // blue-700
+  const blueFill = '#3b82f6';      // blue-500 (arrow color)
+  const blueBorder = '#1d4ed8';    // blue-700 (border for active)
 
   const size = 18; // circle diameter
-  const arrowW = 10; // width of the arrow wedge
 
   return (
     <div
@@ -34,10 +34,10 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
         top: '50%',
         right: 0,
         transform: 'translateY(-50%)',
-        width: size + arrowW,
+        width: size, // белый круг без внешнего выноса
         height: size,
         cursor: onClick ? 'pointer' : 'default',
-        zIndex: 60,
+        zIndex: 3002,
         ...style,
       }}
     >
@@ -47,32 +47,35 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
           position: 'absolute',
           right: 0,
           top: '50%',
-          transform: 'translate(50%, -50%)', // center sits exactly on card edge
+          transform: 'translate(50%, -50%)', // центр круга лежит на правой кромке контейнера
           width: size,
           height: size,
           borderRadius: 999,
-          background: hasPre ? blueFill : grayFill,
+          background: hasPre ? '#ffffff' : grayFill,
           border: `1px solid ${hasPre ? blueBorder : grayBorder}`,
           boxShadow: '0 0 0 2px rgba(0,0,0,0.04)'
         }}
       />
 
-      {/* Arrow wedge (only when there are pre-tasks) */}
+      {/* Arrow emoji inside white circle */}
       {hasPre && (
-        <div
+        <span
+          aria-hidden
           style={{
             position: 'absolute',
-            right: -arrowW,
+            right: 0,
             top: '50%',
-            transform: 'translateY(-50%)',
-            width: 0,
-            height: 0,
-            borderTop: '7px solid transparent',
-            borderBottom: '7px solid transparent',
-            borderLeft: `10px solid ${blueFill}`,
-            filter: 'drop-shadow(0 0 0 rgba(0,0,0,0.06))',
+            transform: 'translate(50%, -50%) translateX(-1px)',
+            color: blueFill,
+            fontSize: 12,
+            fontWeight: 700,
+            lineHeight: 1,
+            pointerEvents: 'none',
+            userSelect: 'none',
           }}
-        />
+        >
+          ➜
+        </span>
       )}
     </div>
   );
