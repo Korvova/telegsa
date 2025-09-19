@@ -451,17 +451,19 @@ export default function CreateTaskModal({
               <button onClick={() => setDeleteOpen(true)} title="Удалить задачу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#3b1a1a', color: '#ffd7d7', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>🗑️</button>
             )}
           </div>
-          {/* Правая часть: группа и ярлык */}
+          {/* Правая часть: сначала ярлык, затем группа (группа ближе к правому краю) */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button onClick={() => setPickerOpen(true)} title="Выбрать группу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: ((groupId && (groups.find(g=>g.id===groupId) as any)?.isPublic) ? '#86efac' : '#e8eaed'), fontSize: 12, cursor: 'pointer' }}>
-              <b>{groupLabel()}</b>
-            </button>
             {groupId ? (
               <select value={selectedLabelId ?? ''} onChange={(e) => { setSelectedLabelId(e.target.value || null); focusText(); }} title="Выбрать ярлык" style={{ background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 999, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
                 <option value="">{labelsLoading ? '🏷️ Загрузка…' : '🏷️ Без ярлыка'}</option>
                 {groupLabels.map((l) => (<option key={l.id} value={l.id}>🏷️ {l.title}</option>))}
               </select>
-            ) : (<div style={{ fontSize: 12, opacity: 0.85 }}>Моя группа</div>)}
+            ) : (
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Моя группа</div>
+            )}
+            <button onClick={() => setPickerOpen(true)} title="Выбрать группу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: ((groupId && (groups.find(g=>g.id===groupId) as any)?.isPublic) ? '#86efac' : '#e8eaed'), fontSize: 12, cursor: 'pointer' }}>
+              <b>{groupLabel()}</b>
+            </button>
           </div>
         </div>
 
