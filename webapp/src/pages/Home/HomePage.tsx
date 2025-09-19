@@ -1357,7 +1357,13 @@ export default function HomePage({
                                         role="button"
                                         onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !prev[key] })); try { logChildrenForPre(sid); } catch {}; if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); } }}
                                         style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
-                                      >
+                                >
+                                  <span
+                                    style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
+                                  >
+                                    ➜
+                                  </span>
+                                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}>➜</span>
                                         Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
                                       </div>
                                     </div>
@@ -1376,6 +1382,7 @@ export default function HomePage({
                                       const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
                                       const foot2 = cnt2 ? (
                                         <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>
+                                          <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}>➜</span>
                                           Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
                                         </div>
                                       ) : null;
@@ -1447,9 +1454,18 @@ export default function HomePage({
                     const currentPhase = ph;
                     const groupId = (t as any)?.groupId ?? null;
               const badgeBase = badgeForPhase(currentPhase);
-              const prog = Number((t as any).progress ?? 0);
-              const badge = (badgeBase && currentPhase === 'Doing' && prog > 0)
-                ? ({ ...badgeBase, text: `(${prog}% ) ${badgeBase.text}` })
+              const prog = Math.max(0, Math.min(100, Number((t as any).progress ?? 0)));
+              const progColors = (() => {
+                if (prog >= 67) return { bg: '#D1F2DC', fg: '#0f5132', brd: '#A3DFB9' }; // зелёный
+                if (prog >= 34) return { bg: '#D7E6FF', fg: '#123a7a', brd: '#BBD6FF' }; // синий
+                return { bg: '#E5E7EB', fg: '#111827', brd: '#D1D5DB' }; // серый
+              })();
+              const badge = (badgeBase && currentPhase === 'Doing')
+                ? ({
+                    ...badgeBase,
+                    text: prog > 0 ? `(${prog}% ) ${badgeBase.text}` : badgeBase.text,
+                    ...(prog > 0 ? progColors : {}),
+                  })
                 : badgeBase;
                     const needsPhoto = (t as any).acceptCondition === 'PHOTO';
                     const cCount = Number(((t as any).commentsCount ?? 0));
@@ -1723,6 +1739,20 @@ export default function HomePage({
                             )}
                           </div>
 
+                    {/* Прогресс-лента для "В работе" */}
+                    {currentPhase === 'Doing' && (
+                      <div style={{ height: 4, borderRadius: 999, background: '#1f2937', overflow: 'hidden', marginBottom: 6 }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${prog}%`,
+                            background: prog >= 67 ? '#10b981' : (prog >= 34 ? '#3b82f6' : '#6b7280'),
+                            transition: 'width 160ms ease',
+                          }}
+                        />
+                      </div>
+                    )}
+
                     {dateLine && (
                       <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
                     )}
@@ -1812,19 +1842,19 @@ export default function HomePage({
                             );
                           })()}
 
-                          <div style={{ fontSize: 12, opacity: 0.8, display: 'flex', gap: 10 }}>
-                            {(t as any).assigneeName ? (
+                          <div style={{ fontSize: 12, opacity: 0.85, display: 'grid', gap: 2 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span>
                                 👤{' '}
-                                {String((t as any).assigneeChatId || '') === String(meChatId) && myRankIcon
-                                  ? `${myRankIcon} ${(t as any).assigneeName}`
-                                  : String((t as any).assigneeName)}
+                                {String((t as any).creatorChatId || '') === String(meChatId) && myRankIcon
+                                  ? `${myRankIcon} ${(t as any).creatorName || (t as any).assigneeName || ''}`
+                                  : String((t as any).creatorName || (t as any).assigneeName || '')}
                               </span>
-                            ) : null}
-                            {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
-                            <span style={{ marginLeft: 'auto' }}>
-                              {new Date((t as any).updatedAt).toLocaleString()}
-                            </span>
+                              {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
+                            </div>
+                            <div style={{ opacity: 0.75 }}>
+                              {(() => { try { const d=new Date((t as any).createdAt); const nn=(n:number)=>String(n).padStart(2,'0'); return `${nn(d.getDate())}.${nn(d.getMonth()+1)}.${d.getFullYear()}, ${nn(d.getHours())}:${nn(d.getMinutes())}:${nn(d.getSeconds())}`;} catch { return new Date((t as any).createdAt).toLocaleString(); } })()}
+                            </div>
                           </div>
 
                           {/* Полоска «комментарии (N) →» будет приклеена снизу (absolute) */}
@@ -1876,6 +1906,16 @@ export default function HomePage({
                                   }}
                                   title={isOpen ? 'Свернуть список предзадач' : 'Показать предзадачи'}
                                 >
+                                  <span
+                                    style={{
+                                      display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                      width:18, height:18, borderRadius:999,
+                                      border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6',
+                                      fontSize:12, marginRight:6
+                                    }}
+                                  >
+                                    ➜
+                                  </span>
                                   Запустят после ({count}) {isOpen ? '⬆' : '⬇'}
                                 </div>
                               </div>
@@ -1924,12 +1964,12 @@ export default function HomePage({
                         const linked = Array.from(map.values());
                         if (!linked.length) return null;
                         return (
-                          <div style={{ marginTop: 6, display: 'grid', gap: 8 }}>
+                          <div style={{ marginTop: 6, display: 'grid', gap: 8, width:'calc(100% - 32px)', marginLeft:16, marginRight:16 }}>
                             {linked.map((p, idx) => (
                               <div key={(p as any).id} style={{ position:'relative' }}>
                                 {pg.key==='all' && preSwipeUi.id === String((p as any).id) ? (
                                   <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'flex-start', paddingLeft:20, pointerEvents:'none', zIndex:0 }}>
-                                    <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #c7f3d1', background:'#e7fbe9', color:'#0f5132', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
+                                    <span style={{ display:'inline-block', padding:'4px 10px', borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, opacity: Math.min(1, preSwipeUi.dx / SWIPE_REVEAL), boxShadow:'0 2px 6px rgba(0,0,0,.06)' }}>Запустить после</span>
                                   </div>
                                 ) : null}
                                 <div
@@ -2003,7 +2043,18 @@ export default function HomePage({
                                               const grand = Array.from(mapg.values());
                                               const cnt2 = grand.length;
                                               const foot2 = cnt2 ? (
-                                                <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}</div>
+                                                <div
+                                                  role="button"
+                                                  onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }}
+                                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                                >
+                                                  <span
+                                                    style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
+                                                  >
+                                                    ➜
+                                                  </span>
+                                                  Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
+                                                </div>
                                               ) : null;
                                               return (
                                                 <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
@@ -2156,8 +2207,13 @@ export default function HomePage({
                                   role="button"
                                   onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }}
                                   style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
-                                >
-                                  Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
+                                        >
+                                          <span
+                                            style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
+                                          >
+                                            ➜
+                                          </span>
+                                          Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
                                 </div>
                               ) : null;
                               return (

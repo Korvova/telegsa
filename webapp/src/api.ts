@@ -702,6 +702,7 @@ export type TaskFeedItem = {
   text: string;
   updatedAt: string;
   createdAt: string;
+  progress?: number;
   deadlineAt?: string | null;
   nextReminderAt?: string | null;
   commentsCount?: number;

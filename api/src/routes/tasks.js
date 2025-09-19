@@ -573,6 +573,7 @@ const items = tasks.map(t => {
     text: t.text,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
+    progress: typeof t.progress === 'number' ? t.progress : 0,
     deadlineAt: t.deadlineAt,
     nextReminderAt: nextByTask.get(t.id) || null,
     commentsCount: commentsCountByTask.get(t.id) || 0,
