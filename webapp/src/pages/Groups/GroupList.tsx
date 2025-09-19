@@ -13,7 +13,8 @@ export default function GroupList({
   onReload: () => void;
   onOpen: (id: string, mineOnly?: boolean) => void; // ⬅️ второй флаг
 }) {
-  const [tab, setTab] = React.useState<'public' | 'mine' | 'member'>('public');
+  // По умолчанию показываем «Мои проекты»
+  const [tab, setTab] = React.useState<'public' | 'mine' | 'member'>('mine');
   const [publicGroups, setPublicGroups] = React.useState<Array<{ id: string; title: string; ownerName?: string | null }>>([]);
   const [watching, setWatching] = React.useState<Record<string, boolean>>({});
 
