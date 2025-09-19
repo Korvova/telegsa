@@ -675,6 +675,21 @@ router.get('/:id/graph', async (req, res) => {
         }
         if (key) positions[String(key)] = { x: n.posX || 0, y: n.posY || 0 };
       }
+      // Дополнительно: если предзадача уже FIRED → пробросим координаты в ключ задачи,
+      // чтобы фронт всегда мог взять pos[`task:<id>`] даже если узел предзадачи был удалён из процесса.
+      try {
+        for (const p of pretasks) {
+          const pid = String(p.id);
+          const tgt = p?.targetTaskId ? String(p.targetTaskId) : null;
+          const fired = String(p.status || '') === 'FIRED' && !!tgt;
+          if (!fired) continue;
+          const preKey = `pretask:${pid}`;
+          const taskKey = `task:${tgt}`;
+          if (positions[preKey] && !positions[taskKey]) {
+            positions[taskKey] = positions[preKey];
+          }
+        }
+      } catch {}
     }
 
     res.json({ ok: true, root: `task:${id}`, tasks, pretasks, edges, positions });
