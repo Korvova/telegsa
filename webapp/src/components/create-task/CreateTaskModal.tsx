@@ -675,6 +675,8 @@ export default function CreateTaskModal({
           memberGroups={memberGroups as any}
           groupId={groupId}
           setGroupId={(id)=>setGroupId(id)}
+          selectedLabelId={selectedLabelId}
+          setSelectedLabelId={(id)=>setSelectedLabelId(id)}
           onClose={() => setPickerOpen(false)}
           onApply={() => { setPickerOpen(false); setToolsOpen(true); focusText(); }}
         />
