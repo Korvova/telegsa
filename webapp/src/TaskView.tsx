@@ -1368,6 +1368,32 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           finally { setRemindersOpen(false); }
         }}
       />
+
+      {/* Плавающая круглая кнопка "назад" как в оверлеях комментариев */}
+      <button
+        onClick={() => onClose(origin === 'feed' ? undefined : groupIdRef.current)}
+        aria-label="Назад"
+        title="Назад"
+        style={{
+          position: 'fixed',
+          right: 16,
+          bottom: `calc(92px + env(safe-area-inset-bottom, 0px))`,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          background: '#2563eb',
+          color: '#fff',
+          border: 'none',
+          boxShadow: '0 10px 24px rgba(0,0,0,.35)',
+          fontSize: 24,
+          lineHeight: '56px',
+          textAlign: 'center',
+          cursor: 'pointer',
+          zIndex: 2100,
+        }}
+      >
+        ←
+      </button>
       {(isClosing || thumbStage !== 0) &&
         createPortal(
           <div
