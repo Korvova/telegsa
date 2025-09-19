@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { HexColorPicker } from 'react-colorful';
 
 const API = (import.meta as any).env.VITE_API_BASE || '';
 
 // ---- color utils ----
-function clamp(n: number, min = 0, max = 1) { return Math.min(max, Math.max(min, n)); }
 function hsvToRgb(h: number, s: number, v: number) {
   const c = v * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
@@ -42,13 +42,14 @@ function rgbToHsv(r: number, g: number, b: number) {
 export default function SettingsTheme({ chatId }: { chatId: string }) {
   const [value, setValue] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+  const prevRef = useRef<string>('');
   // picker state
   const [h, setH] = useState(210); // default blue-ish
   const [s, setS] = useState(0.5);
   const [v, setV] = useState(0.25);
 
-  const svRef = useRef<HTMLDivElement | null>(null);
-  const hueRef = useRef<HTMLDivElement | null>(null);
+  // refs no longer used with react-colorful
 
   // init from API
   useEffect(() => {
@@ -100,65 +101,20 @@ export default function SettingsTheme({ chatId }: { chatId: string }) {
   };
 
   // pointer handlers
-  const onSVPointer = (e: React.PointerEvent) => {
-    const el = svRef.current; if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = clamp((e.clientX - rect.left) / rect.width);
-    const y = clamp((e.clientY - rect.top) / rect.height);
-    setS(x); setV(1 - y);
-  };
-  const onHuePointer = (e: React.PointerEvent) => {
-    const el = hueRef.current; if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = clamp((e.clientX - rect.left) / rect.width);
-    setH(Math.round(x * 360));
-  };
+  // legacy pointer handlers removed (using react-colorful picker)
 
-  const handleDownFactory = (move: (e: React.PointerEvent) => void) => (e: React.PointerEvent) => {
-    const target = e.currentTarget as HTMLElement;
-    (target as any).setPointerCapture?.(e.pointerId);
-    move(e);
-    const onMove = (ev: any) => move(ev);
-    const onUp = () => {
-      try { (target as any).releasePointerCapture?.(e.pointerId); } catch {}
-      window.removeEventListener('pointermove', onMove as any);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove as any);
-    window.addEventListener('pointerup', onUp);
-  };
-
-  // computed styles
-  const svBg = {
-    background: `linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, rgba(255,255,255,0)), hsl(${h}, 100%, 50%)`
-  } as React.CSSProperties;
-  const svKnob = { left: `${s*100}%`, top: `${(1-v)*100}%` } as React.CSSProperties;
-  const hueBg = {
-    background: 'linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)'
-  } as React.CSSProperties;
-  const hueKnob = { left: `${(h/360)*100}%` } as React.CSSProperties;
+  // computed styles (for swatch only)
 
   return (
     <div style={{ background:'#121722', border:'1px solid #2a3346', borderRadius:12, padding:12 }}>
       <div style={{ fontWeight:600, marginBottom:6 }}>Фон приложения</div>
       <div style={{ fontSize:12, opacity:.8, marginBottom:8 }}>Выберите цвет фона: пресеты ниже или пальцем по палитре.</div>
 
-      {/* Picker */}
-      <div style={{ display:'grid', gap:8, marginBottom:10 }}>
-        <div
-          ref={svRef}
-          onPointerDown={handleDownFactory(onSVPointer)}
-          style={{ position:'relative', width:'100%', height:160, borderRadius:12, border:'1px solid #2a3346', ...svBg }}
-        >
-          <div style={{ position:'absolute', width:14, height:14, borderRadius:999, border:'2px solid #fff', boxShadow:'0 0 0 1px #0006', transform:'translate(-50%, -50%)', ...svKnob }} />
-        </div>
-        <div
-          ref={hueRef}
-          onPointerDown={handleDownFactory(onHuePointer)}
-          style={{ position:'relative', height:16, borderRadius:999, border:'1px solid #2a3346', ...hueBg }}
-        >
-          <div style={{ position:'absolute', top:'50%', transform:'translate(-50%, -50%)', width:12, height:20, borderRadius:4, border:'2px solid #fff', boxShadow:'0 0 0 1px #0006', background:'transparent', ...hueKnob }} />
-        </div>
+      {/* Row with label and swatch */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+        <div style={{ flex:1, fontWeight:600 }}>Цвет фона</div>
+        <button onClick={()=>{ prevRef.current = value; setOpen(true); }} title="Выбрать цвет"
+          style={{ width:32, height:32, borderRadius:8, border:'1px solid #2a3346', background:value, cursor:'pointer' }} />
       </div>
 
       {/* Presets */}
@@ -188,6 +144,28 @@ export default function SettingsTheme({ chatId }: { chatId: string }) {
           Сохранить
         </button>
       </div>
+
+      {/* Modal picker */}
+      {open && (
+        <div onClick={()=>{ setOpen(false); setValue(prevRef.current); }}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div onClick={(e)=>e.stopPropagation()} style={{ width:'min(520px, 92vw)', background:'#1b2030', border:'1px solid #2a3346', borderRadius:16, padding:16, color:'#e8eaed' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+              <div style={{ fontWeight:700, fontSize:16 }}>Выбор цвета</div>
+              <button onClick={()=>{ setOpen(false); setValue(prevRef.current); }} style={{ background:'transparent', border:'none', color:'#9ca3af', fontSize:18, cursor:'pointer' }} aria-label="Закрыть">✕</button>
+            </div>
+            <div style={{ display:'grid', gap:12 }}>
+              <HexColorPicker color={value || '#0b1220'} onChange={(c)=>setValue(/^#/.test(c)?c:('#'+c))} />
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <div style={{ width:28, height:28, borderRadius:8, border:'1px solid #2a3346', background:value }} />
+                <input value={value} onChange={(e)=>setValue(e.target.value)} style={{ flex:1, padding:'8px 10px', borderRadius:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346' }} />
+                <button onClick={async()=>{ await save(value); setOpen(false); prevRef.current = value; }} disabled={!/^#([0-9a-fA-F]{6})$/.test(value) || saving}
+                  style={{ padding:'8px 12px', borderRadius:8, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: saving?0.6:1 }}>Готово</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
