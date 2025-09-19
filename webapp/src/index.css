@@ -30,6 +30,7 @@ body {
   width: 100%;
   overflow-x: hidden;
   overscroll-behavior-x: contain;
+  background: var(--app-bg, #0b1220);
 }
 
 

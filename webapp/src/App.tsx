@@ -1087,7 +1087,7 @@ setPersistSeedSession(false);
         <div
           style={{
             minHeight: '100vh',
-            background: '#0f1216',
+            background: 'var(--app-bg, #0f1216)',
             color: '#e8eaed',
             paddingTop: 16,
             paddingLeft: 0,
