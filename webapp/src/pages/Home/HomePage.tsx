@@ -1881,13 +1881,19 @@ export default function HomePage({
 
                         {/* ВНЕ карточки: полоска комментариев плотно под карточкой */}
                         {hasComments ? (
-                          <div style={{ marginTop: 0 }}>
-                              <CommentsStrip
-                                count={cCount}
-                                // ширина ровно как у карточки
-                                style={{ width: '100%' }}
-                                onClick={() => setOpenComments({ id: t.id, text: (t as any).text || '', anchorId })}
-                              />
+                          <div
+                            style={{
+                              marginTop: 0,
+                              width: 'calc(100% - 32px)',
+                              marginLeft: 16,
+                              marginRight: 16,
+                            }}
+                          >
+                            <CommentsStrip
+                              count={cCount}
+                              style={{ width: '100%' }}
+                              onClick={() => setOpenComments({ id: t.id, text: (t as any).text || '', anchorId })}
+                            />
                           </div>
                         ) : null}
                       </div>
