@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Group } from '../../api';
-import { createGroup, listPublicGroups, getWatchStatus, watchGroup, unwatchGroup } from '../../api';
+import { listPublicGroups, getWatchStatus, watchGroup, unwatchGroup } from '../../api';
+import CreateGroupModal from '../../components/CreateGroupModal';
 
 export default function GroupList({
   chatId,
@@ -42,17 +43,8 @@ export default function GroupList({
   const mine = [...mineAll].sort((a, b) => (a.title === 'Моя группа' ? -1 : b.title === 'Моя группа' ? 1 : a.title.localeCompare(b.title)));
   const member = [...memberAll].sort((a, b) => a.title.localeCompare(b.title));
 
-  const onCreateGroup = async () => {
-    const title = prompt('Название проекта?')?.trim();
-    if (!title) return;
-    try {
-      const r = await createGroup(chatId, title);
-      if (!r.ok) throw new Error('create_failed');
-      await onReload();
-    } catch {
-      alert('Не удалось создать проект');
-    }
-  };
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const onCreateGroup = () => setCreateOpen(true);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -126,6 +118,31 @@ export default function GroupList({
           )}
         </Section>
       )}
+      {/* Floating square create-project button above task FAB */}
+      <button
+        onClick={() => setCreateOpen(true)}
+        title="Создать проект"
+        style={{
+          position:'fixed', right:16, bottom:96,
+          width:56, height:56,
+          borderRadius:12,
+          background:'#facc15',
+          color:'#111827',
+          border:'1px solid #856a0e',
+          fontWeight:900,
+          fontSize:22,
+          boxShadow:'0 6px 16px rgba(0,0,0,.35)',
+          cursor:'pointer', zIndex:60,
+        }}
+      >+
+      </button>
+
+      <CreateGroupModal
+        open={createOpen}
+        chatId={chatId}
+        onClose={()=>setCreateOpen(false)}
+        onCreated={async ()=>{ await onReload(); }}
+      />
     </div>
   );
 }
