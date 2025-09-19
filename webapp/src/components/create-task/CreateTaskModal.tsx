@@ -444,6 +444,14 @@ export default function CreateTaskModal({
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 640, background: '#111827', color: '#e5e7eb', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, borderTop: '1px solid #1f2937' }}>
         {/* header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          {/* Левая часть: теперь кнопка закрытия (и удалить при редактировании) */}
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#9ca3af', fontSize: 18, cursor: 'pointer' }} aria-label="Закрыть">✕</button>
+            {isEdit && (
+              <button onClick={() => setDeleteOpen(true)} title="Удалить задачу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#3b1a1a', color: '#ffd7d7', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>🗑️</button>
+            )}
+          </div>
+          {/* Правая часть: группа и ярлык */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button onClick={() => setPickerOpen(true)} title="Выбрать группу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: ((groupId && (groups.find(g=>g.id===groupId) as any)?.isPublic) ? '#86efac' : '#e8eaed'), fontSize: 12, cursor: 'pointer' }}>
               <b>{groupLabel()}</b>
@@ -454,12 +462,6 @@ export default function CreateTaskModal({
                 {groupLabels.map((l) => (<option key={l.id} value={l.id}>🏷️ {l.title}</option>))}
               </select>
             ) : (<div style={{ fontSize: 12, opacity: 0.85 }}>Моя группа</div>)}
-          </div>
-          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            {isEdit && (
-              <button onClick={() => setDeleteOpen(true)} title="Удалить задачу" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#3b1a1a', color: '#ffd7d7', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>🗑️</button>
-            )}
-            <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#9ca3af', fontSize: 18, cursor: 'pointer' }} aria-label="Закрыть">✕</button>
           </div>
         </div>
 
