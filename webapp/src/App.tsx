@@ -761,6 +761,9 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
     WebApp?.BackButton?.show?.();
   };
 
+  // откуда открыт TaskView: 'feed' | 'group'
+  const [taskOrigin, setTaskOrigin] = useState<'feed' | 'group' | null>(null);
+
   // закрыть задачу (и восстановить контекст группы)
   const closeTask = (groupIdFromTask?: string | null) => {
     if (typeof groupIdFromTask !== 'undefined') {
@@ -1082,7 +1085,14 @@ setPersistSeedSession(false);
       )}
 
       {taskId ? (
-        <TaskView taskId={taskId} onClose={closeTask} onChanged={reloadBoard} meChatId={chatId} myRankIcon={myRankIcon} />
+        <TaskView
+          taskId={taskId}
+          onClose={closeTask}
+          onChanged={reloadBoard}
+          meChatId={chatId}
+          myRankIcon={myRankIcon}
+          origin={(taskOrigin || 'group') as any}
+        />
       ) : (
         <div
           style={{
@@ -1166,7 +1176,7 @@ setPersistSeedSession(false);
           {tab === 'home' ? (
           <HomePage
             chatId={chatId}
-            onOpenTask={openTask}
+            onOpenTask={(id:string)=>{ setTaskOrigin('feed'); openTask(id); }}
             reloadKey={feedReloadKey}
           />
           ) : tab === 'groups' ? (
@@ -1217,7 +1227,7 @@ setPersistSeedSession(false);
                               <ColumnView
                                 key={col.id}
                                 column={col}
-                                onOpenTask={openTask}
+                                onOpenTask={(id:string)=>{ setTaskOrigin('group'); openTask(id); }}
                                 onRenamed={reloadBoard}
                                 activeId={activeId}
                                 dragging={dragging}
@@ -1285,7 +1295,7 @@ setPersistSeedSession(false);
             <CalendarView
               chatId={chatId}
               groupId={resolvedGroupId}
-              onOpenTask={openTask}
+              onOpenTask={(id:string)=>{ setTaskOrigin('group'); openTask(id); }}
             />
           ) : tab === 'settings' ? (
             <div

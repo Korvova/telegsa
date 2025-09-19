@@ -47,7 +47,7 @@ type Props = {
   myRankIcon?: string | null;
 };
 
-export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp, myRankIcon }: Props) {
+export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp, myRankIcon, origin = 'group' as any }: Props & { origin?: 'feed' | 'group' }) {
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<Task | null>(null);
   const [text, setText] = useState('');
@@ -462,7 +462,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const Header = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
       <button
-        onClick={() => onClose(groupIdRef.current)}
+        onClick={() => onClose(origin === 'feed' ? undefined : groupIdRef.current)}
         style={{ background: 'transparent', color: '#8aa0ff', border: 'none', cursor: 'pointer', fontSize: 13 }}
       >
         ← Назад
