@@ -1353,11 +1353,26 @@ setPersistSeedSession(false);
             current={tab}
             onChange={(t) => {
               console.log('[NAV] bottom change', t);
+              // По клику на «группа» всегда открываем страницу групп
+              if (t === 'groups') {
+                // если открыта задача — закрываем её и чистим URL (?task=)
+                if (taskId) {
+                  closeTask();
+                }
+                setTab('groups');
+                setGroupsPage('list');
+                try {
+                  (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
+                } catch {}
+                return;
+              }
+
               setTab(t);
               try {
                 (window as any).Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
               } catch {}
-              if (t !== 'groups') setGroupsPage('list');
+              // при переходе в любой другой таб выходим на список групп
+              setGroupsPage('list');
             }}
           />
 

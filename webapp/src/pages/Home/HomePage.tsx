@@ -328,8 +328,23 @@ export default function HomePage({
     return () => { alive = false; };
   }, [achFilter, meChatId, reloadKey]);
 
-  // выбор области
-  const [scope, setScope] = useState<FeedScope>({ kind: 'all' });
+  // выбор области — сохраняем между открытиями задач (персистим в localStorage)
+  const [scope, setScope] = useState<FeedScope>(() => {
+    try {
+      const raw = localStorage.getItem(`feedScope:${String(chatId)}`);
+      if (raw) {
+        const v = JSON.parse(raw);
+        if (v && v.kind === 'group' && v.groupId) {
+          return { kind: 'group', groupId: String(v.groupId) } as FeedScope;
+        }
+      }
+    } catch {}
+    return { kind: 'all' } as FeedScope;
+  });
+  // persist scope on change
+  useEffect(() => {
+    try { localStorage.setItem(`feedScope:${String(chatId)}`, JSON.stringify(scope)); } catch {}
+  }, [scope, chatId]);
   const [currentGroupTitle, setCurrentGroupTitle] = useState<string | null>(null);
 
   // модалки
