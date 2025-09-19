@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HexColorPicker } from 'react-colorful';
 
 const API = (import.meta as any).env.VITE_API_BASE || '';
@@ -80,14 +80,7 @@ export default function SettingsTheme({ chatId }: { chatId: string }) {
     setValue(hex);
   }, [h, s, v]);
 
-  const presets = useMemo(() => [
-    '#0b1220','#101827','#121722','#1b2030','#202840','#0f172a','#111827','#1f2937',
-    '#222222','#000000','#1a1a1a','#131313',
-    '#0b1020','#08121f','#0c1a24',
-    '#0a1f1a','#0f1d12','#0d1a0f',
-    '#1a140d','#1a0f0d','#1a0d14',
-    '#16213e','#0f3460','#1b1a55','#2d3250'
-  ], []);
+  // presets removed for simplified UX
 
   const save = async (v: string) => {
     try { setSaving(true);
@@ -107,42 +100,12 @@ export default function SettingsTheme({ chatId }: { chatId: string }) {
 
   return (
     <div style={{ background:'#121722', border:'1px solid #2a3346', borderRadius:12, padding:12 }}>
-      <div style={{ fontWeight:600, marginBottom:6 }}>Фон приложения</div>
-      <div style={{ fontSize:12, opacity:.8, marginBottom:8 }}>Выберите цвет фона: пресеты ниже или пальцем по палитре.</div>
-
-      {/* Row with label and swatch */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+      {/* Row with label and swatch only */}
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
         <div style={{ flex:1, fontWeight:600 }}>Цвет фона</div>
         <button onClick={()=>{ prevRef.current = value; setOpen(true); }} title="Выбрать цвет"
+          aria-label="Выбрать цвет фона"
           style={{ width:32, height:32, borderRadius:8, border:'1px solid #2a3346', background:value, cursor:'pointer' }} />
-      </div>
-
-      {/* Presets */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(8, 1fr)', gap:8 }}>
-        {presets.map(c => (
-          <button key={c} onClick={() => { setValue(c); const rgb = hexToRgb(c); if (rgb) { const t = rgbToHsv(rgb.r,rgb.g,rgb.b); setH(Math.round(t.h)); setS(t.s); setV(t.v);} }} title={c}
-            style={{ height:28, borderRadius:8, border: value===c ? '2px solid #8aa0ff' : '1px solid #2a3346', background:c, color:'#e8eaed', cursor:'pointer' }}>
-            {value===c ? '✓' : ''}
-          </button>
-        ))}
-      </div>
-
-      {/* Manual input + save */}
-      <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:10 }}>
-        <div title="текущий цвет" style={{ width:28, height:28, borderRadius:8, border:'1px solid #2a3346', background:value }} />
-        <input
-          type="text"
-          placeholder="#RRGGBB"
-          value={value}
-          onChange={(e)=>{
-            const v = e.target.value; setValue(v);
-            const rgb = hexToRgb(v); if (rgb) { const t = rgbToHsv(rgb.r,rgb.g,rgb.b); setH(Math.round(t.h)); setS(t.s); setV(t.v); }
-          }}
-          style={{ flex:1, padding:'8px 10px', borderRadius:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346' }}
-        />
-        <button onClick={()=>save(value)} disabled={!/^#([0-9a-fA-F]{6})$/.test(value) || saving} style={{ padding:'8px 12px', borderRadius:8, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', opacity: saving?0.6:1 }}>
-          Сохранить
-        </button>
       </div>
 
       {/* Modal picker */}
