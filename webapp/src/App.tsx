@@ -57,6 +57,7 @@ import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 import SettingsStars from './SettingsStars';
 import SettingsRank from './components/SettingsRank';
+import SettingsProfile from './components/SettingsProfile';
 import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
@@ -1296,6 +1297,9 @@ setPersistSeedSession(false);
                 gap: 8,
               }}
             >
+              {/* Профиль: ФИО и ID пользователя */}
+              <SettingsProfile chatId={chatId} />
+
               {/* пункт "Уведомления" */}
               <button
                 onClick={() => setTab('notifications')}
