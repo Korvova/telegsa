@@ -123,7 +123,7 @@ export default function GroupList({
         onClick={() => setCreateOpen(true)}
         title="Создать проект"
         style={{
-          position:'fixed', right:16, bottom:96,
+          position:'fixed', right:16, bottom:160,
           width:56, height:56,
           borderRadius:12,
           background:'#facc15',

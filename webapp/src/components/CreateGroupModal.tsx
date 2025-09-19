@@ -1,9 +1,42 @@
 import React from 'react';
 import { createGroup } from '../api';
 
-const EMOJIS = [
-  '📁','🗂️','🧩','🚀','⚙️','🛠️','🧠','📝','🎯','🏗️','🧪','📊','💡','📈','🧰','🕹️','🛡️','🧵','📦','🗃️',
-  '🌟','🔥','✨','⚡','🌈','🦾','🛰️','🔧','🔩','🧱'
+type TabKey = 'popular' | 'work' | 'faces' | 'objects' | 'nature' | 'food' | 'animals' | 'transport' | 'tech' | 'symbols';
+
+const TABS: { key: TabKey; label: string; items: string[] }[] = [
+  {
+    key: 'popular', label: 'Популярные', items: [
+      '📁','🗂️','🚀','🎯','⚙️','🛠️','📝','📊','💡','📈','🧠','🧪','🏷️','🧩','🔧','🛡️','🗃️','📦','🧰','🕹️','🧵',
+      '🌟','🔥','✨','⚡','🌈','🦾','🛰️','🔩','🧱','🏗️','🏁','🎖️','🏆','🔗','📎','🧷','📌','📍','✏️','🖊️','🖇️'
+    ]
+  },
+  { key: 'work', label: 'Работа', items: [
+      '📁','🗂️','📂','🗄️','🧾','📝','📋','📌','📍','📎','🖇️','✂️','✏️','🖊️','🖋️','🖌️','🗃️','📦','🧰','🔧','🔨','⚙️','🛠️','🧱','🏗️','🧪','📊','📈','📉','💼','🧳','🧷','📅','🗓️'
+    ] },
+  { key: 'faces', label: 'Лица', items: [
+      '😀','😁','😂','🤣','😅','😊','🙂','😉','😍','🤩','🫡','😎','🤓','😇','🤠','🥳','🤔','😐','😴','🤝','👍','👌','🤝','🙏','👏','💪'
+    ] },
+  { key: 'objects', label: 'Предметы', items: [
+      '🔑','🔒','🔓','🧭','🧲','🧪','💡','🔦','🕯️','📡','🧯','🧹','🧼','🪣','🧺','🧴','📱','💻','🖥️','🖨️','⌨️','🖱️','💽','💾','📀','🧮','📷','🎥','🎙️'
+    ] },
+  { key: 'nature', label: 'Природа', items: [
+      '🌍','🌎','🌏','🌋','⛰️','🏔️','🏝️','🏜️','🌅','🌄','🌠','☀️','🌤️','⛅','🌥️','🌧️','⛈️','🌨️','🌪️','🌈','🌙','⭐','🌟','🔥','💧','🌊','🪵','🍃'
+    ] },
+  { key: 'food', label: 'Еда', items: [
+      '🍏','🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥕','🌶️','🥦','🧄','🧅','🥔','🍞','🧀','🍖','🍗','🍕','🍔','🍟','🌭','🌮','🌯','🍜','🍣','🍰','🎂','🍪','🍫','🍬','🍭','🍿','🧋','☕'
+    ] },
+  { key: 'animals', label: 'Животные', items: [
+      '🐶','🐱','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🦄','🐔','🐧','🐦','🦅','🦆','🦉','🦇','🐺','🦝','🦊','🐢','🐍','🦎','🦖','🐙','🦑','🪼'
+    ] },
+  { key: 'transport', label: 'Транспорт', items: [
+      '🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚚','🚛','🚜','🚲','🛴','🛵','🏍️','✈️','🛫','🛬','🚀','🛸','⛵','🚢','🚁','🚡','🚠'
+    ] },
+  { key: 'tech', label: 'Техно', items: [
+      '💻','🖥️','🖱️','⌨️','🖨️','🧮','🧠','🧬','🛰️','📡','🧰','🧲','🧪','🔬','🔭','⚙️','🛠️','🔧','🔩','🔨','🪛','🪚','🪜','⚡','🔌','🔋'
+    ] },
+  { key: 'symbols', label: 'Символы', items: [
+      '✅','☑️','✔️','✖️','❌','⭕','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','🔸','🔹','🔶','🔷','⭐','🌟','🔔','📣','🏷️','🔖','🔗','♻️','⚠️','❗','❓'
+    ] },
 ];
 
 export default function CreateGroupModal({
@@ -19,13 +52,15 @@ export default function CreateGroupModal({
 }) {
   const [title, setTitle] = React.useState('');
   const [busy, setBusy] = React.useState(false);
-  const [icon, setIcon] = React.useState<string>(EMOJIS[0]);
+  const [tab, setTab] = React.useState<TabKey>('popular');
+  const [icon, setIcon] = React.useState<string>(TABS[0].items[0]);
 
   React.useEffect(() => {
     if (open) {
       setTitle('');
       setBusy(false);
-      setIcon(EMOJIS[0]);
+      setTab('popular');
+      setIcon(TABS[0].items[0]);
     }
   }, [open]);
 
@@ -76,23 +111,39 @@ export default function CreateGroupModal({
         </div>
 
         <div style={{ fontSize:13, opacity:.85, margin:'6px 0' }}>Иконка проекта</div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(8, 1fr)', gap:6, marginBottom:12 }}>
-          {EMOJIS.map((e) => (
+        <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:6 }}>
+          {TABS.map(t => (
             <button
-              key={e}
-              onClick={() => setIcon(e)}
-              title={e}
+              key={t.key}
+              onClick={() => setTab(t.key)}
               style={{
-                height:36,
-                borderRadius:8,
-                border: icon===e ? '2px solid #facc15' : '1px solid #2a3346',
-                background:'#121722',
-                color:'#e8eaed',
-                display:'flex', alignItems:'center', justifyContent:'center',
-                cursor:'pointer',
+                padding:'6px 10px', borderRadius:999,
+                border:'1px solid #2a3346',
+                background: tab===t.key ? '#202840' : '#121722',
+                color: tab===t.key ? '#8aa0ff' : '#e8eaed', cursor:'pointer'
               }}
-            >{e}</button>
+            >{t.label}</button>
           ))}
+        </div>
+        <div style={{ maxHeight:'40vh', overflow:'auto', border:'1px solid #2a3346', borderRadius:12, padding:8, marginBottom:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(10, 1fr)', gap:6 }}>
+            {TABS.find(x => x.key===tab)!.items.map((e) => (
+              <button
+                key={e}
+                onClick={() => setIcon(e)}
+                title={e}
+                style={{
+                  height:36,
+                  borderRadius:8,
+                  border: icon===e ? '2px solid #facc15' : '1px solid #2a3346',
+                  background:'#121722',
+                  color:'#e8eaed',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  cursor:'pointer',
+                }}
+              >{e}</button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
@@ -105,4 +156,3 @@ export default function CreateGroupModal({
     </div>
   );
 }
-
