@@ -1327,6 +1327,38 @@ app.post('/me', async (req, res) => {
   }
 });
 
+// --- User theme bg ---
+app.get('/me/theme', async (req, res) => {
+  try {
+    const chatId = String(req.query.chatId || '');
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const u = await prisma.user.findUnique({ where: { chatId }, select: { themeBg: true } });
+    return res.json({ ok: true, themeBg: u?.themeBg || null });
+  } catch (e) {
+    console.error('GET /me/theme error:', e);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/me/theme', async (req, res) => {
+  try {
+    const { chatId, value } = req.body || {};
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const v = typeof value === 'string' ? String(value).trim() : '';
+    // naive validation: #RRGGBB or empty -> null
+    const valid = /^#([0-9a-fA-F]{6})$/.test(v) ? v : null;
+    await prisma.user.upsert({
+      where: { chatId: String(chatId) },
+      create: { chatId: String(chatId), themeBg: valid },
+      update: { themeBg: valid },
+    });
+    res.json({ ok: true, themeBg: valid });
+  } catch (e) {
+    console.error('POST /me/theme error:', e);
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.patch('/tasks/:id', async (req, res) => {
   try {
     const id = String(req.params.id);

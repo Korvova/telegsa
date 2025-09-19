@@ -58,6 +58,7 @@ import GroupTabs from './components/GroupTabs';
 import SettingsStars from './SettingsStars';
 import SettingsRank from './components/SettingsRank';
 import SettingsProfile from './components/SettingsProfile';
+import SettingsTheme from './components/SettingsTheme';
 import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
@@ -1299,6 +1300,9 @@ setPersistSeedSession(false);
             >
               {/* Профиль: ФИО и ID пользователя */}
               <SettingsProfile chatId={chatId} />
+
+              {/* Тема/фон приложения */}
+              <SettingsTheme chatId={chatId} />
 
               {/* пункт "Уведомления" */}
               <button

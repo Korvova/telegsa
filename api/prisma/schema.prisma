@@ -207,6 +207,8 @@ model User {
   username  String?
   firstName String?
   lastName  String?
+  // UI preferences
+  themeBg   String? // hex color like #0b1220
   tonAddress    String?
   tonNetwork    String?
   tonWalletApp  String?
