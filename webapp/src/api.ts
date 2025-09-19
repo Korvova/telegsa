@@ -304,6 +304,10 @@ export type GroupMember = {
   name?: string | null;
   role?: 'owner' | 'member' | 'invited';
   assignedCount?: number;
+  // Фактическое членство (а не просто ассайн из задач)
+  isMember?: boolean;
+  // Есть ли описание для участника в рамках этой группы
+  hasDescription?: boolean;
 };
 
 export async function getGroupMembers(groupId: string): Promise<{
@@ -316,6 +320,25 @@ export async function getGroupMembers(groupId: string): Promise<{
   });
   if (!r.ok) return { ok: false, members: [] };
   return r.json();
+}
+
+// Получить/сохранить описание участника группы
+export async function getGroupMemberDescription(groupId: string, memberChatId: string): Promise<{ ok: boolean; description: string | null }>{
+  const r = await fetch(`${API_BASE}/groups/${groupId}/members/${memberChatId}/description`, {
+    credentials: 'include',
+  });
+  if (!r.ok) return { ok: false, description: null };
+  return r.json();
+}
+
+export async function setGroupMemberDescription(params: { groupId: string; memberChatId: string; byChatId: string; description: string }): Promise<{ ok: boolean; description?: string | null }>{
+  const { groupId, memberChatId, byChatId, description } = params;
+  const r = await fetch(`${API_BASE}/groups/${groupId}/members/${memberChatId}/description`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ byChatId, description }),
+  });
+  try { return await r.json(); } catch { return { ok: r.ok }; }
 }
 
 export async function createGroupInvite(params: { chatId: string; groupId: string }): Promise<{

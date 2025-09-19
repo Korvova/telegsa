@@ -2691,8 +2691,9 @@ app.get('/groups/:id/members', async (req, res) => {
       : String(g.ownerChatId);
 
     // Участники по таблице GroupMember
-    const links = await prisma.groupMember.findMany({ where: { groupId }, select: { chatId: true } });
+    const links = await prisma.groupMember.findMany({ where: { groupId }, select: { chatId: true, description: true } });
     const linkIds = links.map(l => String(l.chatId));
+    const descByChat = new Map(links.map(l => [String(l.chatId), String(l.description || '')]));
 
     // Ассайни из задач в колонках группы (у владельца)
     const cols = await prisma.column.findMany({
@@ -2740,7 +2741,9 @@ app.get('/groups/:id/members', async (req, res) => {
         ownerChatId: g.ownerChatId,
         assigneeChatId: mid,
       });
-      return { chatId: mid, name: nameByChat.get(mid) || mid, role: 'member', assignedCount };
+      const isMember = linkIds.includes(mid);
+      const hasDescription = !!(descByChat.get(mid) || '').trim();
+      return { chatId: mid, name: nameByChat.get(mid) || mid, role: 'member', assignedCount, isMember, hasDescription };
     }));
 
     // Псевдо‑строка о том, что есть активные приглашения (опционально)
@@ -2874,6 +2877,53 @@ app.post('/groups/:id/leave', async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     console.error('POST /groups/:id/leave error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// === Description per member within group ===
+// GET /groups/:id/members/:memberChatId/description -> { ok, description }
+app.get('/groups/:id/members/:memberChatId/description', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const memberChatId = String(req.params.memberChatId);
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    const gm = await prisma.groupMember.findUnique({ where: { groupId_chatId: { groupId, chatId: memberChatId } } });
+    return res.json({ ok: true, description: gm?.description || null });
+  } catch (e) {
+    console.error('GET /groups/:id/members/:memberChatId/description error:', e);
+    res.status(500).json({ ok: false, error: 'server_error' });
+  }
+});
+
+// PATCH /groups/:id/members/:memberChatId/description  body: { byChatId, description }
+// Только владелец группы может менять описания участников
+app.patch('/groups/:id/members/:memberChatId/description', async (req, res) => {
+  try {
+    const groupId = String(req.params.id);
+    const memberChatId = String(req.params.memberChatId);
+    const byChatId = String(req.body?.byChatId || '');
+    const description = String(req.body?.description ?? '').slice(0, 100000); // safeguard
+
+    if (!byChatId) return res.status(400).json({ ok: false, error: 'byChatId_required' });
+
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    if (String(g.ownerChatId) !== byChatId) {
+      return res.status(403).json({ ok: false, error: 'only_owner_allowed' });
+    }
+
+    const gm = await prisma.groupMember.findUnique({ where: { groupId_chatId: { groupId, chatId: memberChatId } } });
+    if (!gm) return res.status(404).json({ ok: false, error: 'not_member' });
+
+    const updated = await prisma.groupMember.update({
+      where: { groupId_chatId: { groupId, chatId: memberChatId } },
+      data: { description },
+    });
+    return res.json({ ok: true, description: updated.description || null });
+  } catch (e) {
+    console.error('PATCH /groups/:id/members/:memberChatId/description error:', e);
     res.status(500).json({ ok: false, error: 'server_error' });
   }
 });

@@ -150,6 +150,11 @@ model Task {
   // Ссылки предзадач, которые зависят от этой задачи
   preTaskLinks PreTaskLink[]
 
+  // Process graph (denormalized neighbors for fast graph build)
+  processLeftKeys   Json?
+  processRightKeys  Json?
+  originPreTaskId   String?
+
   @@index([chatId])
   @@index([columnId, order])
   @@index([createdByChatId])
@@ -220,6 +225,8 @@ model GroupMember {
   groupId   String
   chatId    String
   role      String   @default("member")
+  // Свободное описание участника в рамках конкретной группы (длинный текст)
+  description String?
   createdAt DateTime @default(now())
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -606,6 +613,10 @@ model PreTask {
   // связи
   links              PreTaskLink[] @relation("PreTask_Owner")
   usedInLinks        PreTaskLink[] @relation("PreTask_Dependency")
+
+  // Process graph (denormalized neighbors for fast graph build)
+  processLeftKeys   Json?
+  processRightKeys  Json?
 
   @@index([creatorChatId])
   @@index([groupId])

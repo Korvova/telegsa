@@ -76,6 +76,19 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
     try { console.log('[TFP] init overlay', { taskId: String(card.id), groupId, resolvedGroupId }); } catch {}
   }, [resolvedGroupId]);
 
+  // Remember viewport to preserve camera between reloads
+  const lastViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const applyViewportOrFit = useCallback(() => {
+    try {
+      const v = lastViewportRef.current;
+      if (v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.zoom)) {
+        (rf as any).setViewport?.(v, { duration: 0 });
+      } else {
+        rf.fitView({ padding: 0.2 });
+      }
+    } catch {}
+  }, [rf]);
+
   // soft reload trigger (used after status changes to reflect pretask firing)
   const [reloadSeq, setReloadSeq] = useState(0);
   useEffect(() => {
@@ -362,7 +375,7 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
           setNodes(rfNodes);
           setEdges(rfEdges);
           console.log('[TFP] graph (server) hydrated', { nodes: rfNodes.length, edges: rfEdges.length });
-          setTimeout(() => { try { rf.fitView({ padding: 0.2 }); } catch {} }, 60);
+          setTimeout(() => { applyViewportOrFit(); }, 60);
           return;
         }
         console.log('[TFP] fetchProcess start', { groupId: resolvedGroupId });
@@ -418,7 +431,7 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
         setEdges(rfEdges);
         console.log('[TFP] graph hydrated', { rfNodes: rfNodes.length, rfEdges: rfEdges.length });
         // ensure viewport fits the loaded graph
-        setTimeout(() => { try { rf.fitView({ padding: 0.2 }); } catch {} }, 80);
+        setTimeout(() => { applyViewportOrFit(); }, 80);
 
         // If task-scope — synthesize full history graph around root task
         if (String(resolvedGroupId).startsWith('task:')) {
@@ -482,7 +495,7 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
               setNodes(rfNodes.slice());
               setEdges(rfEdges.slice());
               console.log('[TFP] synth task-scope', { nodes: rfNodes.length, edges: rfEdges.length });
-              setTimeout(() => { try { rf.fitView({ padding: 0.2 }); } catch {} }, 60);
+              setTimeout(() => { applyViewportOrFit(); }, 60);
             }
           } catch (e) {
             console.warn('[TFP] synth task-scope failed', e);
@@ -556,6 +569,7 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onConnectStart={onConnectStart}
+          onMoveEnd={(_e: any, viewport: any) => { try { if (viewport) lastViewportRef.current = viewport; } catch {} }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView

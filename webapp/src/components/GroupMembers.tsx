@@ -8,7 +8,10 @@ import {
   removeGroupMember,
   leaveGroup,
   type GroupMember,
+  getGroupMemberDescription,
+  setGroupMemberDescription,
 } from '../api';
+import OverlayModal from './OverlayModal';
 
 type Props = {
   group: Group;
@@ -24,6 +27,9 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
   const [owner, setOwner] = useState<GroupMember | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editTarget, setEditTarget] = useState<GroupMember | null>(null);
+  const [descDraft, setDescDraft] = useState<string>('');
+  const [savingDesc, setSavingDesc] = useState(false);
 
   const reload = async () => {
     setLoading(true);
@@ -113,6 +119,40 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
 
   const meIsOwner = isOwner;
 
+  const openEdit = async (m: GroupMember) => {
+    try {
+      setEditTarget(m);
+      setDescDraft('');
+      // Подтянем текущее описание (если есть)
+      const r = await getGroupMemberDescription(group.id, String(m.chatId));
+      if (r?.ok) setDescDraft(String(r.description || ''));
+    } catch {}
+  };
+
+  const saveDescription = async () => {
+    if (!editTarget) return;
+    try {
+      setSavingDesc(true);
+      const r = await setGroupMemberDescription({
+        groupId: group.id,
+        memberChatId: String(editTarget.chatId),
+        byChatId: String(chatId),
+        description: descDraft,
+      });
+      if (!r?.ok) throw new Error('save_failed');
+      WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      setEditTarget(null);
+      await reload();
+      onChanged?.();
+    } catch (e) {
+      console.error('[GROUP MEMBER] save description error', e);
+      alert('Не удалось сохранить описание');
+      WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    } finally {
+      setSavingDesc(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -192,6 +232,7 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
                   <div>
                     <div style={{ fontWeight: 600 }}>
                       {m.name || m.chatId} {isMe ? <span style={{ opacity: 0.6, fontWeight: 400 }}>(это вы)</span> : null}
+                      {m.hasDescription ? <span title="Есть описание" style={{ marginLeft: 6 }}>📜</span> : null}
                     </div>
                     {m.assignedCount != null ? (
                       <div style={{ fontSize: 12, opacity: 0.75 }}>
@@ -201,11 +242,11 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
                   </div>
                 </div>
 
-                {/* ✏️ только у владельца и только не-владельца можно удалить */}
-                {meIsOwner && !isOwnerRow ? (
+                {/* ✏️ только у владельца; не показываем для строки-плейсхолдера приглашений */}
+                {meIsOwner && !isOwnerRow && m.role !== 'invited' ? (
                   <button
-                    onClick={() => handleRemove(m)}
-                    title="Удалить участника (задачи перейдут владельцу)"
+                    onClick={() => openEdit(m)}
+                    title="Управление участником"
                     style={{
                       background: 'transparent',
                       border: 'none',
@@ -245,6 +286,42 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
           </button>
         </div>
       ) : null}
+
+      {/* Модалка управления участником: удалить / описание / права (заглушка) */}
+      <OverlayModal open={!!editTarget} onClose={() => setEditTarget(null)}>
+        <div style={{ display:'grid', gap:12 }}>
+          <div style={{ fontWeight:700, fontSize:16 }}>Участник: {editTarget?.name || editTarget?.chatId}</div>
+
+          <div>
+            <div style={{ fontSize:13, opacity:.8, marginBottom:6 }}>Действия</div>
+            <button
+              onClick={() => { if (editTarget) handleRemove(editTarget); }}
+              style={{ padding:'8px 10px', borderRadius:10, border:'1px solid #472a2a', background:'#3a1f1f', color:'#ffd7d7', cursor:'pointer' }}
+            >
+              Удалить участника из группы
+            </button>
+          </div>
+
+          <div>
+            <div style={{ fontWeight:600, marginBottom:6 }}>Описание</div>
+            <textarea
+              value={descDraft}
+              onChange={(e) => setDescDraft(e.target.value)}
+              placeholder="Кто он, что умеет, заметки по роли в этой группе…"
+              style={{ width:'100%', minHeight:120, padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' }}
+            />
+            <div style={{ display:'flex', gap:8, marginTop:8 }}>
+              <button onClick={saveDescription} disabled={savingDesc} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor: savingDesc ? 'default' : 'pointer' }}>Сохранить</button>
+              <button onClick={() => setEditTarget(null)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'transparent', color:'#9fb1ff', cursor:'pointer' }}>Отмена</button>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight:600, marginBottom:6 }}>Права</div>
+            <div style={{ fontSize:13, opacity:.75 }}>Скоро: настраиваемые права участника в этой группе.</div>
+          </div>
+        </div>
+      </OverlayModal>
     </div>
   );
 }
