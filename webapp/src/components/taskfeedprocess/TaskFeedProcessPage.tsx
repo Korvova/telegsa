@@ -538,15 +538,16 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
               if (!resp?.ok) return;
               setNodes((nds: any[]) => nds.map((x: any) => (x.id === taskId ? ({ ...x, data: { ...(x.data as any), card: mapTaskToFeedCard({ ...(resp.task || {}), phase: resp.phase }, (card as any)?.group) } }) : x)));
             }).catch(() => {});
+            // Сохраним процесс без задержки, чтобы позиция зафиксировалась до возможного перезагруза графа
             dirtyRef.current = true;
-            try { scheduleSaveRef.current?.(); } catch {}
+            try { runSave(); } catch { try { scheduleSaveRef.current?.(); } catch {} }
           }
         } catch {}
       };
       es.onerror = () => { try { es && es.close(); } catch {}; es = null; };
     } catch {}
     return () => { try { es && es.close(); } catch {} };
-  }, [chatId, rf, groupId]);
+  }, [chatId, rf, groupId, runSave]);
 
   // render
   return (
