@@ -44,7 +44,11 @@ export default function TaskFeedProcessPage({ open, card, onClose, chatId }: Pro
 
 function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: string; brd?: string; groupId?: string | null }; onClose: () => void; chatId: string }) {
   const groupId = (card as any)?.groupId ?? null;
-  const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(groupId);
+  // Если у задачи нет явного groupId (личная группа) — используем task-scope
+  // c псевдо-группой `task:<rootTaskId>` для сохранения раскладки.
+  const [resolvedGroupId, setResolvedGroupId] = useState<string | null>(
+    groupId ? String(groupId) : `task:${String(card.id)}`
+  );
   useEffect(() => {
     let cancelled = false;
     (async () => {
