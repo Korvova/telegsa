@@ -1446,7 +1446,11 @@ export default function HomePage({
                     const opened = openQBar?.id === t.id && openQBar?.page === pg.key;
                     const currentPhase = ph;
                     const groupId = (t as any)?.groupId ?? null;
-                  const badge = badgeForPhase(currentPhase);
+              const badgeBase = badgeForPhase(currentPhase);
+              const prog = Number((t as any).progress ?? 0);
+              const badge = (badgeBase && currentPhase === 'Doing' && prog > 0)
+                ? ({ ...badgeBase, text: `(${prog}% ) ${badgeBase.text}` })
+                : badgeBase;
                     const needsPhoto = (t as any).acceptCondition === 'PHOTO';
                     const cCount = Number(((t as any).commentsCount ?? 0));
                     const hasComments = cCount > 0;

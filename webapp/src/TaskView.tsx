@@ -139,6 +139,9 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [reminders, setReminders] = useState<TReminder[]>([]);
   const [remBusy, setRemBusy] = useState(false);
+  // прогресс в стадии "В работе"
+  const [progress, setProgress] = useState<number>(0);
+  const progressTimer = useRef<any>(null);
 
   // Выплата исполнителю: фиксированная модалка до подтверждения
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -188,6 +191,12 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
     })();
     return () => { alive = false; };
   }, [taskId]);
+
+  // подхватить прогресс из задачи при загрузке
+  useEffect(() => {
+    if (!task) return;
+    try { setProgress(Math.max(0, Math.min(100, Number((task as any).progress ?? 0)))); } catch { setProgress(0); }
+  }, [task]);
 
   useEffect(() => {
     if (!isLightboxOpen) return;
@@ -774,6 +783,54 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             })();
           }}
         />)}
+
+        {/* Прогресс (только в стадии "В работе") */}
+        {String(phase) === 'Doing' && (
+          <div style={{ marginTop: 8, marginBottom: 8, padding: 10, border: '1px solid #2a3346', background: '#121722', color: '#e8eaed', borderRadius: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Прогресс</div>
+              <div style={{ fontSize: 12, opacity: 0.9 }}>{progress}%</div>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={progress}
+              onChange={async (e) => {
+                const v = Math.max(0, Math.min(100, Number(e.target.value)));
+                setProgress(v);
+                try {
+                  clearTimeout(progressTimer.current);
+                } catch {}
+                progressTimer.current = setTimeout(async () => {
+                  try {
+                    const api = await import('./api');
+                    await (api as any).setTaskProgress(taskId, v);
+                  } catch {}
+                }, 200);
+
+                if (v === 100) {
+                  try {
+                    const api = await import('./api');
+                    const r = await (api as any).completeTask(taskId);
+                    // подтянем актуальную фазу/группу
+                    const full = await (api as any).getTaskWithGroup(taskId);
+                    if ((full as any)?.ok) {
+                      setPhase((full as any).phase || 'Done');
+                      setTask((prev) => (prev ? ({ ...prev, ...(r?.task || {}), progress: 100 } as any) : prev));
+                      onChanged?.();
+                    } else {
+                      setPhase('Done');
+                    }
+                    WebApp?.HapticFeedback?.notificationOccurred?.('success');
+                  } catch {}
+                }
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
+        )}
 
         {String(phase) === 'Approval' && task?.assigneeChatId && String(task.assigneeChatId) === String(meChatId) && (
           <div style={{ margin: '8px 0', padding: 10, border: '1px solid #6a4a20', background: '#3a2a10', color: '#ffe5bf', borderRadius: 12 }}>

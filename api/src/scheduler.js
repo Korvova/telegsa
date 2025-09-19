@@ -523,10 +523,34 @@ async function markPreTaskFired(prisma, preId, taskId, { canceled = false } = {}
         await prisma.preTask.update({ where: { id: pid }, data: { processRightKeys: arr } });
       }
     }
-  } catch (e) {
-    console.warn('[pretask fired] denorm update failed', e?.message || e);
+      } catch (e) {
+        console.warn('[pretask fired] denorm update failed', e?.message || e);
+      }
+
+    // ==== NEW: перенесём узел процесса (позицию) из предзадачи на задачу в task-scope полотне ====
+    try {
+      // Родительские задачи, к которым была привязана предзадача
+      const parentTaskIds = Array.from(new Set((full?.links || []).map((l) => l.taskId).filter(Boolean).map(String)));
+      for (const rootId of parentTaskIds) {
+        const scope = `task:${rootId}`;
+        const proc = await prisma.groupProcess.findFirst({ where: { groupId: scope, isActive: true }, orderBy: { createdAt: 'desc' } });
+        if (!proc) continue;
+        const nodes = await prisma.processNode.findMany({ where: { processId: proc.id }, select: { id: true, metaJson: true } });
+        const target = nodes.find((n) => {
+          const m = (n?.metaJson || {});
+          return (String(m?.preTaskId || '') === String(preId)) || (String(m?.key || '') === `pretask:${String(preId)}`) || (String(m?.clientRef || '') === `pretask:${String(preId)}`);
+        });
+        if (target) {
+          const m = (target.metaJson && typeof target.metaJson === 'object') ? { ...target.metaJson } : {};
+          if ('preTaskId' in m) try { delete m.preTaskId; } catch {}
+          m.key = `task:${String(taskId)}`;
+          await prisma.processNode.update({ where: { id: target.id }, data: { taskId: String(taskId), metaJson: m } });
+        }
+      }
+    } catch (e) {
+      console.warn('[pretask fired] processNode migrate failed', e?.message || e);
+    }
   }
-}
 
 async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = false } = {}) {
   const summary = await computeDepsSummary(prisma, preId);

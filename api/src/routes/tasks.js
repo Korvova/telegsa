@@ -676,9 +676,23 @@ router.get('/:id/graph', async (req, res) => {
         if (key) positions[String(key)] = { x: n.posX || 0, y: n.posY || 0 };
       }
       // Дополнительно: если предзадача уже FIRED → пробросим координаты в ключ задачи,
-      // чтобы фронт всегда мог взять pos[`task:<id>`] даже если узел предзадачи был удалён из процесса.
+      // чтобы фронт всегда мог взять pos[`task:<id>`] даже если узел предзадачи был удалён из процесса
+      // И берём список предзадач как из denorm-ключей (pretasks), так и из позиций процесса (если в denorm уже заменили).
       try {
-        for (const p of pretasks) {
+        let preMeta = pretasks || [];
+        // дополним из позиций процесса
+        const byPosIds = Object.keys(positions)
+          .filter((k) => k.startsWith('pretask:'))
+          .map((k) => k.slice('pretask:'.length));
+        const extraIds = byPosIds.filter((id) => !preMeta.some((p) => String(p.id) === String(id)));
+        if (extraIds.length) {
+          const extra = await prisma.preTask.findMany({
+            where: { id: { in: extraIds } },
+            select: { id: true, status: true, targetTaskId: true },
+          });
+          preMeta = preMeta.concat(extra);
+        }
+        for (const p of preMeta) {
           const pid = String(p.id);
           const tgt = p?.targetTaskId ? String(p.targetTaskId) : null;
           const fired = String(p.status || '') === 'FIRED' && !!tgt;

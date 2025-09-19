@@ -640,7 +640,11 @@ function mapTaskToFeedCard(t: any, group: any): FeedTaskCardProps {
       case 'Inbox':    return { text: '🌱 Новое',     bg: '#F3F4F6', fg: '#111827', brd: '#E5E7EB' };
       case 'Done':     return { text: '✓ Готово',     bg: '#D1F2DC', fg: '#0f5132', brd: '#A3DFB9' };
       case 'Cancel':   return { text: '❌ Отмена',     bg: '#FDDCDC', fg: '#7a1f1f', brd: '#F3B3B3' };
-      case 'Doing':    return { text: '🔨 В работе',   bg: '#D7E6FF', fg: '#123a7a', brd: '#BBD6FF' };
+      case 'Doing':    {
+        const prog = Number((t as any)?.progress ?? 0);
+        const txt = prog > 0 ? `(${prog}% ) 🔨 В работе` : '🔨 В работе';
+        return { text: txt, bg: '#D7E6FF', fg: '#123a7a', brd: '#BBD6FF' };
+      }
       case 'Approval': return { text: '👉👈 Согласов', bg: '#FFE9CC', fg: '#6b3d06', brd: '#FFD59A' };
       case 'Wait':     return { text: '🥶 Ждёт',       bg: '#E0F2FF', fg: '#063f5c', brd: '#B9E4FF' };
       default:         return null;

@@ -87,6 +87,8 @@ model Task {
 
   // Опциональный дедлайн задачи
   deadlineAt DateTime?
+  // Прогресс выполнения 0..100 (для стадии "В работе")
+  progress   Int      @default(0)
 
   // Кто создал задачу (chatId автора; может отличаться от chatId доски/владельца)
   createdByChatId String?

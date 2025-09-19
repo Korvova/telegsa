@@ -1393,6 +1393,24 @@ app.patch('/tasks/:id', async (req, res) => {
   }
 });
 
+// Прогресс задачи 0..100
+// PATCH /tasks/:id/progress  body: { progress: number }
+app.patch('/tasks/:id/progress', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    let { progress } = req.body || {};
+    const val = Math.max(0, Math.min(100, Number(progress ?? 0)));
+    const task = await prisma.task.findUnique({ where: { id } });
+    if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const updated = await prisma.task.update({ where: { id }, data: { progress: val } });
+    res.json({ ok: true, task: updated });
+  } catch (e) {
+    console.error('PATCH /tasks/:id/progress error:', e);
+    res.status(500).json({ ok: false });
+  }
+});
+
 
 /* ---------- Invites ---------- */
 /* ---------- Invites ---------- */

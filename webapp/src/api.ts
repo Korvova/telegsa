@@ -16,6 +16,8 @@ export type Task = {
   acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
+  // Прогресс 0..100
+  progress?: number;
 
     fromProcess?: boolean; // 🔀
 
@@ -121,6 +123,12 @@ export function updateTask(id: string, text: string) {
 
 export function completeTask(id: string) {
   return ky.post(`${API_BASE}/tasks/${id}/complete`).json<{ ok: boolean; task: Task }>();
+}
+
+export function setTaskProgress(id: string, progress: number) {
+  return ky
+    .patch(`${API_BASE}/tasks/${id}/progress`, { json: { progress } })
+    .json<{ ok: boolean; task: Task }>();
 }
 
 export function createTask(chatId: string, text: string, groupId?: string) {
