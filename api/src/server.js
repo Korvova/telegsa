@@ -3094,7 +3094,26 @@ function sseBroadcast(chatId, payload) {
 }
 setSSEBroadcaster(sseBroadcast);
 
+// Legacy path collided with /events/:id routes; keep as-is but better use /sse/stream
 app.get('/events/stream', (req, res) => {
+  try {
+    const chatId = String(req.query.chatId || '').trim();
+    if (!chatId) return res.status(400).end('chatId required');
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    res.write('retry: 5000\n\n');
+    const set = sseClients.get(chatId) || new Set();
+    set.add(res);
+    sseClients.set(chatId, set);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
+    req.on('close', () => { clearInterval(ping); try { set.delete(res); } catch {}; });
+  } catch { res.end(); }
+});
+
+// Preferred SSE endpoint (avoid conflicts with /events routes)
+app.get('/sse/stream', (req, res) => {
   try {
     const chatId = String(req.query.chatId || '').trim();
     if (!chatId) return res.status(400).end('chatId required');

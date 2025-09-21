@@ -568,6 +568,14 @@ const items = tasks.map(t => {
   const creatorCid = t.createdByChatId ? String(t.createdByChatId)
     : (t.sourceChatId && userSet.has(String(t.sourceChatId)) ? String(t.sourceChatId) : String(t.chatId));
 
+  // process graph quick stats for feed badges
+  const leftKeys  = Array.isArray(t.processLeftKeys)  ? t.processLeftKeys  : [];
+  const rightKeys = Array.isArray(t.processRightKeys) ? t.processRightKeys : [];
+  const processLeftCount  = leftKeys.length;
+  const processRightCount = rightKeys.length;
+  const preChildrenCount  = rightKeys.filter(k => String(k).startsWith('pretask:')).length;
+  const processHasEdges   = (processLeftCount + processRightCount) > 0;
+
   return {
     id: t.id,
     text: t.text,
@@ -590,8 +598,15 @@ const items = tasks.map(t => {
     assigneeChatId: t.assigneeChatId ? String(t.assigneeChatId) : null,
     assigneeName: t.assigneeChatId ? fullName(t.assigneeChatId) : null,
 
-    fromProcess: !!t.fromProcess,     // ← добавили 🔀
-    taskType: t.type || 'TASK',       // ← (необязательно, но удобно)
+    // Показываем «процесс» бейдж, если задача создана из процесса ИЛИ имеет связи
+    fromProcess: !!(t.fromProcess || processHasEdges),
+    taskType: t.type || 'TASK',
+
+    // Для UI: быстрая статистика процесса
+    processLeftCount,
+    processRightCount,
+    preChildrenCount,
+    processHasEdges,
   };
 });
 
@@ -651,7 +666,7 @@ router.get('/:id/graph', async (req, res) => {
     const tasks = taskIds.length ? await prisma.task.findMany({ where: { id: { in: taskIds } }, select: { id: true, text: true } }) : [];
     const pretasks = preIds.length ? await prisma.preTask.findMany({ where: { id: { in: preIds } }, select: { id: true, text: true, status: true, targetTaskId: true } }) : [];
 
-    // Build edges from denormalized arrays for root only
+    // Build edges from denormalized arrays for root only (will extend with process edges below)
     const edges = [];
     right.forEach((k) => edges.push({ source: `task:${id}`, target: String(k) }));
     left.forEach((k) => edges.push({ source: String(k), target: `task:${id}` }));
@@ -660,51 +675,95 @@ router.get('/:id/graph', async (req, res) => {
     const proc = await prisma.groupProcess.findFirst({ where: { groupId: `task:${id}`, isActive: true }, orderBy: { createdAt: 'desc' } });
     const positions = {};
     if (proc) {
-      const nodes = await prisma.processNode.findMany({ where: { processId: proc.id }, select: { posX: true, posY: true, metaJson: true, taskId: true } });
-      for (const n of nodes) {
-        let key = n?.metaJson?.key;
+      // Collect process nodes to extend positions and include deeper nodes (grandchildren, etc.)
+      const pNodes = await prisma.processNode.findMany({ where: { processId: proc.id }, select: { id: true, posX: true, posY: true, metaJson: true, taskId: true } });
+      const keyByNodeId = new Map();
+      const taskIdsExtra = new Set();
+      const preIdsExtra = new Set();
+      const inferKey = (n) => {
+        let key = n?.metaJson?.key || null;
         if (!key) {
           const pre = n?.metaJson?.preTaskId ? String(n.metaJson.preTaskId) : null;
           if (pre) key = `pretask:${pre}`;
         }
         if (!key && n?.taskId) key = `task:${String(n.taskId)}`;
-        // Fallback by clientRef → infer kind by membership in sets
         if (!key && n?.metaJson?.clientRef) {
           const ref = String(n.metaJson.clientRef);
-          if (preIds.includes(ref)) key = `pretask:${ref}`;
-          else if (taskIds.includes(ref)) key = `task:${ref}`;
+          if (/^pretask:/.test(ref) || preIds.includes(ref)) key = ref.startsWith('pretask:') ? ref : `pretask:${ref}`;
+          else if (/^task:/.test(ref) || taskIds.includes(ref)) key = ref.startsWith('task:') ? ref : `task:${ref}`;
         }
-        if (key) positions[String(key)] = { x: n.posX || 0, y: n.posY || 0 };
+        return key;
+      };
+
+      for (const n of pNodes) {
+        const key = inferKey(n);
+        if (!key) continue;
+        keyByNodeId.set(String(n.id), String(key));
+        positions[String(key)] = { x: n.posX || 0, y: n.posY || 0 };
+        if (key.startsWith('task:')) taskIdsExtra.add(key.slice(5));
+        if (key.startsWith('pretask:')) preIdsExtra.add(key.slice(8));
       }
-      // Дополнительно: если предзадача уже FIRED → пробросим координаты в ключ задачи,
-      // чтобы фронт всегда мог взять pos[`task:<id>`] даже если узел предзадачи был удалён из процесса
-      // И берём список предзадач как из denorm-ключей (pretasks), так и из позиций процесса (если в denorm уже заменили).
+
+      // Extend edges with process edges
+      const pEdges = await prisma.processEdge.findMany({ where: { processId: proc.id } });
+      const seen = new Set(edges.map((e) => `${e.source}->${e.target}`));
+      for (const e of pEdges) {
+        const s = keyByNodeId.get(String(e.sourceNodeId));
+        const t = keyByNodeId.get(String(e.targetNodeId));
+        if (!s || !t) continue;
+        const k = `${s}->${t}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        edges.push({ source: s, target: t });
+      }
+
+      // Дополнительно: если предзадача FIRED — копируем координаты в ключ задачи
       try {
-        let preMeta = pretasks || [];
-        // дополним из позиций процесса
-        const byPosIds = Object.keys(positions)
-          .filter((k) => k.startsWith('pretask:'))
-          .map((k) => k.slice('pretask:'.length));
-        const extraIds = byPosIds.filter((id) => !preMeta.some((p) => String(p.id) === String(id)));
-        if (extraIds.length) {
-          const extra = await prisma.preTask.findMany({
-            where: { id: { in: extraIds } },
-            select: { id: true, status: true, targetTaskId: true },
-          });
-          preMeta = preMeta.concat(extra);
-        }
-        for (const p of preMeta) {
-          const pid = String(p.id);
-          const tgt = p?.targetTaskId ? String(p.targetTaskId) : null;
-          const fired = String(p.status || '') === 'FIRED' && !!tgt;
-          if (!fired) continue;
-          const preKey = `pretask:${pid}`;
-          const taskKey = `task:${tgt}`;
-          if (positions[preKey] && !positions[taskKey]) {
-            positions[taskKey] = positions[preKey];
+        const allPreIds = Array.from(new Set([...(pretasks || []).map(p => String(p.id)), ...preIdsExtra]));
+        if (allPreIds.length) {
+          const preMeta = await prisma.preTask.findMany({ where: { id: { in: allPreIds } }, select: { id: true, status: true, targetTaskId: true } });
+          const remap = new Map(); // pretask:<id> -> task:<id>
+          for (const p of preMeta) {
+            const pid = String(p.id);
+            const tgt = p?.targetTaskId ? String(p.targetTaskId) : null;
+            const fired = String(p.status || '') === 'FIRED' && !!tgt;
+            if (!fired) continue;
+            const preKey = `pretask:${pid}`;
+            const taskKey = `task:${tgt}`;
+            if (positions[preKey] && !positions[taskKey]) positions[taskKey] = positions[preKey];
+            taskIdsExtra.add(tgt);
+            remap.set(preKey, taskKey);
+          }
+
+          // Remap existing edges to task:<id> if endpoint pretasks are FIRED
+          if (remap.size) {
+            for (let i = 0; i < edges.length; i++) {
+              const e = edges[i];
+              const sNew = remap.get(String(e.source)) || e.source;
+              const tNew = remap.get(String(e.target)) || e.target;
+              edges[i] = { source: sNew, target: tNew };
+            }
+            // Deduplicate after remap
+            const uniq = new Map();
+            for (const e of edges) uniq.set(`${e.source}->${e.target}`, e);
+            edges.length = 0; edges.push(...Array.from(uniq.values()));
           }
         }
       } catch {}
+
+      // Fetch and append extra nodes not present in initial denorm lists
+      const existingTaskIds = new Set(tasks.map(t => String(t.id)));
+      const missingTaskIds = Array.from(taskIdsExtra).filter(id2 => !existingTaskIds.has(String(id2)));
+      if (missingTaskIds.length) {
+        const moreTasks = await prisma.task.findMany({ where: { id: { in: missingTaskIds } }, select: { id: true, text: true } });
+        tasks.push(...moreTasks);
+      }
+      const existingPreIds = new Set(pretasks.map(p => String(p.id)));
+      const missingPreIds = Array.from(preIdsExtra).filter(id2 => !existingPreIds.has(String(id2)));
+      if (missingPreIds.length) {
+        const morePre = await prisma.preTask.findMany({ where: { id: { in: missingPreIds } }, select: { id: true, text: true, status: true, targetTaskId: true } });
+        pretasks.push(...morePre);
+      }
     }
 
     res.json({ ok: true, root: `task:${id}`, tasks, pretasks, edges, positions });

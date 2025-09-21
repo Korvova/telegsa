@@ -529,22 +529,39 @@ async function markPreTaskFired(prisma, preId, taskId, { canceled = false } = {}
 
     // ==== NEW: перенесём узел процесса (позицию) из предзадачи на задачу в task-scope полотне ====
     try {
-      // Родительские задачи, к которым была привязана предзадача
-      const parentTaskIds = Array.from(new Set((full?.links || []).map((l) => l.taskId).filter(Boolean).map(String)));
-      for (const rootId of parentTaskIds) {
-        const scope = `task:${rootId}`;
-        const proc = await prisma.groupProcess.findFirst({ where: { groupId: scope, isActive: true }, orderBy: { createdAt: 'desc' } });
-        if (!proc) continue;
-        const nodes = await prisma.processNode.findMany({ where: { processId: proc.id }, select: { id: true, metaJson: true } });
+      // Родительские задачи, к которым была привязана предзадача (прямые Task-зависимости)
+      const full2 = await prisma.preTask.findUnique({ where: { id: String(preId) }, include: { links: true } });
+      const parentTaskIds = Array.from(new Set((full2?.links || []).map((l) => l.taskId).filter(Boolean).map(String)));
+
+      async function migrateInProcess(procId) {
+        const nodes = await prisma.processNode.findMany({ where: { processId: procId }, select: { id: true, metaJson: true } });
         const target = nodes.find((n) => {
           const m = (n?.metaJson || {});
           return (String(m?.preTaskId || '') === String(preId)) || (String(m?.key || '') === `pretask:${String(preId)}`) || (String(m?.clientRef || '') === `pretask:${String(preId)}`);
         });
-        if (target) {
-          const m = (target.metaJson && typeof target.metaJson === 'object') ? { ...target.metaJson } : {};
-          if ('preTaskId' in m) try { delete m.preTaskId; } catch {}
-          m.key = `task:${String(taskId)}`;
-          await prisma.processNode.update({ where: { id: target.id }, data: { taskId: String(taskId), metaJson: m } });
+        if (!target) return false;
+        const m = (target.metaJson && typeof target.metaJson === 'object') ? { ...target.metaJson } : {};
+        if ('preTaskId' in m) try { delete m.preTaskId; } catch {}
+        m.key = `task:${String(taskId)}`;
+        await prisma.processNode.update({ where: { id: target.id }, data: { taskId: String(taskId), metaJson: m } });
+        return true;
+      }
+
+      // 1) Пытаемся в scope родительских TASKов
+      for (const rootId of parentTaskIds) {
+        const scope = `task:${rootId}`;
+        const proc = await prisma.groupProcess.findFirst({ where: { groupId: scope, isActive: true }, orderBy: { createdAt: 'desc' } });
+        if (!proc) continue;
+        await migrateInProcess(proc.id);
+      }
+
+      // 2) Фоллбек: если зависимость была от другой предзадачи и parentTaskIds пуст,
+      //     ищем узел по всем активным процессам scope "task:*"
+      if (!parentTaskIds.length) {
+        const procs = await prisma.groupProcess.findMany({ where: { isActive: true, groupId: { startsWith: 'task:' } }, select: { id: true } });
+        for (const p of procs) {
+          const ok = await migrateInProcess(p.id);
+          if (ok) break;
         }
       }
     } catch (e) {

@@ -518,7 +518,7 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
     if (!chatId) return;
     let es: EventSource | null = null;
     try {
-      const url = `${API_BASE}/events/stream?chatId=${encodeURIComponent(String(chatId))}`;
+      const url = `${API_BASE}/sse/stream?chatId=${encodeURIComponent(String(chatId))}`;
       es = new EventSource(url);
       es.onmessage = (ev) => {
         try {

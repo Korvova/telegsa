@@ -71,6 +71,7 @@ router.get('/groups/:groupId/process', async (req, res) => {
 router.post('/groups/:groupId/process', async (req, res) => {
   const { groupId } = req.params;
   const { chatId, nodes = [], edges = [] } = req.body || {};
+  const purge = String(req.query?.purge || '').toLowerCase();
   if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
 
   try {
@@ -91,82 +92,112 @@ router.post('/groups/:groupId/process', async (req, res) => {
         });
       }
 
-      // 2) снести старую схему процесса (одним махом)
-      await tx.processEdge.deleteMany({ where: { processId: proc.id } });
-      await tx.processNode.deleteMany({ where: { processId: proc.id } });
+      // Опциональная полная очистка
+      const doPurge = purge === '1' || purge === 'true' || purge === 'yes';
+      if (doPurge) {
+        await tx.processEdge.deleteMany({ where: { processId: proc.id } });
+        await tx.processNode.deleteMany({ where: { processId: proc.id } });
+      }
 
-      // 3) подготовка
-      const idMap = new Map();      // clientRef -> dbNodeId
-      const taskByClient = new Map();// clientRef -> taskId
-      const watchersByClient = new Map(); // clientRef -> watchers[]
+      // 2) собрать существующие ноды
+      const existing = await tx.processNode.findMany({ where: { processId: proc.id } });
+      const byId = new Map(existing.map(n => [String(n.id), n]));
+      const byKey = new Map();       // 'task:ID' | 'pretask:ID' | custom
+      const byClientRef = new Map(); // metaJson.clientRef
+      const byTaskId = new Map();
+      for (const n of existing) {
+        const meta = (n?.metaJson && typeof n.metaJson === 'object') ? n.metaJson : {};
+        const key = meta?.key ? String(meta.key) : (meta?.preTaskId ? `pretask:${String(meta.preTaskId)}` : (n.taskId ? `task:${String(n.taskId)}` : null));
+        if (key) byKey.set(key, n);
+        const cref = meta?.clientRef ? String(meta.clientRef) : null;
+        if (cref) byClientRef.set(cref, n);
+        if (n.taskId) byTaskId.set(String(n.taskId), n);
+      }
 
-      // ленивое получение Inbox (только если встретится seed_new_)
+      // ленивое получение Inbox (только если встретится seed_new_) — работает только для реальных groupId
       let inboxInfo = null;
       const getInbox = async () => {
         if (!inboxInfo) inboxInfo = await resolveInbox(tx, groupId);
         return inboxInfo;
       };
 
-      // 4) подготовить список нод к createMany (после возможного создания задач)
-      const nodeRows = [];
-
-      // Подготовим список всех taskId из входящих нод, чтобы валидационно обнулить несуществующие и не ловить P2003
+      // предварительная проверка taskId
       const candidateTaskIds = new Set();
       for (const n of nodes) {
-        const clientRef = n?.id ? String(n.id) : null;
-        if (clientRef && clientRef.startsWith('seed_task_')) {
-          candidateTaskIds.add(clientRef.slice('seed_task_'.length));
-        } else if (n?.taskId) {
-          candidateTaskIds.add(String(n.taskId));
-        }
+        const cid = n?.id ? String(n.id) : '';
+        if (cid.startsWith('seed_task_')) candidateTaskIds.add(cid.slice('seed_task_'.length));
+        if (n?.taskId) candidateTaskIds.add(String(n.taskId));
       }
       const validTaskIdSet = new Set();
-      if (candidateTaskIds.size > 0) {
-        const check = await tx.task.findMany({
-          where: { id: { in: Array.from(candidateTaskIds) } },
-          select: { id: true },
-        });
+      if (candidateTaskIds.size) {
+        const check = await tx.task.findMany({ where: { id: { in: Array.from(candidateTaskIds) } }, select: { id: true } });
         for (const t of check) validTaskIdSet.add(String(t.id));
       }
+
+      // 3) upsert нод
+      const idMap = new Map();      // clientRef/key -> dbNodeId
+      const nodeTaskByRef = new Map();// ref -> taskId
+      const watchersByRef = new Map();
+
+      function computeKeyFromPayload(n, taskId) {
+        const meta = (n?.metaJson && typeof n.metaJson === 'object') ? n.metaJson : {};
+        if (meta?.key) return String(meta.key);
+        if (meta?.preTaskId) return `pretask:${String(meta.preTaskId)}`;
+        if (taskId) return `task:${String(taskId)}`;
+        if (n?.taskId) return `task:${String(n.taskId)}`;
+        const rid = n?.id ? String(n.id) : '';
+        if (rid.startsWith('seed_task_')) return `task:${rid.slice('seed_task_'.length)}`;
+        return null;
+      }
+
       for (const n of nodes) {
         const clientRef = n?.id ? String(n.id) : null;
         const title = String(n?.title || 'Новая задача').slice(0, 100);
         const createdBy = n?.createdByChatId ? String(n.createdByChatId) : String(chatId);
         let taskId = null;
 
+        // вычислить taskId по входу (seed_task_/taskId) или создать по seed_new_
         if (clientRef && clientRef.startsWith('seed_task_')) {
           const cand = clientRef.slice('seed_task_'.length);
           taskId = validTaskIdSet.has(cand) ? cand : null;
         } else if (clientRef && clientRef.startsWith('seed_new_')) {
-          const info = await getInbox();
-          const assignee = n?.assigneeChatId ? String(n.assigneeChatId) : String(chatId);
-          const t = await tx.task.create({
-            data: {
-              chatId: info.boardChatId,
-              columnId: info.inbox.id,
-              order: info.nextOrder,
-              text: title,
-              assigneeChatId: assignee,
-              type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
-              fromProcess: true,
-            },
-          });
-          taskId = t.id;
-          inboxInfo.nextOrder++;
+          try {
+            const info = await getInbox();
+            const assignee = n?.assigneeChatId ? String(n.assigneeChatId) : String(chatId);
+            const t = await tx.task.create({
+              data: {
+                chatId: info.boardChatId,
+                columnId: info.inbox.id,
+                order: info.nextOrder,
+                text: title,
+                assigneeChatId: assignee,
+                type: (n?.type === 'EVENT' ? 'EVENT' : 'TASK'),
+                fromProcess: true,
+              },
+            });
+            taskId = t.id;
+            inboxInfo.nextOrder++;
+          } catch {
+            // если не группа (например, task:<id> scope) — не создаём задачу
+          }
         } else if (n?.taskId) {
           const cand = String(n.taskId);
           taskId = validTaskIdSet.has(cand) ? cand : null;
         }
 
-        if (clientRef && taskId) taskByClient.set(clientRef, taskId);
-        if (clientRef && Array.isArray(n?.watchers) && n.watchers.length) {
-          watchersByClient.set(clientRef, n.watchers.filter(Boolean).map((w) => String(w)));
-        }
+        const desiredKey = computeKeyFromPayload(n, taskId);
+        const metaIncoming = (n?.metaJson && typeof n.metaJson === 'object') ? { ...n.metaJson } : (n?.metaJson ? { raw: n.metaJson } : {});
+        if (clientRef) metaIncoming.clientRef = clientRef;
+        if (desiredKey) metaIncoming.key = desiredKey;
 
-        const meta = (n?.metaJson && typeof n.metaJson === 'object') ? n.metaJson : (n?.metaJson ? { raw: n.metaJson } : {});
-        if (clientRef) meta.clientRef = clientRef;
+        // поиск существующей ноды по ключу/клиентскому id/задаче/прямому id
+        let found = null;
+        if (desiredKey && byKey.has(desiredKey)) found = byKey.get(desiredKey);
+        else if (clientRef && byClientRef.has(clientRef)) found = byClientRef.get(clientRef);
+        else if (taskId && byTaskId.has(String(taskId))) found = byTaskId.get(String(taskId));
+        else if (clientRef && byId.has(clientRef)) found = byId.get(clientRef); // на случай если фронт прислал db id
 
-        nodeRows.push({
+        const dataCommon = {
           processId: proc.id,
           title,
           posX: Number.isFinite(n?.posX) ? Number(n.posX) : 0,
@@ -179,26 +210,33 @@ router.post('/groups/:groupId/process', async (req, res) => {
           startDate: n?.startDate ? new Date(n.startDate) : null,
           startAfterDays: (Number.isFinite(n?.startAfterDays) ? Number(n.startAfterDays) : null),
           cancelMode: (n?.cancelMode ?? 'NONE'),
-          taskId,
-          metaJson: meta,
-        });
+        };
+
+        let dbId = null;
+        if (found) {
+          // merge meta
+          const prevMeta = (found?.metaJson && typeof found.metaJson === 'object') ? { ...found.metaJson } : {};
+          const mergedMeta = { ...prevMeta, ...metaIncoming };
+          const upd = await tx.processNode.update({ where: { id: found.id }, data: { ...dataCommon, taskId: taskId ?? found.taskId ?? null, metaJson: mergedMeta } });
+          dbId = upd.id;
+        } else {
+          const created = await tx.processNode.create({ data: { ...dataCommon, taskId: taskId ?? null, metaJson: metaIncoming } });
+          dbId = created.id;
+        }
+
+        const refKey = desiredKey || (clientRef ? String(clientRef) : String(dbId));
+        idMap.set(refKey, dbId);
+        if (clientRef) idMap.set(clientRef, dbId);
+        if (taskId) nodeTaskByRef.set(refKey, taskId);
+        if (Array.isArray(n?.watchers) && n.watchers.length) {
+          watchersByRef.set(refKey, n.watchers.filter(Boolean).map((w) => String(w)));
+        }
       }
 
-      if (nodeRows.length) {
-        await tx.processNode.createMany({ data: nodeRows });
-      }
-
-      // прочитать созданные ноды и собрать мап clientRef -> id и id -> taskId
-      const createdNodes = await tx.processNode.findMany({ where: { processId: proc.id } });
-      for (const cn of createdNodes) {
-        const clientRef = (cn.metaJson && cn.metaJson.clientRef) ? String(cn.metaJson.clientRef) : null;
-        if (clientRef) idMap.set(clientRef, cn.id);
-      }
-
-      // watchers bulk
+      // 4) watchers merge (idempotent create)
       const watcherRows = [];
-      for (const [clientRef, lst] of watchersByClient.entries()) {
-        const nodeId = idMap.get(clientRef);
+      for (const [ref, lst] of watchersByRef.entries()) {
+        const nodeId = idMap.get(ref) || null;
         if (!nodeId) continue;
         for (const chatIdStr of lst) watcherRows.push({ nodeId, chatId: chatIdStr });
       }
@@ -206,23 +244,45 @@ router.post('/groups/:groupId/process', async (req, res) => {
         await tx.processNodeWatcher.createMany({ data: watcherRows, skipDuplicates: true });
       }
 
-      // 5) создать рёбра (bulk)
-      const edgeRows = [];
+      // 5) merge рёбер: добавляем/обновляем, не удаляем, если не purge
+      const desiredEdges = [];
       const taskRelPairs = [];
       for (const e of edges) {
         if (!e?.source || !e?.target) continue;
         const rawSrc = String(e.source);
         const rawTgt = String(e.target);
-        const srcDbId = idMap.get(rawSrc) ?? rawSrc;
-        const tgtDbId = idMap.get(rawTgt) ?? rawTgt;
-        edgeRows.push({ processId: proc.id, sourceNodeId: srcDbId, targetNodeId: tgtDbId, enabled: (e?.enabled !== false) });
 
-        const srcTaskId = taskByClient.get(rawSrc) || null;
-        const tgtTaskId = taskByClient.get(rawTgt) || null;
-        if (srcTaskId && tgtTaskId) taskRelPairs.push({ fromTaskId: srcTaskId, toTaskId: tgtTaskId });
+        // попытки сопоставления: key, clientRef, dbId
+        const srcDbId = idMap.get(rawSrc) || idMap.get(`task:${rawSrc}`) || idMap.get(`pretask:${rawSrc}`) || byId.get(rawSrc)?.id || null;
+        const tgtDbId = idMap.get(rawTgt) || idMap.get(`task:${rawTgt}`) || idMap.get(`pretask:${rawTgt}`) || byId.get(rawTgt)?.id || null;
+        if (!srcDbId || !tgtDbId) continue;
+
+        desiredEdges.push({ sourceNodeId: srcDbId, targetNodeId: tgtDbId, enabled: (e?.enabled !== false) });
+
+        const sTask = nodeTaskByRef.get(rawSrc) || null;
+        const tTask = nodeTaskByRef.get(rawTgt) || null;
+        if (sTask && tTask) taskRelPairs.push({ fromTaskId: sTask, toTaskId: tTask });
       }
-      if (edgeRows.length) {
-        await tx.processEdge.createMany({ data: edgeRows });
+
+      // существующие рёбра
+      const existingEdges = await tx.processEdge.findMany({ where: { processId: proc.id } });
+      const edgeKey = (a) => `${a.sourceNodeId}__${a.targetNodeId}`;
+      const haveEdge = new Set(existingEdges.map((e) => edgeKey(e)));
+      const desiredSet = new Set(desiredEdges.map((e) => edgeKey(e)));
+
+      // add/update
+      for (const de of desiredEdges) {
+        if (haveEdge.has(edgeKey(de))) {
+          await tx.processEdge.updateMany({ where: { processId: proc.id, sourceNodeId: de.sourceNodeId, targetNodeId: de.targetNodeId }, data: { enabled: de.enabled } });
+        } else {
+          await tx.processEdge.create({ data: { processId: proc.id, ...de } });
+        }
+      }
+
+      // purge edges not present
+      if (doPurge) {
+        const toDelete = existingEdges.filter((e) => !desiredSet.has(edgeKey(e))).map((e) => e.id);
+        if (toDelete.length) await tx.processEdge.deleteMany({ where: { id: { in: toDelete } } });
       }
 
       // 6) связи задач (минимизируем дубли) + обновление денорм-кэша соседей
@@ -232,11 +292,9 @@ router.post('/groups/:groupId/process', async (req, res) => {
           await tx.taskRelation.create({ data: { fromTaskId: pair.fromTaskId, toTaskId: pair.toTaskId, groupId: String(groupId), createdBy: String(chatId) } });
         }
 
-        // Update denormalized neighbor lists for fast graph build
         try {
           const fromId = String(pair.fromTaskId);
           const toId = String(pair.toTaskId);
-          // from.processRightKeys += `task:${toId}`
           const fromRow = await tx.task.findUnique({ where: { id: fromId }, select: { processRightKeys: true } });
           const right = Array.isArray(fromRow?.processRightKeys) ? fromRow.processRightKeys : [];
           const keyR = `task:${toId}`;
@@ -244,7 +302,6 @@ router.post('/groups/:groupId/process', async (req, res) => {
             right.push(keyR);
             await tx.task.update({ where: { id: fromId }, data: { processRightKeys: right } });
           }
-          // to.processLeftKeys += `task:${fromId}`
           const toRow = await tx.task.findUnique({ where: { id: toId }, select: { processLeftKeys: true } });
           const left = Array.isArray(toRow?.processLeftKeys) ? toRow.processLeftKeys : [];
           const keyL = `task:${fromId}`;
@@ -257,7 +314,7 @@ router.post('/groups/:groupId/process', async (req, res) => {
         }
       }
 
-      return { ok: true, processId: proc.id };
+      return { ok: true, processId: proc.id, merge: !doPurge };
     }, { timeout: 20000, maxWait: 5000 });
 
     res.json(result);

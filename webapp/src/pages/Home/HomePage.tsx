@@ -834,7 +834,7 @@ export default function HomePage({
   // SSE auto-refresh on task fired
   useEffect(() => {
     if (!chatId) return;
-    const url = `${API_BASE}/events/stream?chatId=${encodeURIComponent(chatId)}`;
+    const url = `${API_BASE}/sse/stream?chatId=${encodeURIComponent(chatId)}`;
     let es: EventSource | null = null;
     try {
       es = new EventSource(url);
@@ -1566,17 +1566,40 @@ export default function HomePage({
                           const uniq = new Set<string>();
                           for (const x of direct) uniq.add(String((x as any).id));
                           for (const x of viaFired) uniq.add(String((x as any).id));
-                          const preCountForTask = uniq.size;
-                          return (
-                            <div style={{ position:'absolute', right: 16, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 80 }}>
-                              <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
-                                <EdgePreTaskBadge
-                                  kind="task"
-                                  count={preCountForTask}
-                                  onClick={async () => {
-                                    try {
-                                      // Переключаемся на ПЕРСОНИФИЦИРОВАННЫЙ СКОУП ЗАДАЧИ: groupId := `task:${taskId}`
-                                      const scopeId = `task:${String((t as any).id)}`;
+                        // Prefer server-provided counts; fallback to client calc
+                        const apiPreChildren = Number((t as any).preChildrenCount || 0);
+                        const calcPre = uniq.size;
+                        const preCountForTask = apiPreChildren > 0 ? apiPreChildren : calcPre;
+                        return (
+                          <div style={{ position:'absolute', right: 16, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 80 }}>
+                            <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                              <EdgePreTaskBadge
+                                kind="task"
+                                count={preCountForTask}
+                                onClick={async () => {
+                                  try {
+                                      // Открываем task-scope полотна РОДИТЕЛЬСКОЙ задачи (корня),
+                                      // но фокусируемся на текущей задаче (t.id)
+                                      const tid = String((t as any).id);
+                                      const ttext = String((t as any).text || '');
+                                      // найти fired-предзадачу, породившую эту задачу
+                                      let fired: any = preTasks.find((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===tid);
+                                      if (!fired && ttext) fired = preTasks.find((p:any)=> String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
+                                      // подняться по цепочке предзадач до ближайшего родителя-задачи
+                                      let rootId = tid;
+                                      const seen = new Set<string>();
+                                      let guard = 0;
+                                      while (fired && guard++ < 10) {
+                                        if (seen.has(String(fired.id))) break;
+                                        seen.add(String(fired.id));
+                                        const links = Array.isArray((fired as any).links) ? (fired as any).links : [];
+                                        const parentTask = links.find((l:any)=> !!l?.taskId);
+                                        if (parentTask?.taskId) { rootId = String(parentTask.taskId); break; }
+                                        const parentPre = links.find((l:any)=> !!(l?.depPreTaskId || l?.preTaskId));
+                                        const pid = String((parentPre?.depPreTaskId || parentPre?.preTaskId || ''));
+                                        fired = pid ? preTasks.find((p:any)=> String(p.id)===pid) : undefined;
+                                      }
+                                      const scopeId = `task:${rootId}`;
                                       const card = ((): any => {
                                         const cardBadge = badge;
                                         const dl = deadlineAt ? { iso: deadlineAt, leftText: leftText || '', overdue: new Date(deadlineAt).getTime() < Date.now() } : null;
@@ -1608,21 +1631,21 @@ export default function HomePage({
                                           groupId: scopeId,
                                         };
                                       })();
-                                      try { console.log('[FEED] badge click → open process', { taskId: String((t as any).id), groupId: (card as any).groupId, preCount: preCountForTask, scope: 'task' }); } catch {}
+                                      try { console.log('[FEED] badge click → open process', { taskId: tid, groupId: (card as any).groupId, preCount: preCountForTask, scope: 'task' }); } catch {}
                                       window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
                                       // подсветим связи для этой задачи
                                       setTimeout(() => {
                                         try {
-                                          console.log('[FEED] dispatch focus-process-edge', { nodeId: String((t as any).id) });
-                                          window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((t as any).id) } }));
+                                          console.log('[FEED] dispatch focus-process-edge', { nodeId: tid });
+                                          window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: tid } }));
                                         } catch {}
                                       }, 150);
                                     } catch {}
                                   }}
                                 />
-                              </div>
                             </div>
-                          );
+                          </div>
+                        );
                         })() : null}
 
                         <button
@@ -1991,20 +2014,35 @@ export default function HomePage({
                                       <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
                                     ) : null;
                                     return (
-                                      <PreTaskCard
-                                        p={p as any}
-                                        onOpen={(pp) => setOpenPreTask(pp)}
-                                        onEdit={(pp) => setEditPreTask(pp)}
-                                        nameByChat={nameByChat}
-                                        groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
-                                        tone="subtle"
-                                        feedStyle={true}
-                                        footer={footer}
-                                        emphasis={cnt>0}
-                                        myChatId={meChatId}
-                                        myRankIcon={myRankIcon}
-                                        style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
-                                      />
+                                      <div style={{ position:'relative' }}>
+                                        <PreTaskCard
+                                          p={p as any}
+                                          onOpen={(pp) => setOpenPreTask(pp)}
+                                          onEdit={(pp) => setEditPreTask(pp)}
+                                          nameByChat={nameByChat}
+                                          groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
+                                          tone="subtle"
+                                          feedStyle={true}
+                                          footer={footer}
+                                          emphasis={cnt>0}
+                                          myChatId={meChatId}
+                                          myRankIcon={myRankIcon}
+                                          style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
+                                        />
+                                        <div style={{ position:'absolute', right: 10, top: 0, bottom: 0, pointerEvents:'none' }}>
+                                          <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                                            <EdgePreTaskBadge
+                                              kind="pretask"
+                                              count={cnt}
+                                              onClick={() => {
+                                                try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+                                                const scopeId = `task:${String((t as any).id)}`;
+                                                window.dispatchEvent(new CustomEvent('open-process', { detail: { groupId: scopeId, focusTaskId: String((t as any).id), backToTaskId: String((t as any).id) } }));
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
                                     );
                                   })()}
                                 </div>
@@ -2057,7 +2095,22 @@ export default function HomePage({
                                                 </div>
                                               ) : null;
                                               return (
-                                                <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
+                                                <div style={{ position:'relative' }}>
+                                                  <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
+                                                  <div style={{ position:'absolute', right: 10, top: 0, bottom: 0, pointerEvents:'none' }}>
+                                                    <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                                                      <EdgePreTaskBadge
+                                                        kind="pretask"
+                                                        count={cnt2}
+                                                        onClick={() => {
+                                                          try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+                                                          const scopeId = `task:${String((t as any).id)}`;
+                                                          window.dispatchEvent(new CustomEvent('open-process', { detail: { groupId: scopeId, focusTaskId: String((t as any).id), backToTaskId: String((t as any).id) } }));
+                                                        }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                </div>
                                               );
                                             })()}
                                           </div>
