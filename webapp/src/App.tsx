@@ -1189,7 +1189,7 @@ setPersistSeedSession(false);
               />
             ) : (
               <>
-                <GroupTabs current={groupTab} onChange={setGroupTab} />
+                <GroupTabs current={groupTab as any} onChange={setGroupTab as any} />
 
                 {groupTab === 'kanban' ? (
                   loading ? (
@@ -1252,27 +1252,6 @@ setPersistSeedSession(false);
                       </DndContext>
                     </>
                   )
-                ) : groupTab === 'process' ? (
-                  <button
-                    onClick={() => {
-                      setReturnTaskIdForProcess(null); // открываем «вручную», не из задачи
-                      setShowProcess(true);
-                      const url = new URL(window.location.href);
-                      url.searchParams.set('view', 'process');
-                      window.history.pushState({ view: 'process' }, '', url.toString());
-                      WebApp?.BackButton?.show?.();
-                    }}
-                    style={{
-                      background:'#202840',
-                      color:'#e8eaed',
-                      border:'1px solid #2a3346',
-                      borderRadius:10,
-                      padding:'6px 10px',
-                      margin:12,
-                    }}
-                  >
-                    🔀 Открыть процесс
-                  </button>
                 ) : (
                   <GroupMembers
                     group={selectedGroup as any}

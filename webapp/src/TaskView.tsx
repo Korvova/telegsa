@@ -35,7 +35,6 @@ import WatchersBlock from './components/WatchersBlock';
 import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 import TaskLabelDrawer from './components/TaskLabelDrawer';
-import ProcessLinks from './components/ProcessLinks';
 import RemindersModal from './components/RemindersModal';
 import { listTaskReminders, createTaskReminder, deleteTaskReminder, type TaskReminder as TReminder } from './api/reminders';
 
@@ -662,15 +661,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             {saveStatus === 'saving' ? 'Сохраняю…' : saveStatus === 'saved' ? '✓ Сохранено' : saveStatus === 'error' ? 'Ошибка' : ''}
           </div>
 
-          {/* Точки и списки связей процесса */}
-          <ProcessLinks
-            taskId={task.id}
-            taskAssigneeChatId={task.assigneeChatId ?? null}
-            groupId={groupId}
-            meChatId={meChatId}
-            onClose={onClose}
-            showLists
-          />
+          {/* Убрано: точки и списки связей процесса в TaskView */}
         </div>
 
         {/* Список напоминаний */}

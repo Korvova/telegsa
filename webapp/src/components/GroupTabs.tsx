@@ -1,4 +1,4 @@
-type GroupTab = 'kanban' | 'process' | 'members';
+type GroupTab = 'kanban' | 'members';
 
 export default function GroupTabs({
   current,
@@ -9,11 +9,10 @@ export default function GroupTabs({
 }) {
   const items = [
     { id: 'kanban' as const, icon: '🧮', label: 'Канбан' },
-    { id: 'process' as const, icon: '🔀', label: 'Процесс' },
     { id: 'members' as const, icon: '👥', label: 'Участники' },
   ];
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 12 }}>
       {items.map((it) => {
         const active = current === it.id;
         return (
