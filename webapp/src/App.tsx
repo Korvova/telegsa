@@ -9,7 +9,7 @@ import WriteAccessGate from './WriteAccessGate';
 import GroupMembers from './components/GroupMembers';
 import NotificationsView from './NotificationsView';
 
-import GroupProcessPage from './pages/Groups/GroupProcessPage';
+// GroupProcessPage removed
 
 import CreateTaskFab from './components/CreateTaskFab';
 
@@ -360,24 +360,19 @@ export default function App() {
 
 
 
-const [spawnNextForFocus, setSpawnNextForFocus] = useState<boolean>(false);
-
-const [persistSeedSession, setPersistSeedSession] = useState(false);
+// removed group process states
 
 
 
 
 // добавь СРАЗУ ПОСЛЕ:
-const [spawnPrevForFocus, setSpawnPrevForFocus] = useState<boolean>(false);
-const [seedPrevForProcess, setSeedPrevForProcess] = useState<boolean>(false);
+// removed group process states
 
 
   const [tab, setTab] = useState<TabKey>('home');
 
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
-  const [seedTaskIdForProcess, setSeedTaskIdForProcess] = useState<string | null>(null);
-  const [seedAssigneeChatIdForProcess, setSeedAssigneeChatIdForProcess] = useState<string | null>(null);
-  const [focusTaskIdForProcess, setFocusTaskIdForProcess] = useState<string | null>(null);
+  // removed group process states
 
   // 👇 НОВОЕ: куда вернуться после полотна
   const [returnTaskIdForProcess, setReturnTaskIdForProcess] = useState<string | null>(null);
@@ -386,7 +381,7 @@ const [seedPrevForProcess, setSeedPrevForProcess] = useState<boolean>(false);
   useEffect(() => {
     const handler = (e: any) => {
       const d = (e && (e as CustomEvent).detail) || {};
-      if (!d || !d.groupId) return;
+      return; // group process disabled
       setTab('groups');
       setSelectedGroupId(String(d.groupId));
       setGroupTab('process');
@@ -394,42 +389,25 @@ const [seedPrevForProcess, setSeedPrevForProcess] = useState<boolean>(false);
 
 
 // право: поддерживаем и старый d.seedNewRight, и явный d.spawnNextForFocus
-setSpawnNextForFocus(Boolean(d.seedNewRight || d.spawnNextForFocus));
+// setSpawnNextForFocus(Boolean(d.seedNewRight || d.spawnNextForFocus));
 
 // лево: новый флаг
-setSpawnPrevForFocus(Boolean(d.spawnPrevForFocus));
+// setSpawnPrevForFocus(Boolean(d.spawnPrevForFocus));
 
 // сеанс посева активен, если пришёл seedTaskId
-setPersistSeedSession(!!d.seedTaskId);
+// setPersistSeedSession(!!d.seedTaskId);
 
 // посев слева (мини-связка «Новый ← Текущая»)
-setSeedPrevForProcess(Boolean(d.seedPrev));
+// setSeedPrevForProcess(Boolean(d.seedPrev));
 
 
 
 
 
 
-      // из TaskView либо фокус на конкретный узел, либо посев
-      if (d.focusTaskId) {
-        setFocusTaskIdForProcess(String(d.focusTaskId));
-        setSeedTaskIdForProcess(null);
-        setSeedAssigneeChatIdForProcess(null);
-      } else {
-        setFocusTaskIdForProcess(null);
-        setSeedTaskIdForProcess(d.seedTaskId || null);
-        setSeedAssigneeChatIdForProcess(d.seedAssigneeChatId || null);
-      }
+      // из TaskView либо фокус на конкретный узел, либо посев — отключено
 
-      // запоминаем задачу для возврата
-      const backId = d.backToTaskId || d.focusTaskId || d.seedTaskId || null;
-      setReturnTaskIdForProcess(backId ? String(backId) : null);
-
-      setShowProcess(true);
-      const url = new URL(window.location.href);
-      url.searchParams.set('view', 'process');
-      window.history.pushState({ view: 'process' }, '', url.toString());
-      WebApp?.BackButton?.show?.();
+      // переход к групповому процессу — отключено
     };
     window.addEventListener('open-process', handler as any);
   
@@ -973,116 +951,7 @@ setSeedPrevForProcess(Boolean(d.seedPrev));
     <>
       <WriteAccessGate chatId={chatId} />
 
-      {/* ⬇️ Полноэкранная страница процесса */}
-      {showProcess && (
-        <div
-          className="rf-scope"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 2000, // повышаем, чтобы перекрывать всё
-            background: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding: 10, borderBottom:'1px solid #e5e7eb' }}>
-            <div style={{ fontWeight: 700 }}>🔀 Процесс</div>
-            <div />
-          </div>
-
-          <div style={{ flex: 1, minHeight: 0 }}>
-<GroupProcessPage
-  chatId={chatId}
-  groupId={resolvedGroupId ?? null}
-  onOpenTask={openTask}
-
-  /* seed-сценарии */
-  seedTaskId={seedTaskIdForProcess}
-  seedAssigneeChatId={seedAssigneeChatIdForProcess}
-  forceSeedFromTask={!!seedTaskIdForProcess}
-  focusTaskId={focusTaskIdForProcess}
-
-  /* справа: «прорости узел от фокуса» */
-  spawnNextForFocus={spawnNextForFocus}
-  onSpawnNextConsumed={() => setSpawnNextForFocus(false)}
-
-  /* слева: НОВОЕ — «прорости узел слева от фокуса» */
-  spawnPrevForFocus={spawnPrevForFocus}
-  onSpawnPrevConsumed={() => setSpawnPrevForFocus(false)}
-
-  /* посев в режиме «Новый ← Текущая» (если задачи ещё нет в графе) */
-  seedPrev={seedPrevForProcess}
-
-  /* когда seed-сессия отработана — сбросить семена */
-  onSeedConsumed={() => {
-    setSeedTaskIdForProcess(null);
-    setSeedAssigneeChatIdForProcess(null);
-    setSeedPrevForProcess(false);
-  }}
-
-  /* продолжать seed-сессию между повторными открытиями полотна */
-  persistSeedSession={persistSeedSession}
-/>
-
-            {/* Нижняя кнопка назад — только внутри оверлея процесса */}
-            <div
-              style={{
-                position: 'fixed',
-                left: 0,
-                right: 0,
-                bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                zIndex: 2100,
-                display: 'flex',
-                justifyContent: 'center',
-                pointerEvents: 'none',
-              }}
-            >
-              <button
-                onClick={() => {
-                  const backId = returnTaskIdForProcess || taskId || null;
-                  setShowProcess(false);
-                  setFocusTaskIdForProcess(null);
-                  setSeedTaskIdForProcess(null);
-                  setSeedAssigneeChatIdForProcess(null);
-
-setSpawnNextForFocus(false);
-setSpawnPrevForFocus(false);
-setSeedPrevForProcess(false);
-setFocusTaskIdForProcess(null);
-setSeedTaskIdForProcess(null);
-setSeedAssigneeChatIdForProcess(null);
-setPersistSeedSession(false);
-
-
-                  const url = new URL(window.location.href);
-                  url.searchParams.delete('view');
-                  window.history.replaceState(null, '', url.toString());
-                    setPersistSeedSession(false); // 👈 сброс сеанса
-
-                  if (backId) {
-                    openTask(backId);
-                    setReturnTaskIdForProcess(null);
-                  } else {
-                    WebApp?.BackButton?.hide?.();
-                  }
-                }}
-                style={{
-                  pointerEvents: 'auto',
-                  background: '#202840',
-                  color: '#e8eaed',
-                  border: '1px solid #2a3346',
-                  borderRadius: 12,
-                  padding: '10px 14px',
-                  boxShadow: '0 6px 18px rgba(0,0,0,.35)',
-                }}
-              >
-                ⟵ Назад
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* group process overlay removed */}
 
       {taskId ? (
         <TaskView

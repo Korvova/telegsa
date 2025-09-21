@@ -2029,19 +2029,7 @@ export default function HomePage({
                                           myRankIcon={myRankIcon}
                                           style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
                                         />
-                                        <div style={{ position:'absolute', right: 10, top: 0, bottom: 0, pointerEvents:'none' }}>
-                                          <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
-                                            <EdgePreTaskBadge
-                                              kind="pretask"
-                                              count={cnt}
-                                              onClick={() => {
-                                                try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
-                                                const scopeId = `task:${String((t as any).id)}`;
-                                                window.dispatchEvent(new CustomEvent('open-process', { detail: { groupId: scopeId, focusTaskId: String((t as any).id), backToTaskId: String((t as any).id) } }));
-                                              }}
-                                            />
-                                          </div>
-                                        </div>
+                                        {/* Предзадача: не открываем процесс по клику */}
                                       </div>
                                     );
                                   })()}
@@ -2097,19 +2085,7 @@ export default function HomePage({
                                               return (
                                                 <div style={{ position:'relative' }}>
                                                   <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
-                                                  <div style={{ position:'absolute', right: 10, top: 0, bottom: 0, pointerEvents:'none' }}>
-                                                    <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
-                                                      <EdgePreTaskBadge
-                                                        kind="pretask"
-                                                        count={cnt2}
-                                                        onClick={() => {
-                                                          try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
-                                                          const scopeId = `task:${String((t as any).id)}`;
-                                                          window.dispatchEvent(new CustomEvent('open-process', { detail: { groupId: scopeId, focusTaskId: String((t as any).id), backToTaskId: String((t as any).id) } }));
-                                                        }}
-                                                      />
-                                                    </div>
-                                                  </div>
+                                                      {/* Предзадача: не открываем процесс по клику */}
                                                 </div>
                                               );
                                             })()}
