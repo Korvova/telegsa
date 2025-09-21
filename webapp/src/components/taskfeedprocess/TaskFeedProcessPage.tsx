@@ -20,6 +20,8 @@ import PreTaskNode from './PreTaskNode';
 import CreateTaskModal from '../create-task/CreateTaskModal';
 import CondEdge from '../CondEdge';
 import { API_BASE, fetchProcess, saveProcess, getTask, getPreTask, getTaskGraph, getTaskRelations, listPreTasks, type ProcessNodeDTO, type ProcessEdgeDTO } from '../../api';
+import PreTaskEditModal from '../../components/PreTaskEditModal';
+import type { PreTaskDTO } from '../../api';
 import './TaskFeedProcessPage.css';
 
 type Props = {
@@ -111,10 +113,31 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
 
   // edit modal (listen to external open events like in FeedTaskNode long-press)
   const [editOpen, setEditOpen] = useState(false);
+  const [preEditOpen, setPreEditOpen] = useState(false);
+  const [preEditData, setPreEditData] = useState<PreTaskDTO | null>(null);
   useEffect(() => {
     const onOpen = () => setEditOpen(true);
     window.addEventListener('edit-task-open', onOpen as any);
     return () => window.removeEventListener('edit-task-open', onOpen as any);
+  }, []);
+
+  // open pre-task editor on long-press
+  useEffect(() => {
+    const onOpen = async (e: Event) => {
+      try {
+        const ce = e as CustomEvent<any>;
+        const id = String(ce?.detail?.preTaskId || '');
+        if (!id) return;
+        const r: any = await getPreTask(id).catch(() => null);
+        const pre = r?.preTask || null;
+        if (pre) {
+          setPreEditData(pre);
+          setPreEditOpen(true);
+        }
+      } catch {}
+    };
+    window.addEventListener('edit-pretask-open', onOpen as any);
+    return () => window.removeEventListener('edit-pretask-open', onOpen as any);
   }, []);
 
   // edge selection highlight + focus (robust to race with loading)
@@ -256,9 +279,17 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
         pendingDropRef.current = { sourceTaskId: src, dropAt: pos, text };
         try {
           const scopeIsTask = !!resolvedGroupId && String(resolvedGroupId).startsWith('task:');
-          console.log('[TFP] drop in empty → open pretask panel', { sourceId: src, from: isTask ? 'task' : 'pretask', pos, text, groupId: scopeIsTask ? null : resolvedGroupId });
-          const detail = isTask ? { taskId: src, text, groupId: scopeIsTask ? null : resolvedGroupId } : { preTaskId: src, text, groupId: scopeIsTask ? null : resolvedGroupId };
-          window.dispatchEvent(new CustomEvent('edge-pre-open', { detail }));
+          const phase = isTask ? String((nd as any)?.data?.card?.phase || '') : '';
+          const isDone = String(phase).toLowerCase() === 'done' || phase === 'Done';
+          if (isTask && isDone) {
+            console.log('[TFP] drop in empty from DONE → create TASK', { sourceId: src, pos });
+            const detail = { taskId: src, text, groupId: scopeIsTask ? null : resolvedGroupId };
+            window.dispatchEvent(new CustomEvent('edge-task-open', { detail }));
+          } else {
+            console.log('[TFP] drop in empty → open PRETASK panel', { sourceId: src, from: isTask ? 'task' : 'pretask', pos, text, groupId: scopeIsTask ? null : resolvedGroupId });
+            const detail = isTask ? { taskId: src, text, groupId: scopeIsTask ? null : resolvedGroupId } : { preTaskId: src, text, groupId: scopeIsTask ? null : resolvedGroupId };
+            window.dispatchEvent(new CustomEvent('edge-pre-open', { detail }));
+          }
         } catch {}
       }
       connectingNodeId.current = null; connectingHandleType.current = null; detachPointerUp();
@@ -304,6 +335,38 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
     window.addEventListener('pre-task-created', handler as any);
     return () => window.removeEventListener('pre-task-created', handler as any);
   }, [setNodes, setEdges, runSave]);
+
+  // listen for task created (from DONE source) and add node at last drop point
+  useEffect(() => {
+    const handler = (e: Event) => {
+      try {
+        const ce = e as CustomEvent<any>;
+        const d = (ce && ce.detail) || {};
+        const taskId = String(d?.taskId || '');
+        const parentTaskId = String(d?.parentTaskId || '');
+        if (!taskId || !parentTaskId) return;
+        const ctx = pendingDropRef.current;
+        if (!ctx) return;
+        const srcId = String(ctx.sourceTaskId || '');
+        if (srcId !== parentTaskId) return;
+        const nid = String(taskId);
+        const pos = ctx.dropAt || { x: 220, y: 180 };
+        // Add feedTask stub and edge
+        setNodes((nds: any) => ([...nds, { id: nid, type: 'feedTask', position: pos, data: { card: { id: nid, text: '', fromProcess: true, group: (card as any)?.group || null }, bg: '#fff', brd: '#e5e7eb', groupId, meChatId: String(chatId) } }]));
+        setEdges((eds: any) => addEdge({ id: `e_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, source: srcId, target: nid, type: 'cond', data: { icon: '➡️' }, markerEnd: { type: MarkerType.ArrowClosed } } as any, eds));
+        dirtyRef.current = true;
+        scheduleSaveRef.current();
+        setTimeout(() => { if (dirtyRef.current) runSave(); }, 20);
+        setTimeout(() => { if (dirtyRef.current) runSave(); }, 140);
+        // fetch real task and update card data
+        getTask(nid).then((resp:any)=>{ if (resp?.ok) setNodes((nds)=> nds.map((x)=> x.id===nid ? ({...x, data:{ ...(x.data as any), card: mapTaskToFeedCard({ ...(resp.task||{}), phase: resp.phase }, (card as any)?.group) }}) : x)); }).catch(()=>{});
+      } finally {
+        pendingDropRef.current = null;
+      }
+    };
+    window.addEventListener('task-created', handler as any);
+    return () => window.removeEventListener('task-created', handler as any);
+  }, [setNodes, setEdges, runSave, groupId, card, chatId]);
 
   // flush on unmount if dirty
   useEffect(() => {
@@ -358,6 +421,14 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
           };
           // nodes — корень рисуем точной копией из ленты
           makeTask(rootTaskId, undefined, true);
+          // синхронизируем фазу/детали корня с сервера (во избежание рассинхронов с фидом)
+          try {
+            getTask(String(rootTaskId)).then((resp:any)=>{
+              if (resp?.ok) {
+                setNodes((nds)=> nds.map((x)=> x.id===rootTaskId ? ({...x, data:{ ...(x.data as any), card: mapTaskToFeedCard({ ...(resp.task||{}), phase: resp.phase }, (card as any)?.group) }}) : x));
+              }
+            }).catch(()=>{});
+          } catch {}
           for (const t of g.tasks) if (String(t.id) !== rootTaskId) makeTask(String(t.id));
           for (const p of g.pretasks) {
             const pid = String(p.id);
@@ -376,6 +447,49 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
             const tid = String(e.target).startsWith('task:') ? String(e.target).slice(5) : String(e.target).slice(8);
             rfEdges.push({ id: `e_${String(e.source)}_${String(e.target)}`, source: sid, target: tid, type: 'cond', data: { icon: '➡️' }, markerEnd: { type: MarkerType.ArrowClosed } } as any);
           }
+
+          // Position tweaks for newly created pre-tasks without saved positions:
+          // If there is no saved position for `pretask:<id>`, place it relative to its parent
+          // with an offset of (-100px, -50px) so it appears left and slightly up.
+          try {
+            const nodeById = new Map<string, any>(rfNodes.map((n:any) => [String(n.id), n]));
+            for (const p of g.pretasks as any[]) {
+              const pid = String((p as any).id);
+              const key = `pretask:${pid}`;
+              if (pos[key]) continue; // server already saved position
+              const incoming = (g.edges as any[]).find((ed:any) => String(ed.target) === key);
+              if (!incoming) continue;
+              const srcKey = String(incoming.source);
+              const srcId = srcKey.startsWith('task:') ? srcKey.slice(5) : srcKey.slice(8);
+              const parent = nodeById.get(srcId);
+              const cur = nodeById.get(pid);
+              if (parent && cur && parent.position) {
+                const px = Number(parent.position.x) || 0;
+                const py = Number(parent.position.y) || 0;
+                // Смещение вправо и вверх: +150 по X, -100 по Y
+                cur.position = { x: px + 150, y: py - 100 };
+              }
+            }
+
+            // Tasks without saved positions: offset relative to their parents too
+            for (const e of (g.edges as any[])) {
+              const srcKey = String(e.source || '');
+              const tgtKey = String(e.target || '');
+              const sid = srcKey.startsWith('task:') ? srcKey.slice(5) : (srcKey.startsWith('pretask:') ? srcKey.slice(8) : null);
+              const tid = tgtKey.startsWith('task:') ? tgtKey.slice(5) : null;
+              if (!sid || !tid) continue; // only position task targets here
+              const hasSaved = Boolean(pos[tgtKey] || pos[`task:${tid}`]);
+              if (hasSaved) continue;
+              const parent = nodeById.get(String(sid));
+              const cur = nodeById.get(String(tid));
+              if (parent && cur && parent.position) {
+                const px = Number(parent.position.x) || 0;
+                const py = Number(parent.position.y) || 0;
+                cur.position = { x: px + 150, y: py - 100 };
+              }
+            }
+          } catch {}
+
           setNodes(rfNodes);
           setEdges(rfEdges);
           console.log('[TFP] graph (server) hydrated', { nodes: rfNodes.length, edges: rfEdges.length });
@@ -436,6 +550,14 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
         console.log('[TFP] graph hydrated', { rfNodes: rfNodes.length, rfEdges: rfEdges.length });
         // ensure viewport fits the loaded graph
         setTimeout(() => { applyViewportOrFit(); }, 80);
+        // sync root task phase/details from server to avoid stale phase from feed
+        try {
+          getTask(String(card.id)).then((resp:any)=>{
+            if (resp?.ok) {
+              setNodes((nds)=> nds.map((x)=> x.id===String(card.id) ? ({...x, data:{ ...(x.data as any), card: mapTaskToFeedCard({ ...(resp.task||{}), phase: resp.phase }, (card as any)?.group) }}) : x));
+            }
+          }).catch(()=>{});
+        } catch {}
 
         // If task-scope — synthesize full history graph around root task
         if (String(resolvedGroupId).startsWith('task:')) {
@@ -618,6 +740,16 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
 
       {/* Task editor modal */}
       <CreateTaskModal open={editOpen} onClose={() => setEditOpen(false)} chatId={chatId} />
+
+      <PreTaskEditModal
+        open={preEditOpen}
+        chatId={chatId}
+        preTask={preEditData}
+        onClose={() => { setPreEditOpen(false); setPreEditData(null); }}
+        onSaved={() => {
+          try { setReloadSeq((x) => x + 1); } catch {}
+        }}
+      />
 
       {/* Pre-task creation handled via CreateTaskModal (edge-pre-open) */}
     </div>

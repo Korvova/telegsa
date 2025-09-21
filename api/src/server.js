@@ -27,6 +27,7 @@ import { watchersRouter } from './routes/watchers.js';
 import { walletTonRouter } from './routes/wallet-ton.js';
 import { remindersRouter } from './routes/reminders.js';
 import { preTasksRouter } from './routes/pretasks.js';
+import { expensesRouter } from './routes/expenses.js';
 import { rankRouter } from './routes/rank.js';
 import { ratingRouter } from './routes/rating.js';
 
@@ -398,6 +399,7 @@ app.use(likesRouter);
 app.use(watchersRouter({ prisma }));
 app.use(remindersRouter({ prisma, tg }));
 app.use(preTasksRouter({ prisma, tg }));
+app.use(expensesRouter);
 app.use(walletTonRouter());
 // условия приёмки задач
 app.use(acceptRouter);

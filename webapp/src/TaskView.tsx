@@ -141,6 +141,8 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   // прогресс в стадии "В работе"
   const [progress, setProgress] = useState<number>(0);
   const progressTimer = useRef<any>(null);
+  const [expensesDraft, setExpensesDraft] = useState<string>('');
+  const [expensesDirty, setExpensesDirty] = useState(false);
 
   // Выплата исполнителю: фиксированная модалка до подтверждения
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -196,6 +198,13 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
     if (!task) return;
     try { setProgress(Math.max(0, Math.min(100, Number((task as any).progress ?? 0)))); } catch { setProgress(0); }
   }, [task]);
+
+  // Синхронизировать черновик расходов с задачей, только если не редактируем
+  useEffect(() => {
+    if (!task) return;
+    if (expensesDirty) return;
+    try { setExpensesDraft((task as any)?.expenses != null ? String((task as any).expenses) : ''); } catch { setExpensesDraft(''); }
+  }, [task?.expenses, expensesDirty]);
 
   useEffect(() => {
     if (!isLightboxOpen) return;
@@ -662,6 +671,46 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           </div>
 
           {/* Убрано: точки и списки связей процесса в TaskView */}
+        </div>
+
+        {/* Затраты */}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label htmlFor="task-expenses" style={{ fontSize: 13, opacity: 0.85 }}>Затраты (₽):</label>
+          <input
+            id="task-expenses"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={expensesDraft}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (/^\d*$/.test(v)) { setExpensesDraft(v); setExpensesDirty(true); }
+            }}
+            onFocus={() => setExpensesDirty(true)}
+            onBlur={async () => {
+              try {
+                const n = expensesDraft.trim() === '' ? null : Math.max(0, Math.round(Number(expensesDraft)));
+                const api = await import('./api');
+                const r = await api.setTaskExpenses(taskId, meChatId, n);
+                if ((r as any)?.ok && (r as any).task) {
+                  const saved = (r as any).task.expenses ?? null;
+                  setTask((prev) => (prev ? { ...prev, expenses: saved } as any : prev));
+                  setExpensesDraft(saved != null ? String(saved) : '');
+                }
+              } catch {}
+              finally { setExpensesDirty(false); }
+            }}
+            style={{
+              width: 140,
+              background: '#121722',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              borderRadius: 8,
+              padding: '6px 10px',
+              fontSize: 14,
+            }}
+            placeholder=""
+          />
         </div>
 
         {/* Список напоминаний */}

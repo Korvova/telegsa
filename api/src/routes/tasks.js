@@ -766,6 +766,180 @@ router.get('/:id/graph', async (req, res) => {
       }
     }
 
+    // Fallback synthesis (recursive) for pretask -> pretask edges that were created from feed (no process edges yet)
+    // 1) ensure direct pretasks of the root task
+    try {
+      const seenEdge = new Set(edges.map((e) => `${e.source}->${e.target}`));
+      const existingPreIds = new Set(pretasks.map((p) => String(p.id)));
+
+      const directPre = await prisma.preTask.findMany({
+        where: { links: { some: { taskId: id } } },
+        select: { id: true, text: true, status: true, targetTaskId: true },
+      });
+      for (const p of directPre) {
+        const pid = String(p.id);
+        if (!existingPreIds.has(pid)) { pretasks.push(p); existingPreIds.add(pid); }
+        const ekey = `task:${id}->pretask:${pid}`;
+        if (!seenEdge.has(ekey)) { seenEdge.add(ekey); edges.push({ source: `task:${id}`, target: `pretask:${pid}` }); }
+      }
+
+      // 2) рекурсивно добавляем потомков предзадач (pretask -> pretask)
+      let frontier = new Set(directPre.map((p) => String(p.id)));
+      const MAX_DEPTH = 5;
+      for (let depth = 0; depth < MAX_DEPTH && frontier.size > 0; depth++) {
+        const front = Array.from(frontier);
+        frontier = new Set();
+        if (!front.length) break;
+        const children = await prisma.preTask.findMany({
+          where: { links: { some: { depPreTaskId: { in: front } } } },
+          select: { id: true, text: true, status: true, targetTaskId: true, links: { select: { depPreTaskId: true } } },
+        });
+        for (const ch of children) {
+          const cid = String(ch.id);
+          if (!existingPreIds.has(cid)) { pretasks.push({ id: ch.id, text: ch.text, status: ch.status, targetTaskId: ch.targetTaskId }); existingPreIds.add(cid); }
+          // add edges from each parent in current layer
+          for (const l of (ch.links || [])) {
+            const pid = String(l.depPreTaskId || '');
+            if (!pid || !front.includes(pid)) continue;
+            const ekey = `pretask:${pid}->pretask:${cid}`;
+            if (!seenEdge.has(ekey)) { seenEdge.add(ekey); edges.push({ source: `pretask:${pid}`, target: `pretask:${cid}` }); }
+          }
+          // grow next frontier
+          frontier.add(cid);
+        }
+      }
+    } catch (e) {
+      console.warn('graph synth (pretask->pretask) failed', e?.message || e);
+    }
+
+    // Fallback synthesis: TaskRelation transitive closure around root (task -> task),
+    // plus direct pretasks for all visited tasks and their recursive pretask-dependencies.
+    try {
+      const seen = new Set(edges.map((e) => `${e.source}->${e.target}`));
+      const ensureEdge = (s, t) => { const k = `${s}->${t}`; if (!seen.has(k)) { edges.push({ source: s, target: t }); seen.add(k); } };
+
+      // 2.1) BFS over TaskRelation to collect tasks around root
+      const visitedTasks = new Set([String(id)]);
+      let frontier = new Set([String(id)]);
+      const MAX_TASK_DEPTH = 6;
+      for (let depth = 0; depth < MAX_TASK_DEPTH && frontier.size > 0; depth++) {
+        const layer = Array.from(frontier);
+        frontier = new Set();
+        const rels = await prisma.taskRelation.findMany({
+          where: { OR: [ { fromTaskId: { in: layer } }, { toTaskId: { in: layer } } ] },
+        });
+        for (const r of rels) {
+          const from = String(r.fromTaskId);
+          const to = String(r.toTaskId);
+          ensureEdge(`task:${from}`, `task:${to}`);
+          if (!visitedTasks.has(from)) { visitedTasks.add(from); frontier.add(from); }
+          if (!visitedTasks.has(to)) { visitedTasks.add(to); frontier.add(to); }
+        }
+      }
+      // add missing tasks data
+      const haveTaskIds = new Set(tasks.map((t) => String(t.id)));
+      const moreTaskIds = Array.from(visitedTasks).filter((tid) => !haveTaskIds.has(tid));
+      if (moreTaskIds.length) {
+        const more = await prisma.task.findMany({ where: { id: { in: moreTaskIds } }, select: { id: true, text: true } });
+        tasks.push(...more);
+      }
+
+      // 2.2) For all visited tasks, pull direct pretask children and edges task->pretask
+      const vTaskArr = Array.from(visitedTasks);
+      if (vTaskArr.length) {
+        const links = await prisma.preTaskLink.findMany({ where: { taskId: { in: vTaskArr } }, select: { preTaskId: true, taskId: true } });
+        const preIds = Array.from(new Set(links.map(l => String(l.preTaskId))));
+        if (preIds.length) {
+          const pres = await prisma.preTask.findMany({ where: { id: { in: preIds } }, select: { id: true, text: true, status: true, targetTaskId: true } });
+          const preById = new Map(pres.map(p => [String(p.id), p]));
+          for (const l of links) {
+            const pid = String(l.preTaskId);
+            const tid2 = String(l.taskId);
+            ensureEdge(`task:${tid2}`, `pretask:${pid}`);
+          }
+          // append missing pretasks
+          const havePreIds = new Set(pretasks.map(p => String(p.id)));
+          const missingPre = pres.filter(p => !havePreIds.has(String(p.id)));
+          if (missingPre.length) pretasks.push(...missingPre);
+
+          // 2.3) Recursively add pre->pre children for these pretasks (transitive)
+          let preFront = new Set(preIds);
+          const MAX_PRE_DEPTH = 6;
+          for (let d = 0; d < MAX_PRE_DEPTH && preFront.size > 0; d++) {
+            const layer = Array.from(preFront);
+            preFront = new Set();
+            const children = await prisma.preTask.findMany({
+              where: { links: { some: { depPreTaskId: { in: layer } } } },
+              select: { id: true, text: true, status: true, targetTaskId: true, links: { select: { depPreTaskId: true } } },
+            });
+            for (const ch of children) {
+              const cid = String(ch.id);
+              // edges from each parent in current layer
+              for (const l of (ch.links || [])) {
+                const pid = String(l.depPreTaskId || '');
+                if (!pid) continue;
+                if (!layer.includes(pid)) continue;
+                ensureEdge(`pretask:${pid}`, `pretask:${cid}`);
+              }
+              // add node
+              if (!pretasks.some(p => String(p.id) === cid)) pretasks.push({ id: ch.id, text: ch.text, status: ch.status, targetTaskId: ch.targetTaskId });
+              preFront.add(cid);
+              // FIRED → task edge
+              if (String(ch.status || '') === 'FIRED' && ch.targetTaskId) {
+                const tgt = String(ch.targetTaskId);
+                ensureEdge(`pretask:${cid}`, `task:${tgt}`);
+                if (!tasks.some(t => String(t.id) === tgt)) {
+                  const moreT = await prisma.task.findUnique({ where: { id: tgt }, select: { id: true, text: true } });
+                  if (moreT) tasks.push(moreT);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2.4) Traverse FIRED pre-tasks upwards to include ancestor tasks as well
+      let taskFront = new Set(Array.from(visitedTasks));
+      const MAX_FIRED_UP = 6;
+      for (let d = 0; d < MAX_FIRED_UP && taskFront.size > 0; d++) {
+        const layer = Array.from(taskFront);
+        taskFront = new Set();
+        const fired = await prisma.preTask.findMany({
+          where: { targetTaskId: { in: layer }, status: 'FIRED' },
+          select: { id: true, text: true, status: true, targetTaskId: true, links: { select: { taskId: true, depPreTaskId: true } } },
+        });
+        for (const p of fired) {
+          const pid = String(p.id);
+          // add node
+          if (!pretasks.some(x => String(x.id) === pid)) pretasks.push({ id: p.id, text: p.text, status: p.status, targetTaskId: p.targetTaskId });
+          // pre -> its target task (already in layer)
+          ensureEdge(`pretask:${pid}`, `task:${String(p.targetTaskId)}`);
+          // add edges from parent tasks to this pre
+          for (const l of (p.links || [])) {
+            if (l.taskId) {
+              const parentTid = String(l.taskId);
+              ensureEdge(`task:${parentTid}`, `pretask:${pid}`);
+              if (!visitedTasks.has(parentTid)) { visitedTasks.add(parentTid); taskFront.add(parentTid); }
+              if (!tasks.some(t => String(t.id) === parentTid)) {
+                const moreT = await prisma.task.findUnique({ where: { id: parentTid }, select: { id: true, text: true } });
+                if (moreT) tasks.push(moreT);
+              }
+            }
+            if (l.depPreTaskId) {
+              const parentPre = String(l.depPreTaskId);
+              ensureEdge(`pretask:${parentPre}`, `pretask:${pid}`);
+              if (!pretasks.some(x => String(x.id) === parentPre)) {
+                const morePre = await prisma.preTask.findUnique({ where: { id: parentPre }, select: { id: true, text: true, status: true, targetTaskId: true } });
+                if (morePre) pretasks.push(morePre);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('graph synth (task relations BFS) failed', e?.message || e);
+    }
+
     res.json({ ok: true, root: `task:${id}`, tasks, pretasks, edges, positions });
   } catch (e) {
     console.error('GET /tasks/:id/graph error:', e);

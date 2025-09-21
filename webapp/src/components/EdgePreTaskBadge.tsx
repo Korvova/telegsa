@@ -5,11 +5,13 @@ type Props = {
   onClick?: () => void;
   style?: React.CSSProperties;
   compact?: boolean; // true = не выходить за пределы контейнера (вся геометрия внутри)
+  side?: 'left' | 'right'; // сторона крепления значка
+  align?: 'center' | 'top'; // вертикальное выравнивание контейнера
 };
 
-export default function EdgePreTaskBadge({ kind, count, title, onClick, style }: Props) {
-  const isTask = kind === 'task';
-  const hasPre = isTask && count > 0;
+export default function EdgePreTaskBadge({ count, title, onClick, style, side = 'right', align = 'center' }: Props) {
+  // Показываем стрелку, если есть связи. Для pretask тоже учитываем count.
+  const hasPre = count > 0;
   const label = title || (hasPre ? 'Управление предзадачами' : 'Создать предзадачу');
 
   // Colors tuned for light feed cards. Works on dark too.
@@ -19,6 +21,8 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
   const blueBorder = '#1d4ed8';    // blue-700 (border for active)
 
   const size = 18; // circle diameter
+  const isLeft = side === 'left';
+  const isCenter = align === 'center';
 
   return (
     <div
@@ -31,9 +35,10 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
       role="button"
       style={{
         position: 'absolute',
-        top: '50%',
-        right: 0,
-        transform: 'translateY(-50%)',
+        top: isCenter ? '50%' : (style && (style as any).top) ? (style as any).top : 0,
+        right: isLeft ? undefined : 0,
+        left: isLeft ? 0 : undefined,
+        transform: isCenter ? 'translateY(-50%)' : undefined,
         width: size, // белый круг без внешнего выноса
         height: size,
         cursor: onClick ? 'pointer' : 'default',
@@ -45,9 +50,10 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
       <div
         style={{
           position: 'absolute',
-          right: 0,
+          right: isLeft ? undefined : 0,
+          left: isLeft ? 0 : undefined,
           top: '50%',
-          transform: 'translate(50%, -50%)', // центр круга лежит на правой кромке контейнера
+          transform: isLeft ? 'translate(-50%, -50%)' : 'translate(50%, -50%)', // центр круга лежит на кромке контейнера
           width: size,
           height: size,
           borderRadius: 999,
@@ -63,9 +69,10 @@ export default function EdgePreTaskBadge({ kind, count, title, onClick, style }:
           aria-hidden
           style={{
             position: 'absolute',
-            right: 0,
+            right: isLeft ? undefined : 0,
+            left: isLeft ? 0 : undefined,
             top: '50%',
-            transform: 'translate(50%, -50%) translateX(-1px)',
+            transform: (isLeft ? 'translate(-50%, -50%) translateX(1px)' : 'translate(50%, -50%) translateX(-1px)'),
             color: blueFill,
             fontSize: 12,
             fontWeight: 700,

@@ -1,6 +1,10 @@
+import { useRef } from 'react';
 import type { PreTaskDTO } from '../api';
+import EdgePreTaskBadge from './EdgePreTaskBadge';
+import LongPressOutline from './LongPressOutline';
 
-export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false, style, myChatId, myRankIcon, feedStyle = false }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean; style?: React.CSSProperties; myChatId?: string; myRankIcon?: string | null; feedStyle?: boolean; }) {
+export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle, footer, tone = 'normal', emphasis = false, style, myChatId, myRankIcon, feedStyle = false, doneTarget = false, rightCount = 0, onOpenProcess, hideRightBadge = false }: { p: PreTaskDTO; onOpen: (p: PreTaskDTO) => void; onEdit?: (p: PreTaskDTO) => void; nameByChat?: Record<string, string> | Map<string,string>; groupTitle?: string | null; footer?: React.ReactNode; tone?: 'normal' | 'subtle'; emphasis?: boolean; style?: React.CSSProperties; myChatId?: string; myRankIcon?: string | null; feedStyle?: boolean; doneTarget?: boolean; rightCount?: number; onOpenProcess?: () => void; hideRightBadge?: boolean; }) {
+  void onEdit; // preserve prop for callers, but not used (left badge opens process)
   const modeText = (() => {
     if (p.triggerMode === 'AFTER_ALL_DONE') return 'Сразу';
     if (p.triggerMode === 'DATE_PLUS') return `📅 ко времени: ${p.startAt ? new Date(p.startAt).toLocaleString() : ''}`;
@@ -32,8 +36,12 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
   const cardBrd = useFiredLight ? firedBrd : (isSubtle ? subtleBrd : normalBrd);
   const cardFg = useFiredLight ? firedFg : (isSubtle ? subtleFg : normalFg);
 
+  const localIdRef = useRef<string>('');
+  if (!localIdRef.current) localIdRef.current = `pretask-card-${String(p.id)}-${Math.random().toString(36).slice(2,7)}`;
+  const anchorId = localIdRef.current;
   return (
     <button
+      id={anchorId}
       onClick={() => onOpen(p)}
       style={{
         position: 'relative',
@@ -52,14 +60,25 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
       }}
       title={p.text}
     >
+      <LongPressOutline
+        targetId={anchorId}
+        durationMs={1000}
+        radius={16}
+        onComplete={() => { try { onEdit?.(p); } catch {} }}
+      />
       <div style={{ position:'absolute', left:0, top:0, bottom:0, width: 8, background: useFiredLight ? firedAccent : '#2563eb', borderTopLeftRadius: 16, borderBottomLeftRadius: 16 }} />
-      <button
-        onClick={(e)=>{ e.stopPropagation(); onEdit?.(p); }}
-        title="Редактировать предзадачу"
-        style={{ position:'absolute', left:-6, top:10, width: 16, height: 16, borderRadius: 999, background: '#3b82f6', boxShadow:`0 0 0 2px ${cardBg}`, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:10, lineHeight:1 }}
-      >{cnt > 0 ? cnt : ''}</button>
+      {/* Left edge badge: replace blue count circle with arrow badge */}
+      <EdgePreTaskBadge
+        kind="pretask"
+        count={cnt}
+        side="left"
+        align="center"
+        style={{ left: -6 }}
+        onClick={() => { onOpenProcess?.(); }}
+        title="Связи предзадачи"
+      />
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 16, marginBottom: 6 }}>
+        <div style={{ fontSize: 16, marginBottom: 6, textDecoration: (isFired && doneTarget) ? 'line-through' as const : undefined }}>
           {isFired ? (<span title="Запущена" style={{ marginRight: 6, color: useFiredLight ? firedFg : '#60a5fa' }}>⌯⌲</span>) : null}
           {p.text}
         </div>
@@ -88,10 +107,18 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
           <div style={{ marginTop: 6 }}>{footer}</div>
         ) : null}
       </div>
-      {/* Right edge badge for pretask */}
-      <div style={{ position:'absolute', right: -6, top: 10, width: 22, height: 22, borderRadius: 999, display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <span title="Связи предзадачи">⚫</span>
-      </div>
+      {/* Right edge badge for pretask (open process canvas) */}
+      {!hideRightBadge && (
+        <EdgePreTaskBadge
+          kind="pretask"
+          count={rightCount}
+          side="right"
+          align="center"
+          style={{ right: -6 }}
+          onClick={() => { onOpenProcess?.(); }}
+          title={rightCount > 0 ? 'Открыть связи' : 'Нет дочерних предзадач'}
+        />
+      )}
     </button>
   );
 }

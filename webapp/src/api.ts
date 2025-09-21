@@ -13,6 +13,7 @@ export type Task = {
   updatedAt: string;
   deadlineAt?: string | null;
   nextReminderAt?: string | null;
+  expenses?: number | null;
   acceptCondition?: 'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL';
   bountyStars?: number;
   bountyStatus?: 'NONE' | 'PLEDGED' | 'PAID' | 'REFUNDED';
@@ -128,6 +129,12 @@ export function completeTask(id: string) {
 export function setTaskProgress(id: string, progress: number) {
   return ky
     .patch(`${API_BASE}/tasks/${id}/progress`, { json: { progress } })
+    .json<{ ok: boolean; task: Task }>();
+}
+
+export function setTaskExpenses(id: string, chatId: string, expenses: number | null) {
+  return ky
+    .patch(`${API_BASE}/tasks/${id}/expenses`, { json: { chatId, expenses } })
     .json<{ ok: boolean; task: Task }>();
 }
 

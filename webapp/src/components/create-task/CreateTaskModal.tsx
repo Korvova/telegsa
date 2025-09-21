@@ -59,6 +59,7 @@ export default function CreateTaskModal({
   groups: groupsProp,
   onCreated,
   initialEdge,
+  initialTaskEdge,
   initialEdit,
 }: {
   open: boolean;
@@ -68,6 +69,7 @@ export default function CreateTaskModal({
   groups?: Group[];
   onCreated?: () => void;
   initialEdge?: { text: string; groupId: string | null; links: Array<{ taskId?: string; preTaskId?: string }>; mode?: string; startAt?: string | null; delayMinutes?: number | null; autoCancelOnAny?: boolean };
+  initialTaskEdge?: { parentTaskId: string; groupId: string | null; text?: string };
   initialEdit?: any;
 }) {
   const [text, setText] = useState('');
@@ -107,6 +109,7 @@ export default function CreateTaskModal({
   // pretask config
   const [preCfg, setPreCfg] = useState<PreConfig | null>(null);
   const [edgeContext, setEdgeContext] = useState<null | { kind: 'TASK' | 'PRETASK'; text: string }>(null);
+  const [processParentTaskId, setProcessParentTaskId] = useState<string | null>(null);
   const [robotOpen, setRobotOpen] = useState(false);
   const [weatherOpen, setWeatherOpen] = useState(false);
 
@@ -150,6 +153,18 @@ export default function CreateTaskModal({
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialEdge]);
+
+  // apply initialTaskEdge if provided (create TASK linked from process canvas)
+  useEffect(() => {
+    if (!open || !initialTaskEdge) return;
+    try {
+      setProcessParentTaskId(String(initialTaskEdge.parentTaskId || ''));
+      setEdgeContext({ kind: 'TASK', text: String(initialTaskEdge.text || '') });
+      setText('');
+      setGroupId(initialTaskEdge.groupId ?? null);
+      setTimeout(() => { focusText(); }, 0);
+    } catch {}
+  }, [open, initialTaskEdge]);
 
   // apply initialEdit if provided
   useEffect(() => {
@@ -370,6 +385,13 @@ export default function CreateTaskModal({
       try { if (_bountyLocked) { await clearDraft(); setBountyLocked(false); } } catch {}
       onCreated?.();
       onClose();
+      // Notify process canvas to place the node and connect edge (if came from edge-task-open)
+      try {
+        if (processParentTaskId) {
+          window.dispatchEvent(new CustomEvent('task-created', { detail: { taskId: newTaskId, parentTaskId: processParentTaskId } }));
+        }
+      } catch {}
+      setProcessParentTaskId(null);
       return { id: newTaskId, title: val };
     } finally { setBusy(false); }
   }

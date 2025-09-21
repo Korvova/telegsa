@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from 'reactflow';
 import PreTaskCard from '../../components/PreTaskCard';
+import LongPressOutline from '../LongPressOutline';
 import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import type { PreTaskDTO } from '../../api';
 
@@ -30,6 +31,16 @@ export default function PreTaskNode({ id, data }: NodeProps<Data>) {
         cursor: 'grab',
       }}
     >
+      <LongPressOutline
+        targetId={anchorId}
+        durationMs={1000}
+        radius={16}
+        onComplete={() => {
+          try {
+            window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String(pre.id) } }));
+          } catch {}
+        }}
+      />
       <PreTaskCard
         p={pre}
         onOpen={() => {}}
@@ -39,6 +50,7 @@ export default function PreTaskNode({ id, data }: NodeProps<Data>) {
         tone="subtle"
         myChatId={data?.myChatId}
         myRankIcon={data?.myRankIcon || null}
+        hideRightBadge={true}
       />
 
       {/* Focus current edge badge */}
@@ -62,4 +74,3 @@ export default function PreTaskNode({ id, data }: NodeProps<Data>) {
     </div>
   );
 }
-

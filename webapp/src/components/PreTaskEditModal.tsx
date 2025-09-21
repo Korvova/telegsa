@@ -30,6 +30,7 @@ export default function PreTaskEditModal({
   const [startAt, setStartAt] = useState<string | null>(null);
   const [delay, setDelay] = useState<string>('');
   const [autoCancel, setAutoCancel] = useState<boolean>(false);
+  const [title, setTitle] = useState<string>('');
 
   useEffect(() => {
     if (!open) return;
@@ -68,6 +69,7 @@ export default function PreTaskEditModal({
   useEffect(() => {
     (async () => {
       if (!open || !preTask) return;
+      setTitle(String(preTask.text || ''));
       setMode(preTask.triggerMode);
       setStartAt(preTask.startAt || null);
       setDelay(typeof preTask.delayMinutes === 'number' ? String(preTask.delayMinutes) : '');
@@ -144,20 +146,31 @@ export default function PreTaskEditModal({
     }
     const delayMinutes = delay.trim() === '' ? null : Math.max(0, parseInt(delay, 10) || 0);
     await setPreTaskLinks(preTask.id, links as any);
-    await updatePreTask(preTask.id, { triggerMode: mode, startAt: startAt || null, delayMinutes, autoCancelOnAny: autoCancel });
+    await updatePreTask(preTask.id, { text: title.trim() || preTask.text, triggerMode: mode, startAt: startAt || null, delayMinutes, autoCancelOnAny: autoCancel });
     onSaved(); onClose();
   }
 
   if (!open || !preTask) return null;
 
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2100, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div onClick={(e)=>e.stopPropagation()} style={{ width:'min(760px, 96vw)', maxHeight:'80vh', overflow:'auto', background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:12, padding:16 }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2100, display:'flex', alignItems:'flex-end', justifyContent:'center' }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ width:'100%', maxWidth:640, maxHeight:'80vh', overflow:'auto', background:'#111827', color:'#e5e7eb', borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, borderTop:'1px solid #1f2937' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-          <div style={{ width:12, height:12, borderRadius:999, background:'#3b82f6' }} />
-          <div style={{ fontWeight:700 }}>Редактировать предзадачу</div>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#9ca3af', fontSize:18, cursor:'pointer' }} aria-label="Закрыть">✕</button>
+          <div style={{ fontWeight:700 }}>Предзадача</div>
           <div style={{ marginLeft:'auto' }} />
-          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', cursor:'pointer' }}>✕</button>
+          <button onClick={async()=>{ if (!preTask) return; try { if (confirm('Удалить предзадачу?')) { await deletePreTask(preTask.id); onSaved(); onClose(); } } catch {} }} title="Удалить" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#3b1a1a', color: '#ffd7d7', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>🗑️</button>
+        </div>
+
+        {/* Название предзадачи */}
+        <div style={{ marginBottom: 10 }}>
+          <textarea
+            value={title}
+            onChange={(e)=>setTitle(e.target.value)}
+            placeholder="Текст предзадачи"
+            rows={2}
+            style={{ width:'100%', resize:'none', background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:8, padding:'8px 10px', fontSize:16 }}
+          />
         </div>
 
         {/* Список выбранных связей с (x) */}

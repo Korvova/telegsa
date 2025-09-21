@@ -152,6 +152,9 @@ model Task {
   // Ссылки предзадач, которые зависят от этой задачи
   preTaskLinks PreTaskLink[]
 
+  // Затраты по задаче (в рублях)
+  expenses Int?
+
   // Process graph (denormalized neighbors for fast graph build)
   processLeftKeys   Json?
   processRightKeys  Json?

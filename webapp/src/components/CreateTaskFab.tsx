@@ -17,6 +17,7 @@ export default function CreateTaskFab({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [edgeInit, setEdgeInit] = useState<null | { text: string; groupId: string | null; links: Array<{ taskId?: string; preTaskId?: string }>; mode?: string; startAt?: string | null; delayMinutes?: number | null; autoCancelOnAny?: boolean }>(null);
+  const [taskEdgeInit, setTaskEdgeInit] = useState<null | { parentTaskId: string; groupId: string | null; text?: string }>(null);
   const [editInit, setEditInit] = useState<null | any>(null);
   const processOpenRef = useRef(false);
 
@@ -39,7 +40,7 @@ export default function CreateTaskFab({
     };
   }, []);
 
-  // open modal on external events used by feed (edit or edge pretask)
+  // open modal on external events used by feed (edit or edge pretask / edge task)
   useEffect(() => {
     const onEdge = (e: Event) => {
       try {
@@ -55,15 +56,29 @@ export default function CreateTaskFab({
         setOpen(true);
       } catch { setOpen(true); }
     };
+    const onEdgeTask = (e: Event) => {
+      try {
+        const ce = e as CustomEvent<any>;
+        const d = (ce && ce.detail) || {};
+        const tid = d?.taskId ? String(d.taskId) : '';
+        if (!tid) return;
+        const txt = String(d.text || '');
+        const gid = (typeof d.groupId === 'string' || d.groupId === null) ? d.groupId : null;
+        setTaskEdgeInit({ parentTaskId: tid, groupId: gid ?? null, text: txt });
+        setOpen(true);
+      } catch { setOpen(true); }
+    };
     const onEdit = (e: Event) => {
       if (processOpenRef.current) return; // не открываем редактор из ленты, если открыт процесс
       try { setEditInit((e as any).detail || {}); } catch {}
       setOpen(true);
     };
     window.addEventListener('edge-pre-open', onEdge as any);
+    window.addEventListener('edge-task-open', onEdgeTask as any);
     window.addEventListener('edit-task-open', onEdit as any);
     return () => {
       window.removeEventListener('edge-pre-open', onEdge as any);
+      window.removeEventListener('edge-task-open', onEdgeTask as any);
       window.removeEventListener('edit-task-open', onEdit as any);
     };
   }, []);
@@ -97,12 +112,13 @@ export default function CreateTaskFab({
       {open && (
         <CreateTaskModal
           open={open}
-          onClose={() => { setOpen(false); setEdgeInit(null); setEditInit(null); }}
+          onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); }}
           chatId={_chatId}
           defaultGroupId={_defaultGroupId}
           groups={_groupsProp}
           onCreated={onCreated}
           initialEdge={edgeInit || undefined}
+          initialTaskEdge={taskEdgeInit || undefined}
           initialEdit={editInit || undefined}
         />
       )}

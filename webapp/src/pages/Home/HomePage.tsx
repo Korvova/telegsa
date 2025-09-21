@@ -192,6 +192,56 @@ export default function HomePage({
       console.log('[AFTER_STRIPE_PRE]', { preId: String(pid), childIds: children.map((x:any)=>String(x.id)), count: children.length });
     } catch (e) { console.log('[AFTER_STRIPE_PRE][ERR]', e); }
   };
+  // Определить, завершена ли задача, в которую превратилась предзадача (FIRED -> task Done)
+  const isPreTaskTargetDone = (p: PreTaskDTO): boolean => {
+    try {
+      const tid = String((p as any).targetTaskId || '');
+      let t: any = null;
+      if (tid) t = items.find((x: any) => String(x.id) === tid);
+      if (!t) {
+        const ttext = String((p as any).text || '');
+        if (ttext) t = items.find((x: any) => String((x as any).text || '') === ttext);
+      }
+      const ph = t ? phaseOf(t) : undefined;
+      return String(ph || '').toLowerCase() === 'done';
+    } catch {
+      return false;
+    }
+  };
+  // Вычислить id корневой задачи для предзадачи (ищем родителя-задачу по links; при неудаче — используем targetTaskId для FIRED)
+  const rootTaskIdFromPre = (pre: PreTaskDTO): string | null => {
+    try {
+      const seen = new Set<string>();
+      const hasTaskLink = (p: any): string | null => {
+        const links = Array.isArray((p as any)?.links) ? (p as any).links : [];
+        const toTask = links.find((l: any) => !!l?.taskId);
+        return toTask?.taskId ? String(toTask.taskId) : null;
+      };
+      // 1) прямая ссылка на задачу
+      const direct = hasTaskLink(pre as any);
+      if (direct) return direct;
+      // 2) поднимаемся по родителям предзадачи
+      let cur: any = pre;
+      for (let guard = 0; guard < 10; guard++) {
+        if (!cur) break;
+        const cid = String((cur as any).id || '');
+        if (!cid || seen.has(cid)) break;
+        seen.add(cid);
+        // родители — те, кто ссылается на меня
+        const parents = preTasks.filter((x: any) => String((x as any).id) !== cid && Array.isArray((x as any).links) && (x as any).links.some((l: any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === cid));
+        const directParentWithTask = parents.find((p: any) => !!hasTaskLink(p));
+        const tid = directParentWithTask ? hasTaskLink(directParentWithTask) : null;
+        if (tid) return tid;
+        // поднимемся к первому родителю (если есть) и повторим
+        cur = parents[0];
+      }
+      // 3) fallback: если уже FIRED и известно targetTaskId — использовать его
+      if (String((pre as any).status || '') === 'FIRED' && (pre as any).targetTaskId) return String((pre as any).targetTaskId);
+      return null;
+    } catch {
+      return null;
+    }
+  };
   // общая подгрузка предзадач (в т.ч. FIRED)
   const refreshPreTasks = async () => {
     try {
@@ -872,6 +922,39 @@ export default function HomePage({
   const sliderRef = useRef<HTMLDivElement | null>(null);
   const isQuickBarOpen = openQBar !== null;
 
+  // Подсказки направлений связей с полотна (fallback, если в фиде нет денорм-данных)
+  const [edgeDirHint, setEdgeDirHint] = useState<Record<string, { left?: boolean; right?: boolean }>>({});
+  const hintRequestedRef = useRef<Set<string>>(new Set());
+  const ensureEdgeDirHint = async (taskId: string) => {
+    if (!taskId) return;
+    if (hintRequestedRef.current.has(taskId)) return;
+    hintRequestedRef.current.add(taskId);
+    try {
+      const api = await import('../../api');
+      // 1) server graph edges (process + denorm)
+      const g = await api.getTaskGraph(String(taskId)).catch(() => null as any);
+      const edges: Array<{ source: string; target: string }> = (g && (g as any).ok && Array.isArray((g as any).edges)) ? (g as any).edges : [];
+      const srcKey = `task:${String(taskId)}`;
+      let left = false, right = false;
+      for (const e of edges) {
+        const s = String((e as any).source || '');
+        const t = String((e as any).target || '');
+        if (t === srcKey) left = true;
+        if (s === srcKey) right = true;
+        if (left && right) break;
+      }
+      // 2) TaskRelations fallback (canvas synthesizes them client-side)
+      try {
+        const rel = await api.getTaskRelations(String(taskId)).catch(() => null as any);
+        if (rel && (rel as any).ok) {
+          if (Array.isArray((rel as any).incoming) && (rel as any).incoming.length) left = true;
+          if (Array.isArray((rel as any).outgoing) && (rel as any).outgoing.length) right = true;
+        }
+      } catch {}
+      setEdgeDirHint((prev) => ({ ...prev, [String(taskId)]: { left, right } }));
+    } catch {}
+  };
+
   // long-press отключён: быстрые действия открываются по клику на статус-бейдж
   // const startLongPress = (_taskId: string) => {};
   const cancelLongPress = () => {
@@ -1404,7 +1487,18 @@ export default function HomePage({
                                             onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
                                             onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
                                           >
-                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} />
+                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
+                                              try {
+                                                const rootId = rootTaskIdFromPre(cp as any);
+                                                if (!rootId) return;
+                                                const scopeId = `task:${rootId}`;
+                                                const card: any = { id: rootId, text: String((cp as any).text || ''), fromProcess: true, groupId: scopeId };
+                                                window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                                setTimeout(() => {
+                                                  try { window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((cp as any).id) } })); } catch {}
+                                                }, 150);
+                                              } catch {}
+                                            }} />
                                           </div>
                                         </div>
                                       );
@@ -1529,11 +1623,13 @@ export default function HomePage({
                             onPicked={(next) => patchItem(t.id, { phase: next, status: statusTextFromStage(next) })}
                             onRequestClose={closeQBar}
                             onComplete={async () => {
+                              // Если требуется фото — открываем модалку загрузки фото
                               if ((t as any).acceptCondition === 'PHOTO') {
                                 setOpenQBar(null);
                                 setCompletePrompt({ id: t.id });
                                 return false;
                               }
+                              // Если требуется согласование — переносим в колонку "Согласование"
                               if ((t as any).acceptCondition === 'APPROVAL') {
                                 try {
                                   const board = await fetchBoard(meChatId, groupId ?? undefined);
@@ -1546,6 +1642,15 @@ export default function HomePage({
                                 finally {
                                   setOpenQBar(null);
                                 }
+                                return false;
+                              }
+
+                              // Базовый сценарий: прямое завершение
+                              try {
+                                await completeTask(t.id);
+                                patchItem(t.id, { phase: 'Done', status: 'Готово' } as any);
+                                return true; // сообщаем бару, что завершение выполнено
+                              } catch {
                                 return false;
                               }
                             }}
@@ -1570,36 +1675,32 @@ export default function HomePage({
                         const apiPreChildren = Number((t as any).preChildrenCount || 0);
                         const calcPre = uniq.size;
                         const preCountForTask = apiPreChildren > 0 ? apiPreChildren : calcPre;
+                        // Prefer server-provided counts for process canvas
+                        const leftCount = Number((t as any).processLeftCount || 0);
+                        const rightCount = Number((t as any).processRightCount || 0);
+                        // Fallback for right side: if server data absent, use computed pre-children
+                        const rightExists = rightCount > 0 ? rightCount : preCountForTask;
+
+                        // Если нет данных по одной из сторон — запросим подсказку (разово)
+                        if ((leftCount === 0 || rightExists === 0) && !edgeDirHint[tid]) {
+                          try { ensureEdgeDirHint(tid); } catch {}
+                        }
+
+                        const finalLeft = leftCount > 0 ? leftCount : (edgeDirHint[tid]?.left ? 1 : 0);
+                        const finalRight = rightExists > 0 ? rightExists : (edgeDirHint[tid]?.right ? 1 : 0);
                         return (
-                          <div style={{ position:'absolute', right: 16, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 80 }}>
-                            <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
-                              <EdgePreTaskBadge
-                                kind="task"
-                                count={preCountForTask}
-                                onClick={async () => {
-                                  try {
-                                      // Открываем task-scope полотна РОДИТЕЛЬСКОЙ задачи (корня),
-                                      // но фокусируемся на текущей задаче (t.id)
+                          <>
+                            {/* Left edge badge (incoming links exist) */}
+                            <div style={{ position:'absolute', left: 16, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 80 }}>
+                              <div style={{ position:'absolute', left: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                                <EdgePreTaskBadge
+                                  kind="task"
+                                  count={finalLeft}
+                                  side="left"
+                                  onClick={async () => {
+                                    try {
                                       const tid = String((t as any).id);
-                                      const ttext = String((t as any).text || '');
-                                      // найти fired-предзадачу, породившую эту задачу
-                                      let fired: any = preTasks.find((p:any) => String(p.status||'')==='FIRED' && String(p.targetTaskId||'')===tid);
-                                      if (!fired && ttext) fired = preTasks.find((p:any)=> String(p.status||'')==='FIRED' && String(p.text||'')===ttext);
-                                      // подняться по цепочке предзадач до ближайшего родителя-задачи
-                                      let rootId = tid;
-                                      const seen = new Set<string>();
-                                      let guard = 0;
-                                      while (fired && guard++ < 10) {
-                                        if (seen.has(String(fired.id))) break;
-                                        seen.add(String(fired.id));
-                                        const links = Array.isArray((fired as any).links) ? (fired as any).links : [];
-                                        const parentTask = links.find((l:any)=> !!l?.taskId);
-                                        if (parentTask?.taskId) { rootId = String(parentTask.taskId); break; }
-                                        const parentPre = links.find((l:any)=> !!(l?.depPreTaskId || l?.preTaskId));
-                                        const pid = String((parentPre?.depPreTaskId || parentPre?.preTaskId || ''));
-                                        fired = pid ? preTasks.find((p:any)=> String(p.id)===pid) : undefined;
-                                      }
-                                      const scopeId = `task:${rootId}`;
+                                      const scopeId = `task:${tid}`;
                                       const card = ((): any => {
                                         const cardBadge = badge;
                                         const dl = deadlineAt ? { iso: deadlineAt, leftText: leftText || '', overdue: new Date(deadlineAt).getTime() < Date.now() } : null;
@@ -1631,7 +1732,58 @@ export default function HomePage({
                                           groupId: scopeId,
                                         };
                                       })();
-                                      try { console.log('[FEED] badge click → open process', { taskId: tid, groupId: (card as any).groupId, preCount: preCountForTask, scope: 'task' }); } catch {}
+                                      window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                      setTimeout(() => {
+                                        try { window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: tid } })); } catch {}
+                                      }, 150);
+                                    } catch {}
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Right edge badge (outgoing links exist) */}
+                            <div style={{ position:'absolute', right: 16, top: 0, bottom: 0, overflow:'visible', pointerEvents:'none', zIndex: 80 }}>
+                              <div style={{ position:'absolute', right: 0, top: 0, bottom: 0, pointerEvents:'auto' }}>
+                                <EdgePreTaskBadge
+                                  kind="task"
+                                  count={finalRight}
+                                  onClick={async () => {
+                                  try {
+                                      const tid = String((t as any).id);
+                                      const scopeId = `task:${tid}`;
+                                      const card = ((): any => {
+                                        const cardBadge = badge;
+                                        const dl = deadlineAt ? { iso: deadlineAt, leftText: leftText || '', overdue: new Date(deadlineAt).getTime() < Date.now() } : null;
+                                        const labs = (() => {
+                                          const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+                                          const titles = (t as any).labelTitles as string[] | undefined;
+                                          const arr: { id?: string; title: string }[] = Array.isArray(raw) ? raw : Array.isArray(titles) ? titles.map((title) => ({ title })) : (labelsByTask[t.id] || []);
+                                          return arr.map((l:any) => String(l.title));
+                                        })();
+                                        const grp = { title: (t as any).groupTitle, public: !!((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])), telegram: !!(t as any).isTelegramGroup, chipBg: groupChipBg };
+                                        const bnty = { stars: (t as any).bountyStars || 0, status: (t as any).bountyStatus || 'NONE' };
+                                        return {
+                                          id: t.id,
+                                          text: (t as any).text,
+                                          isEvent,
+                                          fromProcess: !!(t as any).fromProcess,
+                                          badge: cardBadge,
+                                          dateLine,
+                                          deadline: dl,
+                                          nextReminderAt: nextReminderAt || null,
+                                          acceptCondition: (t as any).acceptCondition || 'NONE',
+                                          bounty: bnty,
+                                          group: grp,
+                                          labels: labs,
+                                          assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                          bg: (colorsForPhase(phaseOf(t)).bg),
+                                          brd: (colorsForPhase(phaseOf(t)).brd),
+                                          phase: String(phaseOf(t)),
+                                          groupId: scopeId,
+                                        };
+                                      })();
+                                      try { console.log('[FEED] badge click → open process', { taskId: tid, groupId: (card as any).groupId, scope: 'task' }); } catch {}
                                       window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
                                       // подсветим связи для этой задачи
                                       setTimeout(() => {
@@ -1645,6 +1797,7 @@ export default function HomePage({
                                 />
                             </div>
                           </div>
+                          </>
                         );
                         })() : null}
 
@@ -2027,9 +2180,70 @@ export default function HomePage({
                                           emphasis={cnt>0}
                                           myChatId={meChatId}
                                           myRankIcon={myRankIcon}
+                                          doneTarget={isPreTaskTargetDone(p as any)}
+                                          rightCount={cnt}
+                                          onOpenProcess={async () => {
+                                            try {
+                                              const tid = String((t as any).id);
+                                              const ttext = String((t as any).text || '');
+                                              // найти fired-предзадачу, породившую эту задачу
+                                              let fired: any = preTasks.find((pp:any) => String(pp.status||'')==='FIRED' && String(pp.targetTaskId||'')===tid);
+                                              if (!fired && ttext) fired = preTasks.find((pp:any)=> String(pp.status||'')==='FIRED' && String(pp.text||'')===ttext);
+                                              // подняться по цепочке предзадач до ближайшего родителя-задачи
+                                              let rootId = tid;
+                                              const seen = new Set<string>();
+                                              let guard = 0;
+                                              while (fired && guard++ < 10) {
+                                                if (seen.has(String(fired.id))) break;
+                                                seen.add(String(fired.id));
+                                                const links = Array.isArray((fired as any).links) ? (fired as any).links : [];
+                                                const parentTask = links.find((l:any)=> !!l?.taskId);
+                                                if (parentTask?.taskId) { rootId = String(parentTask.taskId); break; }
+                                                const parentPre = links.find((l:any)=> !!(l?.depPreTaskId || l?.preTaskId));
+                                                const pid = String((parentPre?.depPreTaskId || parentPre?.preTaskId || ''));
+                                                fired = pid ? preTasks.find((pp:any)=> String(pp.id)===pid) : undefined;
+                                              }
+                                              const scopeId = `task:${rootId}`;
+                                              const card = ((): any => {
+                                                const cardBadge = badge;
+                                                const dl = deadlineAt ? { iso: deadlineAt, leftText: leftText || '', overdue: new Date(deadlineAt).getTime() < Date.now() } : null;
+                                                const labs = (() => {
+                                                  const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+                                                  const titles = (t as any).labelTitles as string[] | undefined;
+                                                  const arr: { id?: string; title: string }[] = Array.isArray(raw) ? raw : Array.isArray(titles) ? titles.map((title) => ({ title })) : (labelsByTask[t.id] || []);
+                                                  return arr.map((l:any) => String(l.title));
+                                                })();
+                                                const grp = { title: (t as any).groupTitle, public: !!((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])), telegram: !!(t as any).isTelegramGroup, chipBg: groupChipBg };
+                                                const bnty = { stars: (t as any).bountyStars || 0, status: (t as any).bountyStatus || 'NONE' };
+                                                return {
+                                                  id: (t as any).id,
+                                                  text: (t as any).text,
+                                                  isEvent,
+                                                  fromProcess: !!(t as any).fromProcess,
+                                                  badge: cardBadge,
+                                                  dateLine,
+                                                  deadline: dl,
+                                                  nextReminderAt: nextReminderAt || null,
+                                                  acceptCondition: (t as any).acceptCondition || 'NONE',
+                                                  bounty: bnty,
+                                                  group: grp,
+                                                  labels: labs,
+                                                  assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                                  bg: (colorsForPhase(phaseOf(t)).bg),
+                                                  brd: (colorsForPhase(phaseOf(t)).brd),
+                                                  phase: String(phaseOf(t)),
+                                                  groupId: scopeId,
+                                                };
+                                              })();
+                                              window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                              setTimeout(() => {
+                                                try { window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((p as any).id) } })); } catch {}
+                                              }, 150);
+                                            } catch {}
+                                          }}
                                           style={{ boxShadow: (idx === linked.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }}
                                         />
-                                        {/* Предзадача: не открываем процесс по клику */}
+                                        {/* центр. синий кружок-счётчик убран — используем левый стрелочный EdgePreTaskBadge внутри PreTaskCard */}
                                       </div>
                                     );
                                   })()}
@@ -2084,8 +2298,63 @@ export default function HomePage({
                                               ) : null;
                                               return (
                                                 <div style={{ position:'relative' }}>
-                                                  <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
-                                                      {/* Предзадача: не открываем процесс по клику */}
+                                                  <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
+                                                    try {
+                                                      const tid = String((t as any).id);
+                                                      const ttext = String((t as any).text || '');
+                                                      let fired: any = preTasks.find((pp:any) => String(pp.status||'')==='FIRED' && String(pp.targetTaskId||'')===tid);
+                                                      if (!fired && ttext) fired = preTasks.find((pp:any)=> String(pp.status||'')==='FIRED' && String(pp.text||'')===ttext);
+                                                      let rootId = tid;
+                                                      const seen = new Set<string>();
+                                                      let guard = 0;
+                                                      while (fired && guard++ < 10) {
+                                                        if (seen.has(String(fired.id))) break;
+                                                        seen.add(String(fired.id));
+                                                        const links = Array.isArray((fired as any).links) ? (fired as any).links : [];
+                                                        const parentTask = links.find((l:any)=> !!l?.taskId);
+                                                        if (parentTask?.taskId) { rootId = String(parentTask.taskId); break; }
+                                                        const parentPre = links.find((l:any)=> !!(l?.depPreTaskId || l?.preTaskId));
+                                                        const pid = String((parentPre?.depPreTaskId || parentPre?.preTaskId || ''));
+                                                        fired = pid ? preTasks.find((pp:any)=> String(pp.id)===pid) : undefined;
+                                                      }
+                                                      const scopeId = `task:${rootId}`;
+                                                      const card = ((): any => {
+                                                        const cardBadge = badge;
+                                                        const dl = deadlineAt ? { iso: deadlineAt, leftText: leftText || '', overdue: new Date(deadlineAt).getTime() < Date.now() } : null;
+                                                        const labs = (() => {
+                                                          const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+                                                          const titles = (t as any).labelTitles as string[] | undefined;
+                                                          const arr: { id?: string; title: string }[] = Array.isArray(raw) ? raw : Array.isArray(titles) ? titles.map((title) => ({ title })) : (labelsByTask[t.id] || []);
+                                                          return arr.map((l:any) => String(l.title));
+                                                        })();
+                                                        const grp = { title: (t as any).groupTitle, public: !!((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])), telegram: !!(t as any).isTelegramGroup, chipBg: groupChipBg };
+                                                        const bnty = { stars: (t as any).bountyStars || 0, status: (t as any).bountyStatus || 'NONE' };
+                                                        return {
+                                                          id: (t as any).id,
+                                                          text: (t as any).text,
+                                                          isEvent,
+                                                          fromProcess: !!(t as any).fromProcess,
+                                                          badge: cardBadge,
+                                                          dateLine,
+                                                          deadline: dl,
+                                                          nextReminderAt: nextReminderAt || null,
+                                                          acceptCondition: (t as any).acceptCondition || 'NONE',
+                                                          bounty: bnty,
+                                                          group: grp,
+                                                          labels: labs,
+                                                          assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                                          bg: (colorsForPhase(phaseOf(t)).bg),
+                                                          brd: (colorsForPhase(phaseOf(t)).brd),
+                                                          phase: String(phaseOf(t)),
+                                                          groupId: scopeId,
+                                                        };
+                                                      })();
+                                                      window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                                      setTimeout(() => {
+                                                        try { window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((cp as any).id) } })); } catch {}
+                                                      }, 150);
+                                                    } catch {}
+                                                  }} style={{ boxShadow: (idx === children.length - 1) ? 'none' : '0 -10px 18px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.20)' }} />
                                                 </div>
                                               );
                                             })()}
@@ -2120,7 +2389,18 @@ export default function HomePage({
                                                       onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
                                                       onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
                                                     >
-                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
+                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(gg as any)} rightCount={(preTasks.filter(x => String((x as any).id) !== String(gg.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(gg.id))).length)} onOpenProcess={async () => {
+                                                        try {
+                                                          const rootId = rootTaskIdFromPre(gg as any);
+                                                          if (!rootId) return;
+                                                          const scopeId = `task:${rootId}`;
+                                                          const card: any = { id: rootId, text: String((gg as any).text || ''), fromProcess: true, groupId: scopeId };
+                                                          window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                                          setTimeout(() => {
+                                                            try { window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((gg as any).id) } })); } catch {}
+                                                          }, 150);
+                                                        } catch {}
+                                                      }} style={{ boxShadow: (gidx === grand.length - 1) ? 'none' : '0 10px 16px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.22)' }} />
                                                     </div>
                                                   </div>
                                                 ))}
@@ -2263,7 +2543,18 @@ export default function HomePage({
                                     onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
                                     onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
                                   >
-                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} />
+                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
+                                      try {
+                                        const rootId = rootTaskIdFromPre(cp as any);
+                                        if (!rootId) return;
+                                        const scopeId = `task:${rootId}`;
+                                        const card: any = { id: rootId, text: String((cp as any).text || ''), fromProcess: true, groupId: scopeId };
+                                        window.dispatchEvent(new CustomEvent('open-taskfeed-process', { detail: { card } }));
+                                        setTimeout(() => {
+                                          try { window.dispatchEvent(new CustomEvent('focus-process-edge', { detail: { nodeId: String((cp as any).id) } })); } catch {}
+                                        }, 150);
+                                      } catch {}
+                                    }} />
                                   </div>
                                 </div>
                               );
