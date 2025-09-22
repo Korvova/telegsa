@@ -162,15 +162,27 @@ export default function PreTaskEditModal({
           <button onClick={async()=>{ if (!preTask) return; try { if (confirm('Удалить предзадачу?')) { await deletePreTask(preTask.id); onSaved(); onClose(); } } catch {} }} title="Удалить" style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#3b1a1a', color: '#ffd7d7', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>🗑️</button>
         </div>
 
-        {/* Название предзадачи */}
-        <div style={{ marginBottom: 10 }}>
-          <textarea
-            value={title}
-            onChange={(e)=>setTitle(e.target.value)}
-            placeholder="Текст предзадачи"
-            rows={2}
-            style={{ width:'100%', resize:'none', background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:8, padding:'8px 10px', fontSize:16 }}
-          />
+        {/* Название предзадачи + кнопка 💾 как в CreateTaskModal */}
+        <div style={{ marginBottom: 10, display:'flex', gap:8, alignItems:'stretch' }}>
+          <div style={{ position:'relative', flex:1, minWidth:0 }}>
+            <textarea
+              value={title}
+              onChange={(e)=>setTitle(e.target.value)}
+              placeholder="Текст предзадачи"
+              rows={2}
+              style={{ width:'100%', resize:'none', background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:8, padding:'8px 10px', fontSize:16 }}
+            />
+          </div>
+          <div style={{ width: 36, height: 36 }}>
+            <button
+              type="button"
+              title="Сохранить"
+              onClick={apply}
+              style={{ width:'100%', height:'100%', borderRadius:999, background:'#2563eb', color:'#fff', border:'1px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}
+            >
+              💾
+            </button>
+          </div>
         </div>
 
         {/* Список выбранных связей с (x) */}
@@ -237,9 +249,9 @@ export default function PreTaskEditModal({
           )}
         </div>
 
+        {/* Нижние кнопки не нужны — сохраняем через 💾 справа от текста */}
         <div style={{ marginTop:12, display:'flex', gap:8, justifyContent:'flex-end' }}>
           <button onClick={onClose} style={{ borderRadius:8, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', padding:'8px 12px', cursor:'pointer' }}>Отмена</button>
-          <button onClick={apply} style={{ borderRadius:8, border:'1px solid transparent', background:'#2563eb', color:'#fff', padding:'8px 12px', cursor:'pointer' }}>Сохранить</button>
         </div>
       </div>
     </div>
