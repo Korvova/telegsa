@@ -22,7 +22,7 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
   type LinkItem = { id: string; text: string; kind: 'TASK' | 'PRETASK'; status?: string };
   const [items, setItems] = useState<LinkItem[]>([]);
   const [selected, setSelected] = useState<Map<string, LinkItem>>(new Map());
-  const [q, setQ] = useState('');
+  const [q] = useState('');
   const [labelFilterId, setLabelFilterId] = useState<string | null>(null);
   const [taskLabelsCache, _setTaskLabelsCache] = useState<Record<string, string[]>>({});
   const [groupLabels, setGroupLabels] = useState<{ id: string; title: string }[]>([]);
@@ -143,8 +143,7 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
               <div style={{ fontSize: 16, fontWeight: 600 }}>Связанные задачи</div>
               <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-              <input placeholder="Поиск по названию" value={q} onChange={e => setQ(e.target.value)} style={{ flex: 1, background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 8, padding: '8px 10px' }} />
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12, justifyContent:'flex-end' }}>
               {applied && (
                 <button onClick={clear} title="Сбросить предзадачу" style={{ borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', padding: '6px 10px', cursor: 'pointer' }}>Сбросить</button>
               )}
@@ -161,7 +160,6 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
                 <option value="">Все</option>
                 {groupLabels.map(l => (<option key={l.id} value={l.id}>{l.title}</option>))}
               </select>
-              <input placeholder="Поиск…" value={q} onChange={e=>setQ(e.target.value)} style={{ flex:1, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'6px 8px' }} />
             </div>
             )}
             {!hideLinks && (

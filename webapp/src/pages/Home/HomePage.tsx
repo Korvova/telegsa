@@ -1247,7 +1247,8 @@ export default function HomePage({
           WebkitOverflowScrolling: 'touch',
           gap: COLUMN_GAP,
           scrollBehavior: 'smooth',
-          background: '#0f1216', // избегаем белых просветов между страницами
+          // Подложка ленты — берем из темы, чтобы фон вокруг карточек менялся вместе с настройкой
+          background: 'var(--app-bg, #0b1220)',
         }}
       >
         {PAGES.map((pg) => {

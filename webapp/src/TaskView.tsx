@@ -484,7 +484,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
       <div
         style={{
           minHeight: '100vh',
-          background: '#0f1216',
+          background: 'var(--app-bg, #0b1220)',
           color: '#e8eaed',
           padding: 16,
           transition: 'opacity 360ms ease, transform 360ms ease, filter 360ms ease',
@@ -522,7 +522,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f1216', color: '#e8eaed', padding: 16 }}>
+    <div style={{ minHeight: '100vh', background: 'var(--app-bg, #0b1220)', color: '#e8eaed', padding: 16 }}>
       {Header}
 
       <div

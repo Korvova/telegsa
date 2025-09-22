@@ -33,6 +33,7 @@ import {
   uploadTaskMedia,
   addComment,
   completeTask,
+  API_BASE,
 } from './api';
 
 import {
@@ -341,10 +342,26 @@ function TabPlaceholder({ tab }: { tab: TabKey }) {
 
 /* ---------------- App ---------------- */
 export default function App() {
+  // Apply saved theme on app start (before opening settings)
+  const chatId = useChatId();
+  useEffect(() => {
+    if (!chatId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/me/theme?chatId=${encodeURIComponent(String(chatId))}`);
+        const j = await r.json().catch(() => ({}));
+        const v = (j && j.themeBg) || '';
+        if (alive && typeof v === 'string' && /^#([0-9a-fA-F]{6})$/.test(v)) {
+          try { document.documentElement.style.setProperty('--app-bg', v); } catch {}
+          try { document.body.style.background = v; } catch {}
+        }
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [chatId]);
   const [selectedGroupMineOnly, setSelectedGroupMineOnly] = useState<boolean>(false);
   const [showProcess, setShowProcess] = useState(false);
-
-  const chatId = useChatId();
   const myRankIcon = useMyRankIcon(chatId);
   // Ключ для перезагрузки ленты на Home после создания задачи
   const [feedReloadKey, setFeedReloadKey] = useState(0);
