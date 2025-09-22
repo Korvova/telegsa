@@ -418,6 +418,10 @@ export default function CreateTaskModal({
       } catch {}
       setProcessParentTaskId(null);
       return { id: newTaskId, title: val };
+    } catch (e:any) {
+      const msg = String(e?.message || '');
+      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+      throw e;
     } finally { setBusy(false); }
   }
 

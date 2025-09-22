@@ -714,6 +714,14 @@ export default function HomePage({
     }
   }, [scope]);
 
+  // сообщаем фабрике создания задач, какая группа выбрана в ленте (для дефолта в модалке)
+  useEffect(() => {
+    try {
+      const gid = scope.kind === 'group' ? String(scope.groupId) : null;
+      window.dispatchEvent(new CustomEvent('create-task-default-group', { detail: { groupId: gid } }));
+    } catch {}
+  }, [scope]);
+
   // подгрузка ярлыков задач (ленивая)
   useEffect(() => {
     let alive = true;

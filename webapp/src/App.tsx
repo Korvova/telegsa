@@ -25,7 +25,6 @@ import {
   fetchBoard,
   type Column,
   moveTask as apiMoveTask,
-  renameColumn,
   type Group,
   listGroups,
   upsertMe,
@@ -1367,7 +1366,7 @@ export default function App() {
 function ColumnView({
   column,
   onOpenTask,
-  onRenamed,
+  onRenamed: _onRenamed,
   activeId,
   dragging,
   meChatId,
@@ -1381,29 +1380,23 @@ function ColumnView({
   meChatId: string;
   myRankIcon: string | null;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(column.name);
   const { setNodeRef } = useDroppable({ id: column.id });
 
-  const saveName = async () => {
-    const newName = name.trim();
-    if (!newName || newName === column.name) {
-      setEditing(false);
-      setName(column.name);
-      return;
+  // Показываем локализованное имя, не меняя системное (Inbox/Doing/...)
+  const displayTitle = (() => {
+    const raw = String(column.name || '');
+    const i = raw.indexOf('::');
+    const base = i >= 0 ? raw.slice(i + 2) : raw;
+    switch (base) {
+      case 'Inbox': return 'Новые';
+      case 'Doing': return 'В работе';
+      case 'Done': return 'Готово';
+      case 'Cancel': return 'Отмена';
+      case 'Approval': return 'Согласование';
+      case 'Wait': return 'Ждёт';
+      default: return base || raw;
     }
-    try {
-      await renameColumn(column.id, newName);
-      onRenamed();
-      setEditing(false);
-      WebApp?.HapticFeedback?.impactOccurred?.('light');
-    } catch (e) {
-      console.error('[UI] renameColumn error', e);
-      alert('Имя занято или ошибка сохранения');
-      setName(column.name);
-      setEditing(false);
-    }
-  };
+  })();
 
   return (
     <div
@@ -1423,48 +1416,7 @@ function ColumnView({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        {editing ? (
-          <>
-            <input
-              value={name}
-              autoFocus
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') saveName();
-                if (e.key === 'Escape') {
-                  setEditing(false);
-                  setName(column.name);
-                }
-              }}
-              onBlur={saveName}
-              style={{
-                flex: 1,
-                padding: '6px 10px',
-                borderRadius: 10,
-                background: '#121722',
-                color: '#e8eaed',
-                border: '1px solid #2a3346',
-              }}
-            />
-            <button
-              onClick={saveName}
-              style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-            >
-              OK
-            </button>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.8, flex: 1 }}>{column.name}</div>
-            <button
-              onClick={() => setEditing(true)}
-              title="Переименовать"
-              style={{ background: 'transparent', color: '#8aa0ff', border: 'none', cursor: 'pointer', fontSize: 16, padding: 2 }}
-            >
-              ✎
-            </button>
-          </>
-        )}
+        <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.8 }}>{displayTitle}</div>
       </div>
 
       <SortableContext id={column.id} items={column.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>

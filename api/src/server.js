@@ -629,7 +629,17 @@ app.get('/tasks', async (req, res) => {
     });
 
     let columns = await enrichColumnsWithAssignees(columnsRaw);
-    if (onlyMine) {
+    // Enforce view-own-only if enabled on group (non-owner)
+    const enforceOnlyMine = (async () => {
+      try {
+        if (String(g.ownerChatId) === String(chatId)) return false;
+        if ((g).permViewOwnOnly === true) return true;
+        // fallback: if Prisma client doesn't expose new field yet, ignore
+        return false;
+      } catch { return false; }
+    })();
+    const mustOwn = (await enforceOnlyMine) || onlyMine;
+    if (mustOwn) {
       columns = columns.map(c => ({ ...c, tasks: c.tasks.filter(t => String(t.assigneeChatId || '') === chatId) }));
     }
     return res.json({ ok: true, columns });
@@ -2400,6 +2410,12 @@ app.post('/tasks', async (req, res) => {
 
       const g = await prisma.group.findUnique({ where: { id: groupId } });
       if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+      // permission: can create tasks in this group
+      try {
+        const isOwner = String(g.ownerChatId) === caller;
+        const canCreate = isOwner || (g.permCanCreateTasks !== false);
+        if (!canCreate) return res.status(403).json({ ok: false, error: 'no_rights' });
+      } catch {}
       boardChatId = g.ownerChatId; // все групповые задачи у владельца
       targetGroup = g;
     }
@@ -2517,6 +2533,48 @@ app.get('/groups', async (req, res) => {
   } catch (e) {
     console.error('GET /groups error:', e);
     res.status(500).json({ ok: false });
+  }
+});
+
+// Permissions: get defaults
+app.get('/groups/:id/permissions', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const g = await prisma.group.findUnique({ where: { id } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    const perms = {
+      viewOwnOnly: !!(g).permViewOwnOnly,
+      changeStatusAny: (g).permChangeStatusAny !== false,
+      canCreateTasks: (g).permCanCreateTasks !== false,
+      edit: (g).permEditJson || null,
+    };
+    res.json({ ok: true, permissions: perms });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// Permissions: update defaults (owner only)
+app.post('/groups/:id/permissions', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { chatId, permissions } = req.body || {};
+    const me = String(chatId || '').trim();
+    if (!me) return res.status(400).json({ ok: false, error: 'chatId_required' });
+    const g = await prisma.group.findUnique({ where: { id } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    if (String(g.ownerChatId) !== me) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const data = {};
+    if (permissions && typeof permissions === 'object') {
+      if ('viewOwnOnly' in permissions) data['permViewOwnOnly'] = !!permissions.viewOwnOnly;
+      if ('changeStatusAny' in permissions) data['permChangeStatusAny'] = !!permissions.changeStatusAny;
+      if ('canCreateTasks' in permissions) data['permCanCreateTasks'] = !!permissions.canCreateTasks;
+      if ('edit' in permissions) data['permEditJson'] = permissions.edit || null;
+    }
+    const updated = await prisma.group.update({ where: { id }, data });
+    res.json({ ok: true, group: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'internal' });
   }
 });
 
