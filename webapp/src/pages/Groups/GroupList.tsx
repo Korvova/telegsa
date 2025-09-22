@@ -173,7 +173,7 @@ function tabBtn(active: boolean) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ background: 'var(--app-bg, #0b1220)', border: '1px solid #2a3346', borderRadius: 16, padding: 12 }}>
-      <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.8, marginBottom: 8, color: (title === 'Мои проекты') ? '#111827' : undefined }}>{title}</div>
+      <div style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.8, marginBottom: 8, color: (title === 'Мои проекты' || title === 'Публичные группы' || title === 'Проекты со мной') ? '#111827' : undefined }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   );

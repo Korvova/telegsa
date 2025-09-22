@@ -1165,7 +1165,8 @@ export default function App() {
           ) : tab === 'settings' ? (
             <div
               style={{
-                background: '#1b2030',
+                // фон настроек — по выбранной теме
+                background: 'var(--app-bg, #0b1220)',
                 border: '1px solid #2a3346',
                 borderRadius: 16,
                 padding: 12,
