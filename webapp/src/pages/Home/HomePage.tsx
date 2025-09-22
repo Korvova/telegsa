@@ -1440,7 +1440,7 @@ export default function HomePage({
                                       <div
                                         role="button"
                                         onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !prev[key] })); try { logChildrenForPre(sid); } catch {}; if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); } }}
-                                        style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                        style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
                                 >
                                   <span
                                     style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
@@ -1465,7 +1465,7 @@ export default function HomePage({
                                       const childKey = `P:${String(cp.id)}`;
                                       const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
                                       const foot2 = cnt2 ? (
-                                        <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>
+                                        <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>
                                           <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}>➜</span>
                                           Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
                                         </div>
@@ -2071,7 +2071,8 @@ export default function HomePage({
                                     }
                                   }}
                                   style={{
-                                    width: '100%',
+                                    display: 'inline-block',
+                                    maxWidth: '100%',
                                     textAlign: 'left',
                                     padding: '6px 10px',
                                     borderRadius: 10,
@@ -2165,7 +2166,7 @@ export default function HomePage({
                                     const children = preTasks.filter(x => String((x as any).id) !== String((p as any).id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String((p as any).id)));
                                     const cnt = children.length;
                                     const footer = cnt ? (
-                                      <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
+                                      <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
                                     ) : null;
                                     return (
                                       <div style={{ position:'relative' }}>
