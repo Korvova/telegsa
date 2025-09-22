@@ -60,6 +60,7 @@ export default function CreateTaskModal({
   onCreated,
   initialEdge,
   initialTaskEdge,
+  initialPreTaskEdit,
   initialEdit,
 }: {
   open: boolean;
@@ -70,6 +71,7 @@ export default function CreateTaskModal({
   onCreated?: () => void;
   initialEdge?: { text: string; groupId: string | null; links: Array<{ taskId?: string; preTaskId?: string }>; mode?: string; startAt?: string | null; delayMinutes?: number | null; autoCancelOnAny?: boolean };
   initialTaskEdge?: { parentTaskId: string; groupId: string | null; text?: string };
+  initialPreTaskEdit?: { preTaskId: string };
   initialEdit?: any;
 }) {
   const [text, setText] = useState('');
@@ -116,6 +118,8 @@ export default function CreateTaskModal({
   // edit mode
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
   const isEdit = !!editTaskId;
+  const [editPreTaskId, setEditPreTaskId] = useState<string | null>(null);
+  const isPreEdit = !!editPreTaskId;
   const [_editOrigGroupId, setEditOrigGroupId] = useState<string | null>(null);
   const [existingMedia, setExistingMedia] = useState<{ id:string; url:string; kind:string; fileName?:string }[]>([]);
 
@@ -182,6 +186,27 @@ export default function CreateTaskModal({
       setTimeout(() => { focusText(); }, 0);
     } catch {}
   }, [open, initialEdit]);
+
+  // apply initialPreTaskEdit if provided
+  useEffect(() => {
+    if (!open || !initialPreTaskEdit) return;
+    try {
+      const pid = String(initialPreTaskEdit.preTaskId || '');
+      if (!pid) return;
+      setEditPreTaskId(pid);
+      (async () => {
+        try {
+          const r = await (await import('../../api')).getPreTask(pid);
+          const pre: any = (r as any)?.preTask;
+          if (pre) {
+            setText(String(pre.text || ''));
+            setGroupId((pre.groupId ?? null) as string | null);
+          }
+        } catch {}
+        setTimeout(() => { focusText(); }, 0);
+      })();
+    } catch {}
+  }, [open, initialPreTaskEdit]);
 
   // load members for group (or self)
   useEffect(() => {
@@ -458,6 +483,20 @@ export default function CreateTaskModal({
     } finally { setBusy(false); }
   }
 
+  // save pretask edits (basic: title only for now)
+  async function doSavePreTaskEdit() {
+    if (!editPreTaskId) return;
+    const val = text.trim();
+    setBusy(true);
+    try {
+      if (val) { try { const api = await import('../../api'); await (api as any).updatePreTask(editPreTaskId, { text: val }); } catch {} }
+      try {
+        window.dispatchEvent(new CustomEvent('pretask-patched', { detail: { id: editPreTaskId, text: val } }));
+      } catch {}
+      onCreated?.(); onClose();
+    } finally { setBusy(false); }
+  }
+
   return !open ? null : (
     <div
       onClick={onClose}
@@ -528,11 +567,11 @@ export default function CreateTaskModal({
               onToggleTools={()=>{ setToolsOpen(v=>!v); focusText(); }}
               onRemoveAudio={()=>{ setPendingFiles(prev => prev.filter(f => f !== firstAudio)); }}
               rightSlot={(
-                isEdit ? (
+                (isEdit || isPreEdit) ? (
                   <button
                     type="button"
                     title="Сохранить"
-                    onClick={doSaveEdit}
+                    onClick={isPreEdit ? doSavePreTaskEdit : doSaveEdit}
                     style={{ width:'100%', height:'100%', borderRadius:999, background:'#2563eb', color:'#fff', border:'1px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}
                   >💾</button>
                 ) : ((!isEdit && (!!scheduleAt || !!weatherCfg)) || (preCfg && preCfg.links?.length)) ? (

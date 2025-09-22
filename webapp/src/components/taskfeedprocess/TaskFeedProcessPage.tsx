@@ -20,8 +20,6 @@ import PreTaskNode from './PreTaskNode';
 import CreateTaskModal from '../create-task/CreateTaskModal';
 import CondEdge from '../CondEdge';
 import { API_BASE, fetchProcess, saveProcess, getTask, getPreTask, getTaskGraph, getTaskRelations, listPreTasks, type ProcessNodeDTO, type ProcessEdgeDTO } from '../../api';
-import PreTaskEditModal from '../../components/PreTaskEditModal';
-import type { PreTaskDTO } from '../../api';
 import './TaskFeedProcessPage.css';
 
 type Props = {
@@ -113,32 +111,13 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
 
   // edit modal (listen to external open events like in FeedTaskNode long-press)
   const [editOpen, setEditOpen] = useState(false);
-  const [preEditOpen, setPreEditOpen] = useState(false);
-  const [preEditData, setPreEditData] = useState<PreTaskDTO | null>(null);
   useEffect(() => {
     const onOpen = () => setEditOpen(true);
     window.addEventListener('edit-task-open', onOpen as any);
     return () => window.removeEventListener('edit-task-open', onOpen as any);
   }, []);
 
-  // open pre-task editor on long-press
-  useEffect(() => {
-    const onOpen = async (e: Event) => {
-      try {
-        const ce = e as CustomEvent<any>;
-        const id = String(ce?.detail?.preTaskId || '');
-        if (!id) return;
-        const r: any = await getPreTask(id).catch(() => null);
-        const pre = r?.preTask || null;
-        if (pre) {
-          setPreEditData(pre);
-          setPreEditOpen(true);
-        }
-      } catch {}
-    };
-    window.addEventListener('edit-pretask-open', onOpen as any);
-    return () => window.removeEventListener('edit-pretask-open', onOpen as any);
-  }, []);
+  // pretask long-press is now handled by CreateTaskFab via global event; no local modal here
 
   // edge selection highlight + focus (robust to race with loading)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -741,15 +720,6 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
       {/* Task editor modal */}
       <CreateTaskModal open={editOpen} onClose={() => setEditOpen(false)} chatId={chatId} />
 
-      <PreTaskEditModal
-        open={preEditOpen}
-        chatId={chatId}
-        preTask={preEditData}
-        onClose={() => { setPreEditOpen(false); setPreEditData(null); }}
-        onSaved={() => {
-          try { setReloadSeq((x) => x + 1); } catch {}
-        }}
-      />
 
       {/* Pre-task creation handled via CreateTaskModal (edge-pre-open) */}
     </div>

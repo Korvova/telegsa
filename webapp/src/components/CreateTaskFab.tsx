@@ -19,6 +19,7 @@ export default function CreateTaskFab({
   const [edgeInit, setEdgeInit] = useState<null | { text: string; groupId: string | null; links: Array<{ taskId?: string; preTaskId?: string }>; mode?: string; startAt?: string | null; delayMinutes?: number | null; autoCancelOnAny?: boolean }>(null);
   const [taskEdgeInit, setTaskEdgeInit] = useState<null | { parentTaskId: string; groupId: string | null; text?: string }>(null);
   const [editInit, setEditInit] = useState<null | any>(null);
+  const [preEditInit, setPreEditInit] = useState<null | { preTaskId: string }>(null);
   const processOpenRef = useRef(false);
 
   const openModal = () => setOpen(true);
@@ -40,7 +41,7 @@ export default function CreateTaskFab({
     };
   }, []);
 
-  // open modal on external events used by feed (edit or edge pretask / edge task)
+  // open modal on external events used by feed (edit or edge pretask / edge task / edit pretask)
   useEffect(() => {
     const onEdge = (e: Event) => {
       try {
@@ -73,12 +74,24 @@ export default function CreateTaskFab({
       try { setEditInit((e as any).detail || {}); } catch {}
       setOpen(true);
     };
+    const onEditPre = (e: Event) => {
+      if (processOpenRef.current) return;
+      try {
+        const d = ((e as CustomEvent<any>).detail) || {};
+        const pid = String(d?.preTaskId || '');
+        if (!pid) return;
+        setPreEditInit({ preTaskId: pid });
+      } catch {}
+      setOpen(true);
+    };
     window.addEventListener('edge-pre-open', onEdge as any);
     window.addEventListener('edge-task-open', onEdgeTask as any);
+    window.addEventListener('edit-pretask-open', onEditPre as any);
     window.addEventListener('edit-task-open', onEdit as any);
     return () => {
       window.removeEventListener('edge-pre-open', onEdge as any);
       window.removeEventListener('edge-task-open', onEdgeTask as any);
+      window.removeEventListener('edit-pretask-open', onEditPre as any);
       window.removeEventListener('edit-task-open', onEdit as any);
     };
   }, []);
@@ -112,13 +125,14 @@ export default function CreateTaskFab({
       {open && (
         <CreateTaskModal
           open={open}
-          onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); }}
+          onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); setPreEditInit(null); }}
           chatId={_chatId}
           defaultGroupId={_defaultGroupId}
           groups={_groupsProp}
           onCreated={onCreated}
           initialEdge={edgeInit || undefined}
           initialTaskEdge={taskEdgeInit || undefined}
+          initialPreTaskEdit={preEditInit || undefined}
           initialEdit={editInit || undefined}
         />
       )}

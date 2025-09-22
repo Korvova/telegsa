@@ -1487,7 +1487,7 @@ export default function HomePage({
                                             onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
                                             onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
                                           >
-                                            <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
+                                          <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>{ try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((pp as any)?.id || String(cp.id)) } })); } catch {} }} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
                                               try {
                                                 const rootId = rootTaskIdFromPre(cp as any);
                                                 if (!rootId) return;
@@ -2389,7 +2389,7 @@ export default function HomePage({
                                                       onTouchEnd={() => { if (pg.key==='all') endPreSwipe(String(gg.id), { text: String((gg as any).text || ''), groupId: (gg as any).groupId ?? null }); }}
                                                       onTouchCancel={() => { if (pg.key==='all') endPreSwipe(); }}
                                                     >
-                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(gg as any)} rightCount={(preTasks.filter(x => String((x as any).id) !== String(gg.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(gg.id))).length)} onOpenProcess={async () => {
+                                                      <PreTaskCard p={gg} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>{ try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((pp as any)?.id || String(gg.id)) } })); } catch {} }} nameByChat={nameByChat} groupTitle={(gg as any).groupId ? (groupTitleById[String((gg as any).groupId)] || null) : 'Моя группа'} tone="subtle" myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(gg as any)} rightCount={(preTasks.filter(x => String((x as any).id) !== String(gg.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(gg.id))).length)} onOpenProcess={async () => {
                                                         try {
                                                           const rootId = rootTaskIdFromPre(gg as any);
                                                           if (!rootId) return;
@@ -2543,7 +2543,7 @@ export default function HomePage({
                                     onTouchEnd={() => { if (canSwipe) endPreSwipe(String(cp.id), { text: String((cp as any).text || ''), groupId: (cp as any).groupId ?? null }); }}
                                     onTouchCancel={() => { if (canSwipe) endPreSwipe(); }}
                                   >
-                                    <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
+                                                  <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>{ try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((pp as any)?.id || String(cp.id)) } })); } catch {} }} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
                                       try {
                                         const rootId = rootTaskIdFromPre(cp as any);
                                         if (!rootId) return;
@@ -2791,7 +2791,7 @@ export default function HomePage({
       />
 
       <PreTaskPreviewModal open={!!openPreTask} preTask={openPreTask} onClose={() => setOpenPreTask(null)} nameByChat={nameByChat} />
-      <PreTaskEditModal open={!!editPreTask} chatId={chatId} preTask={editPreTask} onClose={()=>setEditPreTask(null)} onSaved={async ()=>{ try { const pr = await listPreTasks({ chatId, status: ['PREVIEW','ARMED'] }); if (pr?.ok) setPreTasks(pr.preTasks || []); } catch {} }} />
+      {/* Редактор предзадачи теперь открывается через CreateTaskModal (edit-pretask-open) */}
       <TaskPreTaskLinkManager
         open={!!manageForTask}
         chatId={chatId}
