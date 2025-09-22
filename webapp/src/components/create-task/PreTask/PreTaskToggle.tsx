@@ -9,12 +9,13 @@ type PreConfig = {
   plannedAssigneeChatId?: string | null;
 };
 
-export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, style }: {
+export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, onApplied, style, hideLinks = false }: {
   chatId: string;
   groupId: string | null;
   value?: PreConfig | null;
   onApplied: (cfg: PreConfig | null) => void;
   style?: any;
+  hideLinks?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -57,25 +58,27 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
   async function load() {
     setBusy(true);
     try {
-      const api = await import('../../../api');
-      try {
-        const r = await api.listGroups(chatId);
-        const arr = (r as any)?.ok ? (r as any).groups : [];
-        setGroups(arr.map((g: any) => ({ id: g.id, title: g.title })));
-      } catch {}
+      if (!hideLinks) {
+        const api = await import('../../../api');
+        try {
+          const r = await api.listGroups(chatId);
+          const arr = (r as any)?.ok ? (r as any).groups : [];
+          setGroups(arr.map((g: any) => ({ id: g.id, title: g.title })));
+        } catch {}
 
-      const b = await api.fetchBoard(chatId, browseGroupId ?? undefined);
-      const cols = (b?.columns || []) as any[];
-      const tasks: LinkItem[] = cols.flatMap((c:any) => (c.tasks || []).map((t:any) => ({ id: String(t.id), text: String(t.text || ''), kind: 'TASK' as const, status: normStatus(String(c.name || '')) })));
-      let pret: LinkItem[] = [];
-      try {
-        const pr = await api.listPreTasks({ chatId, status: ['PREVIEW','ARMED'] });
-        if (pr?.ok && Array.isArray(pr.preTasks)) pret = pr.preTasks.map((p:any) => ({ id: String(p.id), text: String(p.text || ''), kind: 'PRETASK' as const, status: String(p.status || '') }));
-      } catch {}
-      setItems([ ...pret, ...tasks ]);
-      if (browseGroupId) {
-        try { const gl = await (await import('../../../api')).getGroupLabels(browseGroupId); setGroupLabels(gl.map(l => ({ id: l.id, title: l.title }))); } catch {}
-      } else { setGroupLabels([]); }
+        const b = await api.fetchBoard(chatId, browseGroupId ?? undefined);
+        const cols = (b?.columns || []) as any[];
+        const tasks: LinkItem[] = cols.flatMap((c:any) => (c.tasks || []).map((t:any) => ({ id: String(t.id), text: String(t.text || ''), kind: 'TASK' as const, status: normStatus(String(c.name || '')) })));
+        let pret: LinkItem[] = [];
+        try {
+          const pr = await api.listPreTasks({ chatId, status: ['PREVIEW','ARMED'] });
+          if (pr?.ok && Array.isArray(pr.preTasks)) pret = pr.preTasks.map((p:any) => ({ id: String(p.id), text: String(p.text || ''), kind: 'PRETASK' as const, status: String(p.status || '') }));
+        } catch {}
+        setItems([ ...pret, ...tasks ]);
+        if (browseGroupId) {
+          try { const gl = await (await import('../../../api')).getGroupLabels(browseGroupId); setGroupLabels(gl.map(l => ({ id: l.id, title: l.title }))); } catch {}
+        } else { setGroupLabels([]); }
+      }
     } catch {}
     setBusy(false);
   }
@@ -106,11 +109,9 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
   }
 
   async function apply() {
-    const links: Array<{ taskId?: string; preTaskId?: string }> = [];
-    for (const [key, itm] of selected.entries()) {
-      if (key.startsWith('TASK:')) links.push({ taskId: itm.id });
-      else if (key.startsWith('PRETASK:')) links.push({ preTaskId: itm.id });
-    }
+    const links: Array<{ taskId?: string; preTaskId?: string }> = hideLinks
+      ? (applied?.links || value?.links || [])
+      : Array.from(selected.entries()).map(([key, itm]) => (key.startsWith('TASK:') ? { taskId: itm.id } : { preTaskId: itm.id }));
     const cfg: PreConfig = {
       links,
       mode,
@@ -148,6 +149,7 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
                 <button onClick={clear} title="Сбросить предзадачу" style={{ borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', padding: '6px 10px', cursor: 'pointer' }}>Сбросить</button>
               )}
             </div>
+            {!hideLinks && (
             <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
               <span style={{ fontSize:12, opacity:.8 }}>Группа:</span>
               <select value={browseGroupId ?? ''} onChange={(e)=>setBrowseGroupId(e.target.value || null)} style={{ background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'4px 6px' }}>
@@ -161,6 +163,8 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
               </select>
               <input placeholder="Поиск…" value={q} onChange={e=>setQ(e.target.value)} style={{ flex:1, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:6, padding:'6px 8px' }} />
             </div>
+            )}
+            {!hideLinks && (
             <div style={{ border: '1px solid #1f2937', borderRadius: 8, padding: 8, maxHeight: 280, overflow: 'auto', background: '#0f172a' }}>
               {busy ? (
                 <div style={{ padding: 12, opacity: 0.7 }}>Загрузка…</div>
@@ -200,7 +204,8 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
                 })
               )}
             </div>
-            {selected.size > 0 && (
+            )}
+            {!hideLinks && selected.size > 0 && (
               <div style={{ marginTop: 8, fontSize: 12 }}>
                 Выбранные задачи: {Array.from(selected.entries()).map(([k,s]) => (
                   <span key={k} style={{ marginRight: 12 }}>
@@ -234,7 +239,7 @@ export default function PreTaskToggle({ chatId, groupId: _parentGroupId, value, 
             </div>
             <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setOpen(false)} style={{ borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', padding: '8px 12px', cursor: 'pointer' }}>Отмена</button>
-              <button disabled={!selected.size} onClick={apply} style={{ borderRadius: 8, border: '1px solid transparent', background: '#2563eb', color: '#fff', padding: '8px 12px', cursor: selected.size ? 'pointer' : 'not-allowed' }}>Применить</button>
+              <button onClick={apply} style={{ borderRadius: 8, border: '1px solid transparent', background: '#2563eb', color: '#fff', padding: '8px 12px', cursor: 'pointer' }}>Применить</button>
             </div>
           </div>
         </div>

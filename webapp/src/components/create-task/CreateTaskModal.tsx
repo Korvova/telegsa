@@ -483,13 +483,24 @@ export default function CreateTaskModal({
     } finally { setBusy(false); }
   }
 
-  // save pretask edits (basic: title only for now)
+  // save pretask edits (title + trigger params)
   async function doSavePreTaskEdit() {
     if (!editPreTaskId) return;
     const val = text.trim();
     setBusy(true);
     try {
-      if (val) { try { const api = await import('../../api'); await (api as any).updatePreTask(editPreTaskId, { text: val }); } catch {} }
+      const api = await import('../../api');
+      if (val) { try { await (api as any).updatePreTask(editPreTaskId, { text: val }); } catch {} }
+      if (preCfg) {
+        try {
+          await (api as any).updatePreTask(editPreTaskId, {
+            triggerMode: preCfg.mode,
+            startAt: preCfg.startAt || null,
+            delayMinutes: preCfg.delayMinutes ?? null,
+            autoCancelOnAny: !!preCfg.autoCancelOnAny,
+          });
+        } catch {}
+      }
       try {
         window.dispatchEvent(new CustomEvent('pretask-patched', { detail: { id: editPreTaskId, text: val } }));
       } catch {}
@@ -642,6 +653,7 @@ export default function CreateTaskModal({
               groupId={groupId}
               preCfg={preCfg}
               onApplyPreCfg={(cfg)=>{ setPreCfg(cfg); focusText(); }}
+              hidePreLinks={isPreEdit}
               onPickFiles={onPickFiles}
               onOpenCamera={openCamera}
               onOpenDeadline={()=>setDeadlineOpen(true)}

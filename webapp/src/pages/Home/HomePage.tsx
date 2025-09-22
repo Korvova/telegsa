@@ -22,7 +22,7 @@ import {
 import { listPreTasks, type PreTaskDTO, getGroupMembers, deletePreTask } from '../../api';
 import PreTaskCard from '../../components/PreTaskCard';
 import PreTaskPreviewModal from '../../components/PreTaskPreviewModal';
-import PreTaskEditModal from '../../components/PreTaskEditModal';
+// Legacy pretask editor is replaced by CreateTaskModal
 // duplicate import removed
 import TaskPreTaskLinkManager from '../../components/TaskPreTaskLinkManager';
 import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
@@ -266,7 +266,7 @@ export default function HomePage({
     } catch {}
   };
   const [openPreTask, setOpenPreTask] = useState<PreTaskDTO | null>(null);
-  const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
+  // const [editPreTask, setEditPreTask] = useState<PreTaskDTO | null>(null);
   const [nameByChat, setNameByChat] = useState<Record<string, string>>({});
   const [groupTitleById, setGroupTitleById] = useState<Record<string, string>>({});
   const [groupPublicById, setGroupPublicById] = useState<Record<string, boolean>>({});
@@ -1410,7 +1410,7 @@ export default function HomePage({
                                   onClick={async (e)=>{ e.stopPropagation(); if (!confirm('Удалить плановую карточку?')) return; try { await deletePreTask(String((p as any).id)); setPreTasks(prev => prev.filter(x => String((x as any).id)!==String((p as any).id))); } catch {} }}
                                   style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
                                 >🗑️</button>
-                                <LongPressOutline targetId={anchorIdPre} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
+                                <LongPressOutline targetId={anchorIdPre} durationMs={1000} radius={12} onComplete={() => { try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((p as any)?.id) } })); } catch {} }} />
                                 <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
                                 <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
                                 {(() => {
@@ -2171,7 +2171,7 @@ export default function HomePage({
                                         <PreTaskCard
                                           p={p as any}
                                           onOpen={(pp) => setOpenPreTask(pp)}
-                                          onEdit={(pp) => setEditPreTask(pp)}
+                                          onEdit={(pp) => { try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((pp as any)?.id || String((p as any).id)) } })); } catch {} }}
                                           nameByChat={nameByChat}
                                           groupTitle={(p as any).groupId ? (groupTitleById[String((p as any).groupId)] || null) : 'Моя группа'}
                                           tone="subtle"
@@ -2298,7 +2298,7 @@ export default function HomePage({
                                               ) : null;
                                               return (
                                                 <div style={{ position:'relative' }}>
-                                                  <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>setEditPreTask(pp)} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
+                                                  <PreTaskCard p={cp} onOpen={(pp)=>setOpenPreTask(pp)} onEdit={(pp)=>{ try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((pp as any)?.id || String(cp.id)) } })); } catch {} }} nameByChat={nameByChat} groupTitle={(cp as any).groupId ? (groupTitleById[String((cp as any).groupId)] || null) : 'Моя группа'} tone="subtle" footer={foot2} emphasis={cnt2>0} myChatId={meChatId} myRankIcon={myRankIcon} feedStyle={true} doneTarget={isPreTaskTargetDone(cp as any)} rightCount={cnt2} onOpenProcess={async () => {
                                                     try {
                                                       const tid = String((t as any).id);
                                                       const ttext = String((t as any).text || '');
@@ -2468,7 +2468,7 @@ export default function HomePage({
                         style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
                       >🗑️</button>
                       {/* long-press edit for scheduled pre-task */}
-                      <LongPressOutline targetId={anchorId} durationMs={1000} radius={12} onComplete={() => { try { setEditPreTask(p as any); } catch {} }} />
+                      <LongPressOutline targetId={anchorId} durationMs={1000} radius={12} onComplete={() => { try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((p as any)?.id) } })); } catch {} }} />
                       <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
                       <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
                       {when && (
