@@ -9,7 +9,7 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
   const [includeOffset, setIncludeOffset] = useState(true);
   const [stable, setStable] = useState(true);
   const { bottom } = useKeyboardInsets(true, wrapRef as any, 80, true, includeOffset, stable);
-  const [variant, setVariant] = useState<Variant>('hook');
+  const [variant, setVariant] = useState<Variant>('micro');
 
   // Micro-utility (vanilla vv.height+offsetTop)
   const microRef = useRef<HTMLDivElement | null>(null);
@@ -130,7 +130,7 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
 
       {/* Вариант 2: Micro-utility (vanilla) */}
       {variant==='micro' && (
-        <div ref={microRef} style={{ position:'fixed', left:10, right:10, bottom:0, zIndex:10000, transform:'translate3d(0,0,0)', transition:'transform 80ms ease-out', paddingBottom:'env(safe-area-inset-bottom, 0px)' }}>
+        <div ref={microRef} style={{ position:'fixed', left:10, right:10, bottom:0, zIndex:10000, transform:'translate3d(0,0,0)', transition:'none', paddingBottom:'env(safe-area-inset-bottom, 0px)' }}>
           <div style={{ display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
             <input placeholder="Сообщение…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
             <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
