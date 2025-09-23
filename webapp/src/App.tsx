@@ -788,8 +788,7 @@ export default function App() {
     WebApp?.ready();
     WebApp?.expand();
 
-    // iOS: предотвратить «сворачивание» мини-аппа при вертикальном свайпе вниз
-    try { const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); if (isiOS) { (WebApp as any)?.disableVerticalSwipes?.(); } } catch {}
+    // Не трогаем вертикальные свайпы TWA, чтобы не влиять на прокрутку контента
 
     if (!chatId) {
       setError('Не удалось определить chatId. Открой WebApp из кнопки в боте.');

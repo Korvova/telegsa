@@ -145,23 +145,8 @@ export default function CreateTaskModal({
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const focusText = () => { try { setTimeout(() => { try { textAreaRef.current?.focus({ preventScroll: false } as any); const el = textAreaRef.current as HTMLTextAreaElement | null; if (el) { const len = (el.value || '').length; try { el.setSelectionRange(len, len); } catch {} } } catch {} }, 0); } catch {} };
 
-  // Prevent background scroll on iOS while sheet is open to avoid viewport drift
-  useEffect(() => {
-    if (!open || !isiOS) return;
-    // robust scroll lock pattern for iOS
-    const body = document.body as any;
-    const scrollY = window.scrollY || window.pageYOffset;
-    const prev = { position: body.style.position, top: body.style.top, width: body.style.width };
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-    return () => {
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.width = prev.width;
-      try { window.scrollTo(0, scrollY); } catch {}
-    };
-  }, [open, isiOS]);
+  // Не фиксируем body (position:fixed), чтобы не влиять на нативное поведение прокрутки iOS
+  useEffect(() => {}, [open, isiOS]);
 
   // Ensure focus grabs after open on iOS (retry a few times)
   useEffect(() => {
@@ -593,7 +578,11 @@ export default function CreateTaskModal({
       onTouchMove={(e) => { try { const n = e.target as Node; if (!sheetRef.current || !sheetRef.current.contains(n)) e.preventDefault(); } catch {} }}
       style={
         isiOS
-          ? { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, touchAction: 'none', WebkitOverflowScrolling: 'auto' as any }
+          ? {
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000,
+              display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+              paddingBottom: `calc(${kbBottom}px + env(safe-area-inset-bottom, 0px))`,
+            }
           : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
       }
     >
@@ -603,21 +592,19 @@ export default function CreateTaskModal({
         style={
           isiOS
             ? {
-                position: 'fixed',
-                left: 10,
-                right: 10,
+                position: 'relative',
+                left: 0,
+                right: 0,
                 bottom: 0,
                 margin: '0 auto',
-                width: 'auto',
+                width: 'calc(100% - 24px)',
                 maxWidth: 640,
                 background: '#111827',
                 color: '#e5e7eb',
                 borderTopLeftRadius: 16,
                 borderTopRightRadius: 16,
                 padding: 16,
-                paddingBottom: `calc(16px + env(safe-area-inset-bottom, 0px))`,
                 borderTop: '1px solid #1f2937',
-                transform: `translateY(-${kbBottom}px)`,
                 maxHeight: 'calc(100dvh - 12px)',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch' as any,
