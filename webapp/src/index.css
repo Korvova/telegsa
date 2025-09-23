@@ -91,6 +91,11 @@ html, body, #root {
   width: 100%;
 }
 
+/* Пока открыта модалка на iOS — не даём rubber-band у корня */
+html.ios-modal-open, body.ios-modal-open {
+  overscroll-behavior-y: contain;
+}
+
 
 
 

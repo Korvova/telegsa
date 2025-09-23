@@ -98,6 +98,28 @@ export default function CreateTaskModal({
     try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
   }, [open, isiOS]);
 
+  // Robust body scroll-lock on iOS while modal is open to avoid bounce at top/bottom
+  useEffect(() => {
+    if (!open || !isiOS) return;
+    const body = document.body as any;
+    const html = document.documentElement as any;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    html.classList.add('ios-modal-open');
+    body.classList.add('ios-modal-open');
+    return () => {
+      html.classList.remove('ios-modal-open');
+      body.classList.remove('ios-modal-open');
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      try { window.scrollTo(0, scrollY); } catch {}
+    };
+  }, [open, isiOS]);
+
   const ensureVisible = () => {
     try { textAreaRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
     setTimeout(() => { try { textAreaRef.current?.scrollIntoView({ block: 'nearest' }); } catch {} }, 220);
