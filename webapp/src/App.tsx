@@ -56,6 +56,7 @@ import { CSS } from '@dnd-kit/utilities';
 import GroupList from './pages/Groups/GroupList';
 import GroupTabs from './components/GroupTabs';
 import SettingsStars from './SettingsStars';
+import SettingsQuota from './components/SettingsQuota';
 import SettingsRank from './components/SettingsRank';
 import SettingsProfile from './components/SettingsProfile';
 import SettingsTheme from './components/SettingsTheme';
@@ -787,6 +788,15 @@ export default function App() {
     WebApp?.ready();
     WebApp?.expand();
 
+    // iOS: предотвратить «сворачивание» мини-аппа при вертикальном свайпе вниз
+    try {
+      const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent || '');
+      if (isiOS) {
+        (WebApp as any)?.disableVerticalSwipes?.();
+        document.body.classList.add('ios-no-overscroll');
+      }
+    } catch {}
+
     if (!chatId) {
       setError('Не удалось определить chatId. Открой WebApp из кнопки в боте.');
       setLoading(false);
@@ -1206,6 +1216,9 @@ export default function App() {
 
               {/* Звёзды — сводка и способ получения (SBP) */}
               <SettingsStars chatId={chatId} />
+
+              {/* Лимит задач/событий/предзадач */}
+              <SettingsQuota chatId={chatId} />
 
               {/* Ранг пользователя */}
               <SettingsRank chatId={chatId} />

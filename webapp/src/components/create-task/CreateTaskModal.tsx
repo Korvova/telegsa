@@ -74,6 +74,17 @@ export default function CreateTaskModal({
   initialPreTaskEdit?: { preTaskId: string };
   initialEdit?: any;
 }) {
+  // iOS flag for conditional layout
+  const isiOS = useMemo(() => {
+    try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
+  }, []);
+  // container ref to allow internal scroll when keyboard shows
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+
+  const ensureVisible = () => {
+    try { textAreaRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
+    setTimeout(() => { try { textAreaRef.current?.scrollIntoView({ block: 'nearest' }); } catch {} }, 220);
+  };
   const [text, setText] = useState('');
   const [_busy, setBusy] = useState(false);
   const [groups, setGroups] = useState<Group[]>(groupsProp || []);
@@ -114,6 +125,7 @@ export default function CreateTaskModal({
   const [processParentTaskId, setProcessParentTaskId] = useState<string | null>(null);
   const [robotOpen, setRobotOpen] = useState(false);
   const [weatherOpen, setWeatherOpen] = useState(false);
+  const [quotaOpen, setQuotaOpen] = useState(false);
 
   // edit mode
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
@@ -129,7 +141,43 @@ export default function CreateTaskModal({
 
   // focus helpers
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const focusText = () => { try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} };
+  const focusText = () => { try { setTimeout(() => { try { textAreaRef.current?.focus({ preventScroll: false } as any); const el = textAreaRef.current as HTMLTextAreaElement | null; if (el) { const len = (el.value || '').length; try { el.setSelectionRange(len, len); } catch {} } } catch {} }, 0); } catch {} };
+
+  // Prevent background scroll on iOS while sheet is open to avoid viewport drift
+  useEffect(() => {
+    if (!open || !isiOS) return;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, [open, isiOS]);
+
+  // Accept external request to focus from FAB (keeps iOS user-gesture chain)
+  useEffect(() => {
+    const onReq = () => {
+      try {
+        // try as soon as possible and then once more after a tick
+        const doFocus = () => {
+          try {
+            const el = textAreaRef.current as HTMLTextAreaElement | null;
+            if (el) {
+              el.focus({ preventScroll: false } as any);
+              try { const len = (el.value || '').length; el.setSelectionRange(len, len); } catch {}
+              ensureVisible();
+            }
+          } catch {}
+        };
+        doFocus();
+        setTimeout(doFocus, 50);
+      } catch {}
+    };
+    try { window.addEventListener('create-task-focus', onReq as any); } catch {}
+    return () => { try { window.removeEventListener('create-task-focus', onReq as any); } catch {} };
+  }, []);
 
   // load groups if empty
   useEffect(() => { (async () => { try { if (!groupsProp || groupsProp.length === 0) { const r = await listGroups(chatId); if ((r as any)?.ok) setGroups((r as any).groups); } } catch {} })(); }, [chatId]);
@@ -420,6 +468,15 @@ export default function CreateTaskModal({
       return { id: newTaskId, title: val };
     } catch (e:any) {
       const msg = String(e?.message || '');
+      // detect quota
+      try {
+        const status = Number((e?.response && (e.response as any).status) || (/\b402\b/.test(msg) ? 402 : 0));
+        if (status === 402) {
+          setQuotaOpen(true);
+          setBusy(false);
+          return null as any;
+        }
+      } catch {}
       if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
       throw e;
     } finally { setBusy(false); }
@@ -431,7 +488,7 @@ export default function CreateTaskModal({
     const val = text.trim();
     setBusy(true);
     try {
-      if (val) { try { await updateTask(editTaskId, val); } catch {} }
+      if (val) { try { await updateTask(editTaskId, val, chatId); } catch (e:any) { if (String(e?.message||'').includes('403')) alert('У вас нет прав на это действие'); throw e; } }
       try { await setTaskDeadline(editTaskId, chatId, deadlineAt); } catch {}
       try { await setAcceptCondition(editTaskId, chatId, acceptCondition as any); } catch {}
       try {
@@ -449,7 +506,7 @@ export default function CreateTaskModal({
       try {
         const listed = await listTaskReminders(editTaskId).catch(()=>({ ok:false, reminders: [] } as any));
         const current: RItem[] = (listed && (listed as any).reminders) || [];
-        for (const rr of current) { try { await deleteTaskReminder(editTaskId, String((rr as any).id)); } catch {} }
+        for (const rr of current) { try { await deleteTaskReminder(editTaskId, String((rr as any).id), chatId); } catch {} }
         for (const d of remindersDraft) { try { await createTaskReminder(editTaskId, { createdBy: chatId, target: d.target, fireAt: d.fireAtIso }); } catch {} }
       } catch {}
       if (pendingFiles.length) { for (const f of pendingFiles) { try { await uploadTaskMedia(editTaskId, chatId, f); } catch {} } }
@@ -515,9 +572,59 @@ export default function CreateTaskModal({
   return !open ? null : (
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+      onTouchMove={(e) => { try { e.preventDefault(); } catch {} }}
+      style={
+        isiOS
+          ? { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, touchAction: 'none', WebkitOverflowScrolling: 'auto' as any }
+          : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
+      }
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 640, background: '#111827', color: '#e5e7eb', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, borderTop: '1px solid #1f2937' }}>
+      <div
+        ref={sheetRef}
+        onClick={(e) => e.stopPropagation()}
+        style={
+          isiOS
+            ? {
+                position: 'fixed',
+                left: 12,
+                right: 12,
+                bottom: 0,
+                margin: '0 auto',
+                width: 'auto',
+                maxWidth: 640,
+                background: '#111827',
+                color: '#e5e7eb',
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                padding: 16,
+                paddingBottom: `calc(16px + env(safe-area-inset-bottom, 0px))`,
+                borderTop: '1px solid #1f2937',
+                transform: 'translateY(calc(-1 * var(--kb, 0px)))',
+                maxHeight: 'calc(100dvh - 12px)',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch' as any,
+                touchAction: 'manipulation',
+                zIndex: 2001,
+              }
+            : {
+                width: 'calc(100% - 32px)',
+                maxWidth: 640,
+                background: '#111827',
+                color: '#e5e7eb',
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                padding: 16,
+                paddingBottom: `calc(16px + env(safe-area-inset-bottom, 0px))`,
+                borderTop: '1px solid #1f2937',
+                // keep original bottom-sheet width/flow on Android
+                marginBottom: 0,
+                maxHeight: 'calc(100dvh - 12px)',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch' as any,
+                touchAction: 'manipulation',
+              }
+        }
+      >
         {/* header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           {/* Левая часть: теперь кнопка закрытия (и удалить при редактировании) */}
@@ -581,6 +688,8 @@ export default function CreateTaskModal({
               toolsOpen={toolsOpen}
               onToggleTools={()=>{ setToolsOpen(v=>!v); focusText(); }}
               onRemoveAudio={()=>{ setPendingFiles(prev => prev.filter(f => f !== firstAudio)); }}
+              // Ensure the textarea stays visible when focusing on iOS
+              onFocus={() => { ensureVisible(); }}
               rightSlot={(
                 (isEdit || isPreEdit) ? (
                   <button
@@ -615,7 +724,10 @@ export default function CreateTaskModal({
                       }
                       const api = await import('../../api');
                       const resp = await (api as any).createPreTask(body);
-                      if (!(resp as any)?.ok) throw new Error((resp as any)?.error || 'pretask_create_failed');
+                      if (!(resp as any)?.ok) {
+                        if (String((resp as any)?.error||'')==='quota_exceeded') { setQuotaOpen(true); return; }
+                        throw new Error((resp as any)?.error || 'pretask_create_failed');
+                      }
                       try {
                         const linksArr:any[] = (preCfg?.links || []) as any[];
                         const parentsTask = linksArr.filter((l:any)=>l.taskId).map((l:any)=>String(l.taskId));
@@ -702,10 +814,66 @@ export default function CreateTaskModal({
           ) : null}
 
           {pendingFiles.length ? (<div style={{ fontSize: 12, opacity: 0.85 }}>Добавится: {pendingFiles.map((f) => f.name || 'файл').join(', ')}</div>) : null}
-        </div>
+      </div>
 
-        {/* Modals */}
-        <RemindersModal open={remindersOpen} onClose={() => setRemindersOpen(false)} onPick={({ target, fireAtIso }) => { setRemindersDraft(prev => [...prev, { target, fireAtIso }]); setRemindersOpen(false); }} />
+      {/* Modals */}
+      {quotaOpen && (
+        <div onClick={()=>setQuotaOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2100, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(420px,92vw)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+              <div style={{ fontWeight:800 }}>Лимит исчерпан</div>
+              <button onClick={()=>setQuotaOpen(false)} style={{ background:'transparent', border:'none', color:'#9ca3af', fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+            <div style={{ fontSize:13, opacity:.85, marginBottom:8 }}>У вас закончился лимит на создание. Пополните лимит через Telegram Stars:</div>
+            <div style={{ display:'grid', gap:8 }}>
+              {[{pack:100, stars:100},{pack:1000, stars:500},{pack:5000, stars:1000}].map(p => (
+                <button
+                  key={p.pack}
+                  onClick={async ()=>{
+                    try {
+                      const r = await fetch(`${import.meta.env.VITE_API_BASE}/quota/purchase`, {
+                        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, pack: p.pack })
+                      }).then(r=>r.json());
+                      if ((r as any)?.invoiceLink) {
+                        try {
+                          if ((WebApp as any)?.openInvoice) {
+                            (WebApp as any).openInvoice((r as any).invoiceLink, async (status:any) => {
+                              try { console.log('[invoice:quota][task] status', status); } catch {}
+                              if (status === 'paid') {
+                                setQuotaOpen(false);
+                                alert('Оплачено. Попробуйте снова создать задачу');
+                                try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+                              } else if (status === 'cancelled') {
+                                alert('Оплата отменена');
+                              } else if (status === 'failed') {
+                                alert('Оплата не прошла');
+                              }
+                            });
+                          } else if (WebApp?.openTelegramLink) {
+                            WebApp.openTelegramLink((r as any).invoiceLink);
+                          } else {
+                            window.open?.((r as any).invoiceLink, '_blank');
+                          }
+                        } catch {}
+                      } else if ((r as any)?.ok && (r as any).devApplied) {
+                        alert('Лимит пополнен (DEV)');
+                        setQuotaOpen(false);
+                      } else {
+                        alert('Не удалось создать счёт');
+                      }
+                    } catch { alert('Ошибка при создании счёта'); }
+                  }}
+                  style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', textAlign:'left' }}
+                >
+                  +{p.pack} задач · {p.stars} ⭐️
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize:12, opacity:.75, marginTop:8 }}>После оплаты вернитесь и повторите создание.</div>
+          </div>
+        </div>
+      )}
+      <RemindersModal open={remindersOpen} onClose={() => setRemindersOpen(false)} onPick={({ target, fireAtIso }) => { setRemindersDraft(prev => [...prev, { target, fireAtIso }]); setRemindersOpen(false); }} />
         <CameraCaptureModal open={cameraOpen} onClose={() => { setCameraOpen(false); focusText(); }} onCapture={(file) => { setPendingFiles((prev) => [...prev, file]); focusText(); }} />
         <DeadlinePicker open={deadlineOpen} value={deadlineAt} onChange={(v) => setDeadlineAt(v)} onClose={() => { setDeadlineOpen(false); focusText(); }} />
         <DeadlinePicker open={scheduleOpen} value={scheduleAt} title="Плановое создание" icon="🕒" onChange={(v) => { if (!v) { setScheduleAt(null); setPreCfg(null); return; } const dt = new Date(v); if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { alert('Нельзя выбрать прошлое время'); return; } setScheduleAt(v); setPreCfg({ links: [], mode: 'DATE_PLUS', startAt: v, delayMinutes: null, autoCancelOnAny: false } as any); }} onClose={() => { setScheduleOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }} />

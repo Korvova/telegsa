@@ -22,8 +22,23 @@ export default function CreateTaskFab({
   const [editInit, setEditInit] = useState<null | any>(null);
   const [preEditInit, setPreEditInit] = useState<null | { preTaskId: string }>(null);
   const processOpenRef = useRef(false);
+  const iosFocusRef = useRef<HTMLInputElement | null>(null);
 
-  const openModal = () => setOpen(true);
+  const isIOS = () => {
+    try {
+      const ua = navigator.userAgent || '';
+      // iOS Chrome/Safari/Telegram all report iPhone/iPad in UA
+      return /iPad|iPhone|iPod/i.test(ua);
+    } catch { return false; }
+  };
+
+  const openModal = () => {
+    if (isIOS()) {
+      try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {}
+    }
+    setOpen(true);
+    try { setTimeout(() => { window.dispatchEvent(new CustomEvent('create-task-focus')); }, 0); } catch {}
+  };
 
   // sync global listeners with modal visibility (for external UI that relies on it)
   useEffect(() => {
@@ -108,7 +123,16 @@ export default function CreateTaskFab({
 
   return (
     <div>
+      {/* Hidden focus target to reliably bootstrap iOS keyboard on tap */}
+      <input
+        ref={iosFocusRef}
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ position: 'fixed', opacity: 0, width: 1, height: 1, bottom: 0, left: 0, pointerEvents: 'none' }}
+      />
       <button
+        onMouseDown={() => { if (isIOS()) { try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {} } }}
+        onTouchStart={() => { if (isIOS()) { try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {} } }}
         onClick={openModal}
         aria-label="Создать задачу"
         style={{
@@ -132,20 +156,18 @@ export default function CreateTaskFab({
         +
       </button>
 
-      {open && (
-        <CreateTaskModal
-          open={open}
-          onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); setPreEditInit(null); }}
-          chatId={_chatId}
-          defaultGroupId={(overrideGroupId !== null ? overrideGroupId : _defaultGroupId)}
-          groups={_groupsProp}
-          onCreated={onCreated}
-          initialEdge={edgeInit || undefined}
-          initialTaskEdge={taskEdgeInit || undefined}
-          initialPreTaskEdit={preEditInit || undefined}
-          initialEdit={editInit || undefined}
-        />
-      )}
+      <CreateTaskModal
+        open={open}
+        onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); setPreEditInit(null); }}
+        chatId={_chatId}
+        defaultGroupId={(overrideGroupId !== null ? overrideGroupId : _defaultGroupId)}
+        groups={_groupsProp}
+        onCreated={onCreated}
+        initialEdge={edgeInit || undefined}
+        initialTaskEdge={taskEdgeInit || undefined}
+        initialPreTaskEdit={preEditInit || undefined}
+        initialEdit={editInit || undefined}
+      />
     </div>
   );
 }

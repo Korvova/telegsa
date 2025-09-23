@@ -1,6 +1,7 @@
 
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import './lib/viewportKeyboard'
 
 // === debug console on ?debug ===
 async function initDebug() {

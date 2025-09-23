@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { addComment, deleteComment, listComments, type TaskComment, getCommentLikes, likeComment, unlikeComment } from '../api';
 
@@ -16,6 +16,10 @@ export default function CommentsThread({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [likes, setLikes] = useState<Record<string, { count: number; me: boolean }>>({});
   const [likeBusy, setLikeBusy] = useState<Record<string, boolean>>({});
+
+  const isiOS = useMemo(() => {
+    try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
+  }, []);
 
   const scrollToBottom = () => {
     try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {}
@@ -84,7 +88,12 @@ export default function CommentsThread({
         await load();
         // Вернуть фокус и прокрутить, чтобы инпут и последний коммент были видны
         setTimeout(() => { try { inputRef.current?.focus(); } catch {}; ensureVisible(); }, 0);
+      } else if (String((r as any)?.error||'') === 'no_rights') {
+        alert('У вас нет прав на комментарии');
       }
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на комментарии');
     } finally {
       setBusy(false);
     }
@@ -95,13 +104,15 @@ export default function CommentsThread({
   };
 
   useEffect(() => {
-    // Пересчёт видимой области при открытии клавиатуры
+    // Пересчёт при изменении viewport — просто подтолкнуть автоскролл
     const onResize = () => ensureVisible();
     try { window.addEventListener('resize', onResize); } catch {}
     try { (window as any).visualViewport?.addEventListener?.('resize', onResize); } catch {}
+    try { (WebApp as any)?.onEvent?.('viewportChanged', onResize); } catch {}
     return () => {
       try { window.removeEventListener('resize', onResize); } catch {}
       try { (window as any).visualViewport?.removeEventListener?.('resize', onResize); } catch {}
+      try { (WebApp as any)?.offEvent?.('viewportChanged', onResize); } catch {}
     };
   }, []);
 
@@ -110,7 +121,11 @@ export default function CommentsThread({
     try {
       const r = await deleteComment(taskId, id, meChatId);
       if (r.ok) setItems(prev => prev.filter(x => x.id !== id));
-    } catch {}
+      else if (String((r as any)?.error||'')==='no_rights') alert('У вас нет прав на это действие');
+    } catch (e:any) {
+      const msg = String(e?.message||'');
+      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+    }
   };
 
   const toggleLike = async (commentId: string) => {
@@ -134,7 +149,7 @@ export default function CommentsThread({
   const [badImg, setBadImg] = useState<Record<string, boolean>>({});
 
   return (
-    <div style={wrap}>
+    <div style={{ ...wrap, paddingBottom: 'calc(72px + var(--kb, 0px) + env(safe-area-inset-bottom, 0px))' }}>
       <div style={title}>Комментарии</div>
 
       <div ref={boxRef} style={listBox}>
@@ -194,7 +209,17 @@ export default function CommentsThread({
         )}
       </div>
 
-      <div style={inputRow}>
+      <div
+        style={{
+          ...inputRow,
+          ...(isiOS
+            ? { position: 'fixed', left: 16, right: 16, bottom: 'env(safe-area-inset-bottom, 0px)', transform: 'translateY(calc(-1 * var(--kb, 0px)))', zIndex: 2200 }
+            : { position: 'sticky', bottom: 0 }),
+          background: '#1b2030',
+          paddingBottom: 6,
+          borderTop: '1px solid #2a3346',
+        }}
+      >
         <input
           ref={inputRef}
           value={text}
