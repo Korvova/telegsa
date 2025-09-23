@@ -1,10 +1,12 @@
-import { useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useKeyboardInsets } from '../hooks/useKeyboardInsets';
 
 export default function SettingsKeyboardTest({ onBack }: { onBack: () => void }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent || '');
-  const { bottom } = useKeyboardInsets(true, wrapRef as any, 80, true, true);
+  const isiOS = useMemo(() => /iPad|iPhone|iPod/i.test(navigator.userAgent || ''), []);
+  const [includeOffset, setIncludeOffset] = useState(true);
+  const [stable, setStable] = useState(true);
+  const { bottom } = useKeyboardInsets(true, wrapRef as any, 80, true, includeOffset, stable);
 
   return (
     <div ref={wrapRef} style={{ background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:16, padding:12 }}>
@@ -38,8 +40,16 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
           />
           <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
         </div>
+        <div style={{ display:'flex', gap:8, marginTop:8, opacity:.85, fontSize:12 }}>
+          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <input type="checkbox" checked={includeOffset} onChange={e=>setIncludeOffset(e.target.checked)} /> height + offsetTop
+          </label>
+          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <input type="checkbox" checked={stable} onChange={e=>setStable(e.target.checked)} /> stable (не опускать при панорамировании)
+          </label>
+          <span style={{ marginLeft:'auto' }}>kb: {Math.round(bottom)} px</span>
+        </div>
       </div>
     </div>
   );
 }
-

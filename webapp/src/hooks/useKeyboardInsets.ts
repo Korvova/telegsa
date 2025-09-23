@@ -17,12 +17,14 @@ export function useKeyboardInsets(
   threshold = 140,
   strict = false,
   includeOffset = false,
+  stable = false,
 ) {
   const isiOS = useMemo(() => {
     try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
   }, []);
 
   const [bottom, setBottom] = useState(0);
+  const [stableBottom, setStableBottom] = useState(0);
 
   useEffect(() => {
     if (!enabled || !isiOS) { setBottom(0); return; }
@@ -50,7 +52,16 @@ export function useKeyboardInsets(
         if (waH) k2 = Math.max(0, window.innerHeight - Number(waH));
       } catch {}
       const raw = Math.max(k1, k2);
-      const next = strict ? raw : ((focusActive && raw > threshold) ? raw : 0);
+      let next = strict ? raw : ((focusActive && raw > threshold) ? raw : 0);
+      // Stable mode: while keyboard is open, never go below the maximum seen value
+      if (stable) {
+        if (next > 0) {
+          setStableBottom((prev) => (next > prev ? next : prev));
+          next = Math.max(next, stableBottom);
+        } else {
+          setStableBottom(0);
+        }
+      }
       setBottom(next);
       try { document.documentElement.style.setProperty('--kb', `${next}px`); } catch {}
     };
@@ -74,7 +85,7 @@ export function useKeyboardInsets(
       document.removeEventListener('focusout', onFocus, { capture: true } as any);
       try { (WebApp as any)?.offEvent?.('viewportChanged', onResize); } catch {}
     };
-  }, [enabled, scope, threshold, isiOS]);
+  }, [enabled, scope, threshold, isiOS, strict, includeOffset, stable, stableBottom]);
 
   return { bottom };
 }
