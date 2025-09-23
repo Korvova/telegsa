@@ -60,6 +60,7 @@ import SettingsQuota from './components/SettingsQuota';
 import SettingsRank from './components/SettingsRank';
 import SettingsProfile from './components/SettingsProfile';
 import SettingsTheme from './components/SettingsTheme';
+import SettingsKeyboardTest from './components/SettingsKeyboardTest';
 import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
@@ -787,14 +788,16 @@ export default function App() {
   useEffect(() => {
     WebApp?.ready();
     WebApp?.expand();
-
-    // Не трогаем вертикальные свайпы TWA, чтобы не влиять на прокрутку контента
+    try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
 
     if (!chatId) {
       setError('Не удалось определить chatId. Открой WebApp из кнопки в боте.');
       setLoading(false);
     }
   }, [chatId]);
+
+  // settings sub-page
+  const [settingsPage, setSettingsPage] = useState<'root'|'kbtest'>('root');
 
   useEffect(() => {
     const u = WebApp?.initDataUnsafe?.user;
@@ -1165,6 +1168,9 @@ export default function App() {
               onOpenTask={(id:string)=>{ setTaskOrigin('group'); openTask(id); }}
             />
           ) : tab === 'settings' ? (
+            settingsPage === 'kbtest' ? (
+              <SettingsKeyboardTest onBack={() => setSettingsPage('root')} />
+            ) : (
             <div
               style={{
                 // фон настроек — по выбранной теме
@@ -1217,7 +1223,24 @@ export default function App() {
               <SettingsRank chatId={chatId} />
 
               {/* тут можно добавить другие пункты настроек позже */}
+              <button
+                onClick={() => setSettingsPage('kbtest')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                  background: '#202840', color: '#e8eaed', border: '1px solid #2a3346',
+                  borderRadius: 12, padding: '10px 12px', cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 18 }}>🧪</span>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>Тест клавиатуры</div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    Поле ввода, «прилипшее» к клавиатуре (iOS веб)
+                  </div>
+                </div>
+              </button>
             </div>
+            )
           ) : tab === 'notifications' ? (
             <NotificationsView chatId={chatId} />
           ) : (
