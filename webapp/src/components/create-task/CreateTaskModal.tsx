@@ -96,6 +96,7 @@ export default function CreateTaskModal({
   useEffect(() => {
     if (!open || !isiOS) return;
     try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
+    try { (WebApp as any)?.expand?.(); } catch {}
   }, [open, isiOS]);
 
   // Robust body scroll-lock on iOS while modal is open to avoid bounce at top/bottom
@@ -633,12 +634,12 @@ export default function CreateTaskModal({
         style={
           isiOS
             ? {
-                position: 'relative',
-                left: 0,
-                right: 0,
+                position: 'fixed',
+                left: 10,
+                right: 10,
                 bottom: 0,
                 margin: '0 auto',
-                width: 'calc(100% - 24px)',
+                width: 'auto',
                 maxWidth: 640,
                 background: '#111827',
                 color: '#e5e7eb',
@@ -651,7 +652,10 @@ export default function CreateTaskModal({
                 WebkitOverflowScrolling: 'touch' as any,
                 touchAction: 'auto',
                 overscrollBehaviorY: 'contain' as any,
-                zIndex: 2001,
+                zIndex: 10000,
+                transform: `translate3d(0, -${Math.max(kbBottom, kbFallback)}px, 0)`,
+                backfaceVisibility: 'hidden',
+                willChange: 'transform',
               }
             : {
                 width: 'calc(100% - 32px)',
