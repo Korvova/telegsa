@@ -80,6 +80,7 @@ export default function CreateTaskModal({
   }, []);
   // container ref to allow internal scroll when keyboard shows
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  const [kbOn, setKbOn] = useState(false);
 
   const ensureVisible = () => {
     try { textAreaRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
@@ -155,6 +156,35 @@ export default function CreateTaskModal({
       document.body.style.overflow = prevBodyOverflow;
     };
   }, [open, isiOS]);
+
+  // Track focus inside the sheet to enable keyboard-lift transform only when inputs are focused
+  useEffect(() => {
+    if (!open) { setKbOn(false); return; }
+    const el = sheetRef.current;
+    if (!el) return;
+    const isFocusable = (t: any) => {
+      try {
+        if (!t) return false;
+        const tag = String(t.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+        if (t?.isContentEditable) return true;
+      } catch {}
+      return false;
+    };
+    const onFocusIn = (e: Event) => { if (isFocusable(e.target)) setKbOn(true); };
+    const onFocusOut = (_e: Event) => { setTimeout(() => {
+      try {
+        const ae = document.activeElement;
+        setKbOn(!!(ae && el.contains(ae) && isFocusable(ae)));
+      } catch { setKbOn(false); }
+    }, 0); };
+    el.addEventListener('focusin', onFocusIn as any);
+    el.addEventListener('focusout', onFocusOut as any);
+    return () => {
+      el.removeEventListener('focusin', onFocusIn as any);
+      el.removeEventListener('focusout', onFocusOut as any);
+    };
+  }, [open]);
 
   // Accept external request to focus from FAB (keeps iOS user-gesture chain)
   useEffect(() => {
@@ -599,7 +629,7 @@ export default function CreateTaskModal({
                 padding: 16,
                 paddingBottom: `calc(16px + env(safe-area-inset-bottom, 0px))`,
                 borderTop: '1px solid #1f2937',
-                transform: 'translateY(calc(-1 * var(--kb, 0px)))',
+                transform: kbOn ? 'translateY(calc(-1 * var(--kb, 0px)))' : 'translateY(0)',
                 maxHeight: 'calc(100dvh - 12px)',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch' as any,

@@ -14,6 +14,7 @@ type Props = {
   onToggleTools: () => void;
   onRemoveAudio?: () => void;
   rightSlot: React.ReactNode;
+  onFocus?: () => void;
 };
 
 export default function TextComposer({
@@ -30,6 +31,7 @@ export default function TextComposer({
   onToggleTools,
   onRemoveAudio,
   rightSlot,
+  onFocus,
 }: Props) {
   const MAX_LINES = 6;
   const LINE_PX = 20;
@@ -60,7 +62,11 @@ export default function TextComposer({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onInput={adjustTextHeight}
-              style={{ width: '100%', boxSizing: 'border-box', background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 14, padding: '8px 12px', paddingLeft: 44, resize: 'none', minHeight: 38, maxHeight: MAX_HEIGHT_PX, lineHeight: `${LINE_PX}px`, overflowY: 'hidden' }}
+              onFocus={onFocus}
+              onBlur={() => {
+                try { (e => e)(null as any); } catch {}
+              }}
+              style={{ width: '100%', boxSizing: 'border-box', background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 14, padding: '8px 12px', paddingLeft: 44, resize: 'none', minHeight: 38, maxHeight: MAX_HEIGHT_PX, lineHeight: `${LINE_PX}px`, overflowY: 'hidden', fontSize: 16 }}
             />
             <button
               type="button"
