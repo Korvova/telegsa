@@ -82,7 +82,15 @@ export default function CreateTaskModal({
   }, []);
   // container ref to allow internal scroll when keyboard shows
   const sheetRef = useRef<HTMLDivElement | null>(null);
-  const { bottom: kbBottom } = useKeyboardInsets(open && isiOS, sheetRef as any, 120);
+  const { bottom: kbBottom } = useKeyboardInsets(open && isiOS, sheetRef as any, 100, true);
+  const [kbFallback, setKbFallback] = useState(0);
+  useEffect(() => {
+    if (!open || !isiOS) { setKbFallback(0); return; }
+    // Fallback to a reasonable keyboard height until viewport reports a value
+    setKbFallback(320);
+    const t = setTimeout(() => setKbFallback(0), 900);
+    return () => clearTimeout(t);
+  }, [open, isiOS]);
 
   const ensureVisible = () => {
     try { textAreaRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
@@ -582,9 +590,9 @@ export default function CreateTaskModal({
       style={
         isiOS
           ? {
-              position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000,
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 9999,
               display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-              paddingBottom: `calc(${kbBottom}px + env(safe-area-inset-bottom, 0px))`,
+              paddingBottom: `calc(${Math.max(kbBottom, kbFallback)}px + env(safe-area-inset-bottom, 0px))`,
             }
           : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
       }

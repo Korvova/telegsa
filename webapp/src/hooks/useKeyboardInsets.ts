@@ -11,7 +11,7 @@ function isTextInput(el: any): boolean {
   return false;
 }
 
-export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTMLElement>, threshold = 140) {
+export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTMLElement>, threshold = 140, strict = false) {
   const isiOS = useMemo(() => {
     try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
   }, []);
@@ -41,7 +41,7 @@ export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTML
         if (waH) k2 = Math.max(0, window.innerHeight - Number(waH));
       } catch {}
       const raw = Math.max(k1, k2);
-      const next = (focusActive && raw > threshold) ? raw : 0;
+      const next = strict ? raw : ((focusActive && raw > threshold) ? raw : 0);
       setBottom(next);
       try { document.documentElement.style.setProperty('--kb', `${next}px`); } catch {}
     };
@@ -69,4 +69,3 @@ export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTML
 
   return { bottom };
 }
-
