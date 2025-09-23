@@ -82,7 +82,7 @@ export default function CreateTaskModal({
   }, []);
   // container ref to allow internal scroll when keyboard shows
   const sheetRef = useRef<HTMLDivElement | null>(null);
-  const { bottom: kbBottom } = useKeyboardInsets(open && isiOS, sheetRef as any, 100, true);
+  const { bottom: kbBottom } = useKeyboardInsets(open && isiOS, sheetRef as any, 80, true, true);
   const [kbFallback, setKbFallback] = useState(0);
   useEffect(() => {
     if (!open || !isiOS) { setKbFallback(0); return; }
@@ -654,6 +654,7 @@ export default function CreateTaskModal({
                 overscrollBehaviorY: 'contain' as any,
                 zIndex: 10000,
                 transform: `translate3d(0, -${Math.max(kbBottom, kbFallback)}px, 0)`,
+                transition: 'transform 80ms ease-out',
                 backfaceVisibility: 'hidden',
                 willChange: 'transform',
               }

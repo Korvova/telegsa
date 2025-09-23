@@ -11,7 +11,13 @@ function isTextInput(el: any): boolean {
   return false;
 }
 
-export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTMLElement>, threshold = 140, strict = false) {
+export function useKeyboardInsets(
+  enabled: boolean,
+  scope?: React.RefObject<HTMLElement>,
+  threshold = 140,
+  strict = false,
+  includeOffset = false,
+) {
   const isiOS = useMemo(() => {
     try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
   }, []);
@@ -33,8 +39,11 @@ export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTML
     const compute = () => {
       // Raw keyboard occlusion height by VisualViewport and TWA viewport
       const vvH = vv?.height || window.innerHeight;
-      // Use height delta only — offsetTop jitter causes jumps on iOS when user drags content
-      const k1 = Math.max(0, window.innerHeight - vvH);
+      const vvTop = vv?.offsetTop || 0;
+      // choose mode: height only vs height+offset (closer to InputAccessory behavior)
+      const kHeightOnly = Math.max(0, window.innerHeight - vvH);
+      const kHeightWithOffset = Math.max(0, window.innerHeight - (vvH + vvTop));
+      const k1 = includeOffset ? kHeightWithOffset : kHeightOnly;
       let k2 = 0;
       try {
         const waH = (WebApp as any)?.viewportHeight || (WebApp as any)?.viewportStableHeight || 0;
