@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import TonWalletConnect from '../TonWalletConnect';
 import DeadlinePicker from '../DeadlinePicker';
 import CameraCaptureModal from '../CameraCaptureModal';
@@ -80,7 +81,7 @@ export default function CreateTaskModal({
   }, []);
   // container ref to allow internal scroll when keyboard shows
   const sheetRef = useRef<HTMLDivElement | null>(null);
-  const [kbOn, setKbOn] = useState(false);
+  const { bottom: kbBottom } = useKeyboardInsets(open && isiOS, sheetRef as any, 120);
 
   const ensureVisible = () => {
     try { textAreaRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch {}
@@ -147,44 +148,31 @@ export default function CreateTaskModal({
   // Prevent background scroll on iOS while sheet is open to avoid viewport drift
   useEffect(() => {
     if (!open || !isiOS) return;
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-    const prevBodyOverflow = document.body.style.overflow;
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
+    // robust scroll lock pattern for iOS
+    const body = document.body as any;
+    const scrollY = window.scrollY || window.pageYOffset;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
     return () => {
-      document.documentElement.style.overflow = prevHtmlOverflow;
-      document.body.style.overflow = prevBodyOverflow;
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      try { window.scrollTo(0, scrollY); } catch {}
     };
   }, [open, isiOS]);
 
-  // Track focus inside the sheet to enable keyboard-lift transform only when inputs are focused
+  // Ensure focus grabs after open on iOS (retry a few times)
   useEffect(() => {
-    if (!open) { setKbOn(false); return; }
-    const el = sheetRef.current;
-    if (!el) return;
-    const isFocusable = (t: any) => {
-      try {
-        if (!t) return false;
-        const tag = String(t.tagName || '').toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
-        if (t?.isContentEditable) return true;
-      } catch {}
-      return false;
+    if (!open || !isiOS) return;
+    let tries = 0;
+    const tick = () => {
+      try { textAreaRef.current?.focus({ preventScroll: true } as any); } catch {}
+      if (++tries < 5) setTimeout(tick, 80);
     };
-    const onFocusIn = (e: Event) => { if (isFocusable(e.target)) setKbOn(true); };
-    const onFocusOut = (_e: Event) => { setTimeout(() => {
-      try {
-        const ae = document.activeElement;
-        setKbOn(!!(ae && el.contains(ae) && isFocusable(ae)));
-      } catch { setKbOn(false); }
-    }, 0); };
-    el.addEventListener('focusin', onFocusIn as any);
-    el.addEventListener('focusout', onFocusOut as any);
-    return () => {
-      el.removeEventListener('focusin', onFocusIn as any);
-      el.removeEventListener('focusout', onFocusOut as any);
-    };
-  }, [open]);
+    setTimeout(tick, 0);
+  }, [open, isiOS]);
 
   // Accept external request to focus from FAB (keeps iOS user-gesture chain)
   useEffect(() => {
@@ -602,7 +590,7 @@ export default function CreateTaskModal({
   return !open ? null : (
     <div
       onClick={onClose}
-      onTouchMove={(e) => { try { e.preventDefault(); } catch {} }}
+      onTouchMove={(e) => { try { const n = e.target as Node; if (!sheetRef.current || !sheetRef.current.contains(n)) e.preventDefault(); } catch {} }}
       style={
         isiOS
           ? { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, touchAction: 'none', WebkitOverflowScrolling: 'auto' as any }
@@ -616,8 +604,8 @@ export default function CreateTaskModal({
           isiOS
             ? {
                 position: 'fixed',
-                left: 12,
-                right: 12,
+                left: 10,
+                right: 10,
                 bottom: 0,
                 margin: '0 auto',
                 width: 'auto',
@@ -629,7 +617,7 @@ export default function CreateTaskModal({
                 padding: 16,
                 paddingBottom: `calc(16px + env(safe-area-inset-bottom, 0px))`,
                 borderTop: '1px solid #1f2937',
-                transform: kbOn ? 'translateY(calc(-1 * var(--kb, 0px)))' : 'translateY(0)',
+                transform: `translateY(-${kbBottom}px)`,
                 maxHeight: 'calc(100dvh - 12px)',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch' as any,
