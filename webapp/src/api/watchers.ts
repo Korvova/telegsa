@@ -13,8 +13,11 @@ export async function subscribe(taskId: string, chatId: string) {
   return r.json();
 }
 
-export async function unsubscribe(taskId: string, chatId: string) {
-  const r = await fetch(`${API}/tasks/${encodeURIComponent(taskId)}/watchers?chatId=${encodeURIComponent(chatId)}`, { method: 'DELETE' });
+export async function unsubscribe(taskId: string, targetChatId: string, byChatId?: string) {
+  const sp = new URLSearchParams();
+  sp.set('chatId', targetChatId);
+  if (byChatId) sp.set('byChatId', byChatId);
+  const r = await fetch(`${API}/tasks/${encodeURIComponent(taskId)}/watchers?${sp.toString()}`, { method: 'DELETE' });
   return r.json();
 }
 
@@ -22,4 +25,3 @@ export async function createWatcherInvite(taskId: string) {
   const r = await fetch(`${API}/watchers/invite`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId }) });
   return r.json() as Promise<{ ok: boolean; tmeStartApp?: string; token?: string } >;
 }
-

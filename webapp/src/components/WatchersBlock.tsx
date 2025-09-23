@@ -19,13 +19,17 @@ export default function WatchersBlock({ taskId, meChatId }: { taskId: string; me
     setBusy(true);
     try {
       if (meWatching) {
-        await unsubscribe(taskId, meChatId);
+        await unsubscribe(taskId, meChatId, meChatId);
         setItems(prev => prev.filter(w => String(w.chatId) !== String(meChatId)));
       } else {
         await subscribe(taskId, meChatId);
         setItems(prev => [...prev, { chatId: String(meChatId), name: WebApp?.initDataUnsafe?.user?.first_name || 'Я' }]);
       }
       WebApp?.HapticFeedback?.impactOccurred?.('light');
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+      else alert('Не удалось изменить подписку наблюдателя');
     } finally { setBusy(false); }
   };
 
@@ -49,9 +53,13 @@ export default function WatchersBlock({ taskId, meChatId }: { taskId: string; me
   const removeWatcher = async (chatId: string) => {
     if (!confirm('Убрать наблюдателя?')) return;
     try {
-      await unsubscribe(taskId, chatId);
+      await unsubscribe(taskId, chatId, meChatId);
       setItems(prev => prev.filter(w => String(w.chatId) !== String(chatId)));
-    } catch {}
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+      else alert('Не удалось убрать наблюдателя');
+    }
   };
 
   return (
@@ -89,4 +97,3 @@ const title: React.CSSProperties = { fontSize: 16, fontWeight: 700, marginBottom
 const btn: React.CSSProperties = { padding: '8px 12px', borderRadius: 10, border: '1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' };
 const chip: React.CSSProperties = { display:'inline-flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:999, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' };
 const chipX: React.CSSProperties = { marginLeft: 6, padding:'0 6px', border:'1px solid #2a3346', borderRadius: 999, background:'#3a1f1f', color:'#ffd7d7', cursor:'pointer' };
-

@@ -188,6 +188,12 @@ model Group {
 
   watchers GroupWatcher[]
 
+  // --- Permissions (group defaults) ---
+  permViewOwnOnly     Boolean @default(false)
+  permChangeStatusAny Boolean @default(true)
+  permCanCreateTasks  Boolean @default(true)
+  permEditJson        Json?
+
   @@unique([ownerChatId, title])
   @@index([ownerChatId])
 }
@@ -227,6 +233,24 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+// === User quota for creations (tasks + events + pretasks)
+model UserQuota {
+  chatId        String   @id
+  totalCapacity Int      @default(100)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model UserQuotaPurchase {
+  id        String   @id @default(cuid())
+  chatId    String
+  pack      Int
+  stars     Int
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+}
+
 model GroupMember {
   id        String   @id @default(cuid())
   groupId   String
@@ -237,6 +261,9 @@ model GroupMember {
   createdAt DateTime @default(now())
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  // --- Individual permission overrides ---
+  permOverrides Json?
 
   @@unique([groupId, chatId])
   @@index([chatId])

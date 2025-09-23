@@ -62,6 +62,26 @@ export function preTasksRouter({ prisma, tg }) {
       const autoCancelOnAny = !!body.autoCancelOnAny;
       const timezone = body.timezone ? String(body.timezone) : null;
 
+      // ----- Quota check (pretasks consume 1 slot) -----
+      try {
+        const quota = await prisma.userQuota.findUnique({ where: { chatId: creatorChatId } });
+        const totalCapacity = quota?.totalCapacity ?? 100;
+        const tasksCount = await prisma.task.count({ where: {
+          type: 'TASK', fromProcess: { not: true },
+          OR: [{ createdByChatId: creatorChatId }, { AND: [{ createdByChatId: null }, { chatId: creatorChatId }] }],
+        }});
+        const eventsCount = await prisma.task.count({ where: {
+          type: 'EVENT',
+          OR: [{ createdByChatId: creatorChatId }, { AND: [{ createdByChatId: null }, { chatId: creatorChatId }] }],
+        }});
+        const pretasksCount = await prisma.preTask.count({ where: { creatorChatId } });
+        const used = tasksCount + eventsCount + pretasksCount;
+        if (used >= totalCapacity) {
+          try { console.warn('[quota:block:pretask]', { chatId: creatorChatId, used, totalCapacity }); } catch {}
+          return res.status(402).json({ ok: false, error: 'quota_exceeded' });
+        }
+      } catch {}
+
       const created = await prisma.preTask.create({
         data: {
           creatorChatId,

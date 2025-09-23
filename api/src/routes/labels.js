@@ -25,6 +25,22 @@ async function userIsGroupMemberOrOwner(chatId, groupId) {
   return Boolean(m);
 }
 
+async function canEditField(chatId, groupId, field) {
+  try {
+    const g = await prisma.group.findUnique({ where: { id: groupId } });
+    if (!g) return false;
+    if (String(g.ownerChatId) === String(chatId)) return true;
+    const def = (g.permEditJson && g.permEditJson[field]);
+    if (def === false) {
+      const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: String(chatId) } });
+      const ov = gm?.permOverrides || null;
+      if (ov && ov.edit && ov.edit[field] === true) return true;
+      return false;
+    }
+    return true;
+  } catch { return false; }
+}
+
 async function ensureDefaultLabels(groupId) {
   const existing = await prisma.groupLabel.findMany({ where: { groupId } });
   if (existing.length) return existing;
@@ -170,6 +186,8 @@ router.post('/tasks/:taskId/labels', async (req, res) => {
     // назначать ярлыки может любой участник группы (или владелец)
     const allowed = await userIsGroupMemberOrOwner(String(chatId), taskGroupId);
     if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const editOk = await canEditField(String(chatId), taskGroupId, 'labels');
+    if (!editOk) return res.status(403).json({ ok: false, error: 'no_rights' });
 
     // проверим, что все ярлыки из той же группы
     const labels = await prisma.groupLabel.findMany({ where: { id: { in: labelIds } } });
@@ -224,6 +242,8 @@ router.delete('/tasks/:taskId/labels/:labelId', async (req, res) => {
 
     const allowed = await userIsGroupMemberOrOwner(String(chatId), taskGroupId);
     if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const editOk = await canEditField(String(chatId), taskGroupId, 'labels');
+    if (!editOk) return res.status(403).json({ ok: false, error: 'no_rights' });
 
     await prisma.taskLabel.delete({ where: { taskId_labelId: { taskId, labelId } } });
     res.json({ ok: true });
@@ -270,5 +290,4 @@ router.get('/tasks/:taskId/labels', async (req, res) => {
 
 
 export { router as labelsRouter };
-
 

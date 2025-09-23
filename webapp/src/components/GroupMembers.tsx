@@ -10,6 +10,8 @@ import {
   type GroupMember,
   getGroupMemberDescription,
   setGroupMemberDescription,
+  getGroupMemberPerms,
+  setGroupMemberPerms,
 } from '../api';
 import OverlayModal from './OverlayModal';
 
@@ -30,6 +32,8 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
   const [editTarget, setEditTarget] = useState<GroupMember | null>(null);
   const [descDraft, setDescDraft] = useState<string>('');
   const [savingDesc, setSavingDesc] = useState(false);
+  const [permLoading, setPermLoading] = useState(false);
+  const [permDraft, setPermDraft] = useState<any>(null);
 
   const reload = async () => {
     setLoading(true);
@@ -126,6 +130,13 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
       // Подтянем текущее описание (если есть)
       const r = await getGroupMemberDescription(group.id, String(m.chatId));
       if (r?.ok) setDescDraft(String(r.description || ''));
+      // Подтянем права участника
+      setPermLoading(true);
+      try {
+        const pr = await getGroupMemberPerms(group.id, String(m.chatId));
+        setPermDraft(pr?.overrides || {});
+      } catch {}
+      finally { setPermLoading(false); }
     } catch {}
   };
 
@@ -318,10 +329,44 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
 
           <div>
             <div style={{ fontWeight:600, marginBottom:6 }}>Права</div>
-            <div style={{ fontSize:13, opacity:.75 }}>Скоро: настраиваемые права участника в этой группе.</div>
+            {permLoading ? (
+              <div style={{ opacity:.7 }}>Загрузка…</div>
+            ) : (
+              <div style={{ display:'grid', gap:6, fontSize:13 }}>
+                <label><input type="checkbox" checked={!!permDraft?.canCreateTasks} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), canCreateTasks: e.target.checked }))} /> Может ставить задачи в группе</label>
+                <label><input type="checkbox" checked={!!permDraft?.changeStatusAny} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), changeStatusAny: e.target.checked }))} /> Может менять статус любых задач</label>
+                <label><input type="checkbox" checked={permDraft?.viewOwnOnly===false} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), viewOwnOnly: e.target.checked ? false : undefined }))} /> Видеть все задачи (снять ограничение)</label>
+                <div style={{ marginTop:6, opacity:.85 }}>Изменение деталей задачи:</div>
+                {['assignee','text','labels','accept','expenses','deadline','reminders','watchers','comments','delete'].map((k)=> (
+                  <label key={k}><input type="checkbox" checked={!!(permDraft?.edit?.[k])} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), edit: { ...((d as any)?.edit||{}), [k]: e.target.checked } }))} /> {labelForEdit(k)}</label>
+                ))}
+                <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                  <button
+                    onClick={async()=>{ try { await setGroupMemberPerms(group.id, chatId, String(editTarget?.chatId||''), permDraft||{}); alert('Права сохранены'); } catch { alert('Не удалось сохранить права'); } }}
+                    style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}
+                  >Сохранить права</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </OverlayModal>
     </div>
   );
+}
+
+function labelForEdit(k: string) {
+  switch (k) {
+    case 'assignee': return 'Изменять ответственного';
+    case 'text': return 'Изменять текст';
+    case 'labels': return 'Изменять ярлыки';
+    case 'accept': return 'Изменять условия приёма';
+    case 'expenses': return 'Изменять затраты';
+    case 'deadline': return 'Изменять дедлайн';
+    case 'reminders': return 'Изменять напоминания';
+    case 'watchers': return 'Добавлять наблюдателей';
+    case 'comments': return 'Оставлять комментарии';
+    case 'delete': return 'Удалять задачи';
+    default: return k;
+  }
 }

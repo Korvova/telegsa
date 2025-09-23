@@ -289,10 +289,25 @@ function PermissionsModal({ groupId, chatId, onClose }: { groupId: string; chatI
             <label><input type="checkbox" checked={defaults.viewOwnOnly} onChange={(e)=>setDefaults(d=>({ ...(d as any), viewOwnOnly: e.target.checked }))} /> Могут видеть только свои задачи</label>
             <label><input type="checkbox" checked={defaults.changeStatusAny} onChange={(e)=>setDefaults(d=>({ ...(d as any), changeStatusAny: e.target.checked }))} /> Могут менять статус задач</label>
             <label><input type="checkbox" checked={defaults.canCreateTasks} onChange={(e)=>setDefaults(d=>({ ...(d as any), canCreateTasks: e.target.checked }))} /> Могут ставить задачи в группе</label>
-            <div style={{ marginTop:6, fontSize:12, opacity:.85 }}>Дополнительно: изменения задачи</div>
+            <div style={{ marginTop:6, fontSize:12, opacity:.85 }}>Дополнительно: изменения задачи (по умолчанию разрешены; снимите галочку, чтобы запретить для всех, кроме владельца)</div>
             <div style={{ display:'grid', gap:6, fontSize:13 }}>
-              {['assignee','text','labels','accept','expenses','deadline','reminders','watchers','delete'].map((k)=> (
-                <label key={k}><input type="checkbox" checked={!!(defaults.edit?.[k])} onChange={(e)=>setDefaults(d=>({ ...(d as any), edit: { ...((d as any).edit||{}), [k]: e.target.checked } }))} /> {labelForEdit(k)}</label>
+              {['assignee','text','labels','accept','expenses','deadline','reminders','watchers','comments','delete'].map((k)=> (
+                <label key={k}>
+                  <input
+                    type="checkbox"
+                    // если undefined — считаем «разрешено» (галочка стоит)
+                    checked={(defaults.edit ? (defaults.edit as any)[k] !== false : true)}
+                    onChange={(e)=>{
+                      const allow = e.target.checked;
+                      setDefaults(d=>{
+                        const cur = (d as any) || {};
+                        const edit = { ...(cur.edit || {}) };
+                        edit[k] = allow ? true : false; // true/false сохраняем явно
+                        return { ...cur, edit } as any;
+                      });
+                    }}
+                  /> {labelForEdit(k)}
+                </label>
               ))}
             </div>
             <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:8 }}>
@@ -316,6 +331,7 @@ function labelForEdit(k: string) {
     case 'deadline': return 'Изменять дедлайн';
     case 'reminders': return 'Изменять напоминания';
     case 'watchers': return 'Добавлять наблюдателей';
+    case 'comments': return 'Оставлять комментарии';
     case 'delete': return 'Удалять задачи';
     default: return k;
   }

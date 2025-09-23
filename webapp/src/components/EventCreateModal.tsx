@@ -32,6 +32,7 @@ const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
   const [groupId, setGroupId] = useState<string | undefined>(defaultGroupId);
   const [reminders, setReminders] = useState<number[]>([]); // минуты: 60, 10, 5
   const [busy, setBusy] = useState(false);
+  const [quotaOpen, setQuotaOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -57,18 +58,24 @@ const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
   const allowSave = title.trim() && new Date(startAt) <= new Date(endAt);
 
 
-const onSave = async () => {
-  if (!allowSave || busy) return;
-  setBusy(true);
-  try {
-    const r = await createEvent({
-      chatId,
-      groupId,
-      title: title.trim(),
-      startAt,
-      endAt,
-    });
-    if (!r.ok) throw new Error('create_event_failed');
+  const onSave = async () => {
+    if (!allowSave || busy) return;
+    setBusy(true);
+    try {
+      const r = await createEvent({
+        chatId,
+        groupId,
+        title: title.trim(),
+        startAt,
+        endAt,
+      });
+    if (!r.ok) {
+      if (String((r as any)?.error||'') === 'quota_exceeded') {
+        setQuotaOpen(true);
+        return;
+      }
+      throw new Error('create_event_failed');
+    }
 
     // напоминания (персональные; организатор = создатель)
     const byChatId = String(chatId);
@@ -99,7 +106,7 @@ const onSave = async () => {
     onClose();
   } catch (e) {
     console.error('[EventCreateModal] create error', e);
-    alert('Не удалось создать событие');
+    if (!quotaOpen) alert('Не удалось создать событие');
     WebApp?.HapticFeedback?.notificationOccurred?.('error');
   } finally {
     setBusy(false);
@@ -212,6 +219,48 @@ const onSave = async () => {
 
         </div>
       </div>
+
+      {quotaOpen && (
+        <div onClick={()=>setQuotaOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(420px,92vw)' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+              <div style={{ fontWeight:800 }}>Лимит исчерпан</div>
+              <button onClick={()=>setQuotaOpen(false)} style={{ background:'transparent', border:'none', color:'#9ca3af', fontSize:18, cursor:'pointer' }}>✕</button>
+            </div>
+            <div style={{ fontSize:13, opacity:.85, marginBottom:8 }}>У вас закончился лимит на создание. Пополните лимит через Telegram Stars:</div>
+            <div style={{ display:'grid', gap:8 }}>
+              {[{pack:100, stars:100},{pack:1000, stars:500},{pack:5000, stars:1000}].map(p => (
+                <button key={p.pack}
+                  onClick={async ()=>{
+                    try {
+                      const r = await fetch(`${import.meta.env.VITE_API_BASE}/quota/purchase`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId, pack: p.pack }) }).then(r=>r.json());
+                      const link = (r as any)?.invoiceLink;
+                      if (link) {
+                        try {
+                          if ((WebApp as any)?.openInvoice) (WebApp as any).openInvoice(link, (status:any) => {
+                            try { console.log('[invoice:quota][event] status', status); } catch {}
+                            if (status === 'paid') { setQuotaOpen(false); alert('Оплачено. Повторите создание события'); }
+                            else if (status === 'cancelled') alert('Оплата отменена');
+                            else if (status === 'failed') alert('Оплата не прошла');
+                          });
+                          else if (WebApp?.openTelegramLink) WebApp.openTelegramLink(link);
+                          else window.open?.(link, '_blank');
+                        } catch {}
+                      } else if ((r as any)?.ok && (r as any)?.devApplied) {
+                        alert('Лимит пополнен (DEV)'); setQuotaOpen(false);
+                      } else {
+                        alert('Не удалось создать счёт');
+                      }
+                    } catch { alert('Ошибка при создании счёта'); }
+                  }}
+                  style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', textAlign:'left' }}
+                >+{p.pack} задач · {p.stars} ⭐️</button>
+              ))}
+            </div>
+            <div style={{ fontSize:12, opacity:.75, marginTop:8 }}>После оплаты вернитесь и повторите создание.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

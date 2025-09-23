@@ -70,6 +70,26 @@ router.post('/', async (req, res) => {
     }
 
     const caller = String(chatId);
+
+    // ----- Quota check (events consume 1 slot) -----
+    try {
+      const quota = await prisma.userQuota.findUnique({ where: { chatId: caller } });
+      const totalCapacity = quota?.totalCapacity ?? 100;
+      const tasksCount = await prisma.task.count({ where: {
+        type: 'TASK', fromProcess: { not: true },
+        OR: [{ createdByChatId: caller }, { AND: [{ createdByChatId: null }, { chatId: caller }] }],
+      }});
+      const eventsCount = await prisma.task.count({ where: {
+        type: 'EVENT',
+        OR: [{ createdByChatId: caller }, { AND: [{ createdByChatId: null }, { chatId: caller }] }],
+      }});
+      const pretasksCount = await prisma.preTask.count({ where: { creatorChatId: caller } });
+      const used = tasksCount + eventsCount + pretasksCount;
+      if (used >= totalCapacity) {
+        try { console.warn('[quota:block:event]', { chatId: caller, used, totalCapacity }); } catch {}
+        return res.status(402).json({ ok: false, error: 'quota_exceeded' });
+      }
+    } catch {}
     const { boardChatId, inboxId } = await resolveInbox({
       callerChatId: caller,
       groupId: groupId ? String(groupId) : null,

@@ -431,12 +431,17 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
     autosaveTimer.current = setTimeout(async () => {
       setSaveStatus('saving');
       try {
-        await updateTask(taskId, next);
+        await updateTask(taskId, next, meChatId);
         onChanged?.();
         setSaveStatus('saved');
         clearTimeout(saveDoneTimer.current);
         saveDoneTimer.current = setTimeout(() => setSaveStatus('idle'), 1200);
-      } catch {
+      } catch (e: any) {
+        const msg = String(e?.message || '');
+        const status = Number((e?.response && (e.response as any).status) || (/\b403\b/.test(msg) ? 403 : 0));
+        if (status === 403 || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+        // откат текста, чтобы не зациклить автосохранение
+        setText(initial);
         setSaveStatus('error');
         clearTimeout(saveDoneTimer.current);
         saveDoneTimer.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -736,9 +741,12 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                           if (remBusy) return;
                           setRemBusy(true);
                           try {
-                            await deleteTaskReminder(taskId, r.id);
+                            await deleteTaskReminder(taskId, r.id, meChatId);
                             setReminders((prev) => prev.filter(x => x.id !== r.id));
-                          } catch {}
+                          } catch (e: any) {
+                            const msg = String(e?.message || '');
+                            if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+                          }
                           finally { setRemBusy(false); }
                         }}
                         title="Удалить"
@@ -789,7 +797,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                     const board = await fetchBoard(meChatId, groupId || undefined);
                     const col = (board?.columns || []).find((c) => String(c.name) === 'Approval');
                     if (col) {
-                      await moveTask(taskId, col.id, 0);
+                      await moveTask(taskId, col.id, 0, meChatId);
                       setPhase('Approval');
                       onChanged?.();
                       WebApp?.HapticFeedback?.impactOccurred?.('light');
@@ -799,7 +807,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                   } catch {}
                   return;
                 }
-                await completeTask(taskId);
+                await completeTask(taskId, { chatId: meChatId } as any);
                 setPhase('Done');
                 onChanged?.();
                 WebApp?.HapticFeedback?.notificationOccurred?.('success');
@@ -1210,31 +1218,31 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             <div style={{ display:'grid', gap:8 }}>
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='NONE'} onChange={async ()=>{
-                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'NONE'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'NONE' } as any) : prev); } catch {}
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'NONE'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'NONE' } as any) : prev); if (r && (r as any).ok===false && String((r as any).error||'')==='no_rights') alert('У вас нет прав на это действие'); } catch (e:any) { const msg = String(e?.message||''); if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие'); }
                 }} />
                 <span>Без условий</span>
               </label>
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='PHOTO'} onChange={async ()=>{
-                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'PHOTO'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'PHOTO' } as any) : prev); } catch {}
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'PHOTO'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'PHOTO' } as any) : prev); if (r && (r as any).ok===false && String((r as any).error||'')==='no_rights') alert('У вас нет прав на это действие'); } catch (e:any) { const msg = String(e?.message||''); if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие'); }
                 }} />
                 <span>Нужно фото 📸</span>
               </label>
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='APPROVAL'} onChange={async ()=>{
-                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'APPROVAL' } as any) : prev); } catch {}
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'APPROVAL' } as any) : prev); if (r && (r as any).ok===false && String((r as any).error||'')==='no_rights') alert('У вас нет прав на это действие'); } catch (e:any) { const msg = String(e?.message||''); if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие'); }
                 }} />
                 <span>Нужно согласование 🤝</span>
               </label>
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='PHOTO_AND_APPROVAL'} onChange={async ()=>{
-                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'PHOTO_AND_APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'PHOTO_AND_APPROVAL' } as any) : prev); } catch {}
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'PHOTO_AND_APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'PHOTO_AND_APPROVAL' } as any) : prev); if (r && (r as any).ok===false && String((r as any).error||'')==='no_rights') alert('У вас нет прав на это действие'); } catch (e:any) { const msg = String(e?.message||''); if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие'); }
                 }} />
                 <span>Фото + согласование 📸🤝</span>
               </label>
               <label style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <input type="radio" checked={String((task as any)?.acceptCondition||'NONE')==='DOC_AND_APPROVAL'} onChange={async ()=>{
-                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'DOC_AND_APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'DOC_AND_APPROVAL' } as any) : prev); } catch {}
+                  try { const mod = await import('./api'); const r = await mod.setAcceptCondition(taskId, meChatId, 'DOC_AND_APPROVAL'); if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'DOC_AND_APPROVAL' } as any) : prev); if (r && (r as any).ok===false && String((r as any).error||'')==='no_rights') alert('У вас нет прав на это действие'); } catch (e:any) { const msg = String(e?.message||''); if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие'); }
                 }} />
                 <span>Документ + согласование 📎🤝</span>
               </label>
@@ -1393,7 +1401,13 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               setTask((prev) => (prev ? { ...prev, deadlineAt: r.task!.deadlineAt || null } : prev));
               onChanged();
             }
-          } catch {}
+          if (r && (r as any).ok === false && String((r as any).error||'') === 'no_rights') {
+            alert('У вас нет прав на это действие');
+          }
+          } catch (e: any) {
+            const msg = String(e?.message || '');
+            if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+          }
         }}
       />
 
@@ -1404,7 +1418,10 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           try {
             const r = await createTaskReminder(taskId, { createdBy: meChatId, target, fireAt: fireAtIso });
             if ((r as any)?.ok && (r as any).reminder) setReminders((prev) => [...prev, (r as any).reminder]);
-          } catch {}
+          } catch (e: any) {
+            const msg = String(e?.message || '');
+            if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+          }
           finally { setRemindersOpen(false); }
         }}
       />

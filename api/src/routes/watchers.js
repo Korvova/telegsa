@@ -42,6 +42,24 @@ export function watchersRouter({ prisma }) {
       if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
       const task = await getTask(id);
       if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+      // permissions: if group forbids watchers edit, allow only owner or override
+      try {
+        const i = String(task?.column?.name || '').indexOf(GROUP_SEP);
+        const groupId = i > 0 ? String(task?.column?.name || '').slice(0, i) : null;
+        if (groupId) {
+          const g = await prisma.group.findUnique({ where: { id: groupId } });
+          if (g && g.permEditJson && g.permEditJson.watchers === false) {
+            const isOwner = String(g.ownerChatId) === chatId;
+            if (!isOwner) {
+              const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId } });
+              const ov = gm?.permOverrides || null;
+              if (!(ov && ov.edit && ov.edit.watchers === true)) {
+                return res.status(403).json({ ok: false, error: 'no_rights' });
+              }
+            }
+          }
+        }
+      } catch {}
       await prisma.taskWatcher.upsert({
         where: { taskId_chatId: { taskId: id, chatId } },
         update: {},
@@ -58,9 +76,35 @@ export function watchersRouter({ prisma }) {
   router.delete('/tasks/:id/watchers', async (req, res) => {
     try {
       const id = String(req.params.id);
-      const chatId = String(req.query?.chatId || '').trim();
-      if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
-      await prisma.taskWatcher.deleteMany({ where: { taskId: id, chatId } });
+      const targetChatId = String(req.query?.chatId || '').trim(); // кого убрать
+      let actor = String(req.query?.byChatId || '').trim();        // кто выполняет
+      if (!targetChatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+      if (!actor) actor = targetChatId; // обратная совместимость: если нет byChatId — считаем, что снимает сам
+
+      const task = await getTask(id);
+      if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+      // permissions: если редактирование наблюдателей запрещено — разрешаем только владельцу или override; 
+      // но сам себя (actor === target) можно всегда отписать
+      try {
+        const i = String(task?.column?.name || '').indexOf(GROUP_SEP);
+        const groupId = i > 0 ? String(task?.column?.name || '').slice(0, i) : null;
+        if (groupId && actor !== targetChatId) {
+          const g = await prisma.group.findUnique({ where: { id: groupId } });
+          if (g && g.permEditJson && g.permEditJson.watchers === false) {
+            const isOwner = String(g.ownerChatId) === actor;
+            if (!isOwner) {
+              const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: actor } });
+              const ov = gm?.permOverrides || null;
+              if (!(ov && ov.edit && ov.edit.watchers === true)) {
+                return res.status(403).json({ ok: false, error: 'no_rights' });
+              }
+            }
+          }
+        }
+      } catch {}
+
+      await prisma.taskWatcher.deleteMany({ where: { taskId: id, chatId: targetChatId } });
       res.json({ ok: true });
     } catch (e) {
       console.error('[watchers] unsubscribe error', e);

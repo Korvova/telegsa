@@ -77,12 +77,15 @@ export default function StageScroller(props: Props) {
         await reopenTask(taskId);
       }
 
-      await moveTask(taskId, colMap[next], 0);
+      await moveTask(taskId, colMap[next], 0, meChatId);
       onPhaseChanged?.(next);
       try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
 
-    } catch (e) {
-      alert('Не удалось сменить стадию');
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      const status = Number((e?.response && (e.response as any).status) || (/\b403\b/.test(msg) ? 403 : 0));
+      if (status === 403 || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+      else alert('Не удалось сменить стадию');
       // можно залогировать e
     } finally {
       setBusy(false);

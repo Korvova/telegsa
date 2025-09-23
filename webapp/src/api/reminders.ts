@@ -31,10 +31,9 @@ export async function createTaskReminder(
     .json();
 }
 
-export async function deleteTaskReminder(taskId: string, reminderId: string): Promise<{ ok: boolean }>
+export async function deleteTaskReminder(taskId: string, reminderId: string, chatId: string): Promise<{ ok: boolean }>
 {
   return ky
-    .delete(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/reminders/${encodeURIComponent(reminderId)}`)
+    .delete(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/reminders/${encodeURIComponent(reminderId)}?chatId=${encodeURIComponent(chatId)}`)
     .json();
 }
-

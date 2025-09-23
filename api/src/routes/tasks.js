@@ -263,8 +263,35 @@ router.post('/:id/comments', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'text_required' });
     }
 
-    const task = await prisma.task.findUnique({ where: { id } });
+    const task = await prisma.task.findUnique({ where: { id }, include: { column: true } });
     if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    // permissions: group comments or private board
+    try {
+      const nm = String(task?.column?.name || '');
+      const i = nm.indexOf(GROUP_SEP);
+      const groupId = i > 0 ? nm.slice(0, i) : null;
+      if (groupId) {
+        const g = await prisma.group.findUnique({ where: { id: groupId } });
+        if (g && g.permEditJson && g.permEditJson.comments === false) {
+          const isOwner = author && String(g.ownerChatId) === String(author);
+          if (!isOwner) {
+            const gm = author ? await prisma.groupMember.findFirst({ where: { groupId, chatId: String(author) } }) : null;
+            const ov = gm?.permOverrides || null;
+            const allow = !!(ov && ov.edit && ov.edit.comments === true);
+            if (!allow) return res.status(403).json({ ok: false, error: 'no_rights' });
+          }
+        }
+      } else {
+        // private: разрешим постановщику/создателю/исполнителю
+        const me = String(author || '');
+        const creator = String(task.createdByChatId || task.chatId || '');
+        const assignee = String(task.assigneeChatId || '');
+        if (me && me !== creator && me !== assignee) {
+          return res.status(403).json({ ok: false, error: 'no_rights' });
+        }
+      }
+    } catch {}
 
     const authorUser = author
       ? await prisma.user.findUnique({
@@ -287,6 +314,55 @@ router.post('/:id/comments', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('POST /tasks/:id/comments error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// Удалить комментарий
+// DELETE /tasks/:id/comments/:cid?chatId=...
+router.delete('/:id/comments/:cid', async (req, res) => {
+  try {
+    const taskId = String(req.params.id);
+    const cid = String(req.params.cid);
+    const actor = String(req.query.chatId || '').trim();
+    if (!actor) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    const c = await prisma.comment.findUnique({ where: { id: cid } });
+    if (!c || String(c.taskId) !== taskId) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    const task = await prisma.task.findUnique({ where: { id: taskId }, include: { column: true } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    // allow author always
+    if (String(c.authorChatId) !== actor) {
+      // group rules
+      try {
+        const nm = String(task?.column?.name || '');
+        const i = nm.indexOf(GROUP_SEP);
+        const groupId = i > 0 ? nm.slice(0, i) : null;
+        if (groupId) {
+          const g = await prisma.group.findUnique({ where: { id: groupId } });
+          if (!g) return res.status(403).json({ ok: false, error: 'no_rights' });
+          const isOwner = String(g.ownerChatId) === actor;
+          if (!isOwner) {
+            const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: actor } });
+            const ov = gm?.permOverrides || null;
+            const allow = !!(ov && ov.edit && ov.edit.comments === true);
+            if (!allow) return res.status(403).json({ ok: false, error: 'no_rights' });
+          }
+        } else {
+          // private: разрешим только автору (выше) — сюда не попадём
+          return res.status(403).json({ ok: false, error: 'no_rights' });
+        }
+      } catch {
+        return res.status(403).json({ ok: false, error: 'no_rights' });
+      }
+    }
+
+    await prisma.comment.delete({ where: { id: cid } });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /tasks/:id/comments/:cid error:', e);
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
@@ -329,6 +405,36 @@ router.delete('/:id', async (req, res) => {
       include: { column: true },
     });
     if (!task) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    // --- Permissions: delete (group edit-json or private board creator/assignee) ---
+    try {
+      const nm = String(task?.column?.name || '');
+      const iPerm = nm.indexOf(GROUP_SEP);
+      const groupIdPerm = iPerm > 0 ? nm.slice(0, iPerm) : null;
+      if (groupIdPerm) {
+        // Determine actor from query/body when possible (best-effort)
+        const actor = String(req.query?.chatId || req.body?.chatId || '').trim();
+        if (actor) {
+          const g = await prisma.group.findUnique({ where: { id: groupIdPerm } });
+          if (g && String(g.ownerChatId) !== actor) {
+            if (g.permEditJson && g.permEditJson.delete === false) {
+              const gm = await prisma.groupMember.findFirst({ where: { groupId: groupIdPerm, chatId: actor } });
+              const ov = gm?.permOverrides || null;
+              const allowed = !!(ov && ov.edit && ov.edit.delete === true);
+              if (!allowed) return res.status(403).json({ ok: false, error: 'no_rights' });
+            }
+          }
+        }
+      } else {
+        // private board: require creator or assignee; try to read actor from req
+        const actor = String(req.query?.chatId || req.body?.chatId || '').trim();
+        if (actor) {
+          const amCreator = String(task.chatId) === actor || String(task.createdByChatId || '') === actor;
+          const amAssignee = task.assigneeChatId && String(task.assigneeChatId) === actor;
+          if (!amCreator && !amAssignee) return res.status(403).json({ ok: false, error: 'forbidden' });
+        }
+      }
+    } catch {}
 
     let groupId = null;
     const nm = task.column?.name || '';
@@ -435,14 +541,53 @@ router.patch('/:id', async (req, res) => {
         req.body.responsibleId === null ? null : String(req.body.responsibleId);
     }
 
-    const before = await prisma.task.findUnique({ where: { id } });
+    const before = await prisma.task.findUnique({ where: { id }, include: { column: true } });
     if (!before) return res.status(404).json({ ok: false, error: 'not_found' });
+
+    // --- Permissions (group-level edit-json for text/assignee) ---
+    try {
+      const nm = String(before?.column?.name || '');
+      const i = nm.indexOf(GROUP_SEP);
+      const groupId = i > 0 ? nm.slice(0, i) : null;
+      if (groupId) {
+        const g = await prisma.group.findUnique({ where: { id: groupId } });
+        if (g) {
+          const actor = String(
+            (req.body && (req.body.chatId || req.body.actorChatId)) ||
+            (req.user && (req.user.chatId)) ||
+            ''
+          ).trim();
+          const isOwner = actor && String(g.ownerChatId) === actor;
+          const gm = actor ? await prisma.groupMember.findFirst({ where: { groupId, chatId: actor } }) : null;
+          const ov = gm?.permOverrides || null;
+
+          if ('text' in req.body || 'title' in req.body) {
+            const def = g.permEditJson && g.permEditJson.text;
+            if (def === false) {
+              if (!actor) return res.status(403).json({ ok: false, error: 'no_rights' });
+              if (!isOwner && !(ov && ov.edit && ov.edit.text === true)) {
+                return res.status(403).json({ ok: false, error: 'no_rights' });
+              }
+            }
+          }
+          if ('assigneeChatId' in req.body || 'responsibleId' in req.body) {
+            const def = g.permEditJson && g.permEditJson.assignee;
+            if (def === false) {
+              if (!actor) return res.status(403).json({ ok: false, error: 'no_rights' });
+              if (!isOwner && !(ov && ov.edit && ov.edit.assignee === true)) {
+                return res.status(403).json({ ok: false, error: 'no_rights' });
+              }
+            }
+          }
+        }
+      }
+    } catch {}
 
     const updated = await prisma.task.update({ where: { id }, data: patch });
 
     const actorChatId =
       (req.user && req.user.chatId) ||
-      (req.body && req.body.actorChatId) ||
+      (req.body && (req.body.chatId || req.body.actorChatId)) ||
       null;
 
     await maybeNotifyTaskAccepted({
@@ -470,19 +615,93 @@ router.get('/feed', async (req, res) => {
 
     const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
     const limit  = Math.min(500, Math.max(1, parseInt(String(req.query.limit  || '30'), 10) || 30));
+    const qRaw = String(req.query.q || '').trim();
+    const q = qRaw ? qRaw : '';
+    const statusesRaw = String(req.query.statuses || '').trim();
+    const statusTokens = statusesRaw
+      ? statusesRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+      : [];
 
     // include tasks I own/assigned + tasks from watched public groups
     const watched = await prisma.groupWatcher.findMany({ where: { chatId: me }, select: { groupId: true } });
     const watchedIds = watched.map(w => String(w.groupId));
     const watchedOr = watchedIds.map(id => ({ column: { name: { startsWith: `${id}${GROUP_SEP}` } } }));
+    // Map human-readable statuses → canonical stage keys
+    const mapToStage = (s) => {
+      const t = String(s || '').toLowerCase();
+      if (['inbox','новые','новое'].includes(t)) return 'Inbox';
+      if (['doing','в работе'].includes(t)) return 'Doing';
+      if (['approval','на согласовании','согласование'].includes(t)) return 'Approval';
+      if (['wait','ждет','ждёт','ожидание'].includes(t)) return 'Wait';
+      if (['done','готово','готов'].includes(t)) return 'Done';
+      if (['cancel','отмена','отменено','отменена'].includes(t)) return 'Cancel';
+      return null;
+    };
+    const stages = Array.from(new Set(statusTokens.map(mapToStage).filter(Boolean)));
+    const statusClauses = [];
+    for (const st of stages) {
+      statusClauses.push({ column: { name: { equals: st } } });
+      statusClauses.push({ column: { name: { endsWith: `${GROUP_SEP}${st}` } } });
+    }
+
+    const whereMembership = {
+      OR: [
+        { chatId: me },
+        { assigneeChatId: me },
+        ...watchedOr,
+      ],
+    };
+
+    const andParts = [whereMembership];
+    if (statusClauses.length) andParts.push({ OR: statusClauses });
+    if (q) andParts.push({ text: { contains: q, mode: 'insensitive' } });
+
+    // ----- advanced search (users by name/username/chatId; groups by title; labels by title) -----
+    const qOrClauses = [];
+    if (q) {
+      // text contains
+      qOrClauses.push({ text: { contains: q, mode: 'insensitive' } });
+      // labels contain
+      qOrClauses.push({ labels: { some: { label: { title: { contains: q, mode: 'insensitive' } } } } });
+      // users by name/username/chatId
+      try {
+        const usersHit = await prisma.user.findMany({
+          where: {
+            OR: [
+              { firstName: { contains: q, mode: 'insensitive' } },
+              { lastName:  { contains: q, mode: 'insensitive' } },
+              { username:  { contains: q, mode: 'insensitive' } },
+              { chatId:    { equals: q } },
+            ],
+          },
+          select: { chatId: true },
+          take: 100,
+        });
+        const ids = Array.from(new Set(usersHit.map(u => String(u.chatId))));
+        if (ids.length) {
+          qOrClauses.push({ createdByChatId: { in: ids } });
+          qOrClauses.push({ assigneeChatId: { in: ids } });
+          qOrClauses.push({ chatId: { in: ids } });
+          qOrClauses.push({ sourceChatId: { in: ids } });
+        }
+      } catch {}
+      // groups by title -> build OR on column name prefix
+      try {
+        const grpHit = await prisma.group.findMany({
+          where: { title: { contains: q, mode: 'insensitive' } },
+          select: { id: true },
+          take: 100,
+        });
+        const gids = grpHit.map(g => String(g.id));
+        if (gids.length) {
+          qOrClauses.push({ OR: gids.map(id => ({ column: { name: { startsWith: `${id}${GROUP_SEP}` } } })) });
+        }
+      } catch {}
+      if (qOrClauses.length) andParts.push({ OR: qOrClauses });
+    }
+
     const tasks = await prisma.task.findMany({
-      where: {
-        OR: [
-          { chatId: me },
-          { assigneeChatId: me },
-          ...watchedOr,
-        ],
-      },
+      where: { AND: andParts },
       include: { column: { select: { name: true } } },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       skip: offset,

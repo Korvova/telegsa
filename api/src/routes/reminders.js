@@ -42,6 +42,23 @@ export function remindersRouter({ prisma, tg }) {
       const task = await getTask(id);
       if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
 
+      // permissions: if group forbids reminders edit, check overrides
+      try {
+        const col = await prisma.column.findUnique({ where: { id: task.columnId } });
+        const i = String(col?.name || '').indexOf('::');
+        const groupId = i > 0 ? String(col?.name || '').slice(0, i) : null;
+        if (groupId) {
+          const g = await prisma.group.findUnique({ where: { id: groupId } });
+          if (g && g.permEditJson && g.permEditJson.reminders === false) {
+            const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: me } });
+            const ov = gm?.permOverrides || null;
+            const isOwner = String(g.ownerChatId) === me;
+            const allow = isOwner || (ov && ov.edit && ov.edit.reminders === true);
+            if (!allow) return res.status(403).json({ ok: false, error: 'no_rights' });
+          }
+        }
+      } catch {}
+
       const created = await prisma.taskReminder.create({
         data: {
           taskId: id,
@@ -59,13 +76,30 @@ export function remindersRouter({ prisma, tg }) {
     }
   });
 
-  // DELETE /tasks/:taskId/reminders/:rid
+  // DELETE /tasks/:taskId/reminders/:rid?chatId=
   router.delete('/tasks/:id/reminders/:rid', async (req, res) => {
     try {
       const id = String(req.params.id);
       const rid = String(req.params.rid);
+      const me = String(req.query?.chatId || '').trim();
       const task = await getTask(id);
       if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+      try {
+        const col = await prisma.column.findUnique({ where: { id: task.columnId } });
+        const i = String(col?.name || '').indexOf('::');
+        const groupId = i > 0 ? String(col?.name || '').slice(0, i) : null;
+        if (groupId) {
+          const g = await prisma.group.findUnique({ where: { id: groupId } });
+          if (g && g.permEditJson && g.permEditJson.reminders === false) {
+            const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: me } });
+            const ov = gm?.permOverrides || null;
+            const isOwner = String(g.ownerChatId) === me;
+            const allow = isOwner || (ov && ov.edit && ov.edit.reminders === true);
+            if (!allow) return res.status(403).json({ ok: false, error: 'no_rights' });
+          }
+        }
+      } catch {}
 
       await prisma.taskReminder.delete({ where: { id: rid } }).catch(async () => {
         // При несоответствии — безопасно вернуть ok=false

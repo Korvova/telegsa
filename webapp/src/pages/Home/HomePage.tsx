@@ -1644,7 +1644,7 @@ export default function HomePage({
                                   const board = await fetchBoard(meChatId, groupId ?? undefined);
                                   const approvalCol = (board?.columns || []).find((c) => String(c.name) === 'Approval');
                                   if (approvalCol) {
-                                    await moveTask(t.id, approvalCol.id, 0);
+                                    await moveTask(t.id, approvalCol.id, 0, meChatId);
                                     patchItem(t.id, { phase: 'Approval', status: 'Согласование' } as any);
                                   }
                                 } catch {}
@@ -1656,7 +1656,7 @@ export default function HomePage({
 
                               // Базовый сценарий: прямое завершение
                               try {
-                                await completeTask(t.id);
+                                await completeTask(t.id, { chatId: meChatId } as any);
                                 patchItem(t.id, { phase: 'Done', status: 'Готово' } as any);
                                 return true; // сообщаем бару, что завершение выполнено
                               } catch {

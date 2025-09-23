@@ -34,10 +34,7 @@ body {
   background: var(--app-bg, #0b1220);
 }
 
-/* iOS: не тянуть системный жест вниз (не сворачивать TWA) — включаем классом из App.tsx */
-.ios-no-overscroll {
-  overscroll-behavior-y: contain;
-}
+/* (убрано) тонкая настройка overscroll перенесена в TWA.disableVerticalSwipes */
 
 /* Prevent iOS auto-zoom on focus (font-size >= 16px) */
 input, textarea, select {

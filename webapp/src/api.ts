@@ -106,9 +106,9 @@ export async function fetchBoard(
     .json<{ ok: boolean; columns: Column[] }>();
 }
 
-export function moveTask(taskId: string, toColumnId: string, toIndex: number) {
+export function moveTask(taskId: string, toColumnId: string, toIndex: number, chatId?: string) {
   return ky
-    .patch(`${API_BASE}/tasks/${taskId}/move`, { json: { toColumnId, toIndex } })
+    .patch(`${API_BASE}/tasks/${taskId}/move`, { json: { toColumnId, toIndex, chatId } })
     .json<{ ok: boolean; task: Task }>();
 }
 
@@ -116,14 +116,18 @@ export function getTask(id: string) {
   return ky.get(`${API_BASE}/tasks/${id}`).json<{ ok: boolean; task: Task }>();
 }
 
-export function updateTask(id: string, text: string) {
+export function updateTask(id: string, text: string, chatId?: string) {
+  const body: any = { text };
+  if (chatId) body.chatId = chatId;
   return ky
-    .patch(`${API_BASE}/tasks/${id}`, { json: { text } })
+    .patch(`${API_BASE}/tasks/${id}`, { json: body })
     .json<{ ok: boolean; task: Task }>();
 }
 
-export function completeTask(id: string) {
-  return ky.post(`${API_BASE}/tasks/${id}/complete`).json<{ ok: boolean; task: Task }>();
+export function completeTask(id: string, opts?: { chatId?: string }) {
+  const body: any = {};
+  if (opts?.chatId) body.chatId = opts.chatId;
+  return ky.post(`${API_BASE}/tasks/${id}/complete`, { json: Object.keys(body).length ? body : undefined }).json<{ ok: boolean; task: Task }>();
 }
 
 export function setTaskProgress(id: string, progress: number) {
@@ -142,6 +146,20 @@ export function createTask(chatId: string, text: string, groupId?: string) {
   return ky
     .post(`${API_BASE}/tasks`, { json: { chatId, text, groupId: normGroup(groupId) } })
     .json<{ ok: boolean; task: Task }>();
+}
+
+// Group member permissions API
+export async function getGroupMemberPerms(groupId: string, memberChatId: string) {
+  const sp = new URLSearchParams({ memberChatId });
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/member-perms?${sp.toString()}`);
+  return r.json() as Promise<{ ok: boolean; overrides: any }>;
+}
+export async function setGroupMemberPerms(groupId: string, byChatId: string, memberChatId: string, overrides: any) {
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/member-perms`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId: byChatId, memberChatId, overrides })
+  });
+  return r.json() as Promise<{ ok: boolean }>;
 }
 
 export function createColumn(chatId: string, name: string, groupId?: string) {

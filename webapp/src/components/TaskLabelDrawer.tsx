@@ -84,10 +84,11 @@ const applySelect = async (labelId: string | null) => {
       onSelectionChange?.([]);
     }
 
-    // ✅ сразу закрываем шторку после выбора
     onClose();
   } catch (e: any) {
-    setError(e?.message || 'Не удалось применить ярлык');
+    const msg = String(e?.message || '');
+    if (/no_rights/.test(msg) || /403/.test(msg)) setError('У вас нет прав на это действие');
+    else setError(msg || 'Не удалось применить ярлык');
   }
 };
 
@@ -106,9 +107,11 @@ const applySelect = async (labelId: string | null) => {
       setSelected((arr) => arr.map((x) => (x.id === updated.id ? updated : x)));
       onSelectionChange?.(selected.map(s => (s.id === updated.id ? updated : s)));
       setEditingId(null);
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось переименовать');
-    }
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (/no_rights/.test(msg) || /403/.test(msg)) setError('У вас нет прав на это действие');
+    else setError(msg || 'Не удалось переименовать');
+  }
   };
 
   const removeLabel = async (labelId: string) => {
@@ -122,9 +125,11 @@ const applySelect = async (labelId: string | null) => {
         await applySelect(null);
       }
       if (editingId === labelId) setEditingId(null);
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось удалить');
-    }
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (/no_rights/.test(msg) || /403/.test(msg)) setError('У вас нет прав на это действие');
+    else setError(msg || 'Не удалось удалить');
+  }
   };
 
   const createLabel = async () => {
@@ -137,7 +142,9 @@ const applySelect = async (labelId: string | null) => {
       setCreating(false);
       setNewTitle('');
     } catch (e: any) {
-      setError(e?.message || 'Не удалось создать');
+      const msg = String(e?.message || '');
+      if (/no_rights/.test(msg) || /403/.test(msg)) setError('У вас нет прав на это действие');
+      else setError(msg || 'Не удалось создать');
     }
   };
 

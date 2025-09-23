@@ -22,6 +22,7 @@ import { shareNewTaskRouter } from './routes/sharenewtask.js';
 import { bountyRouter } from './routes/bounty.js';
 import { payoutMethodRouter } from './routes/payoutMethod.js';
 import { starsRouter } from './routes/stars.js';
+import { quotaRouter } from './routes/quota.js';
 import { likesRouter } from './routes/likes.js';
 import { watchersRouter } from './routes/watchers.js';
 import { walletTonRouter } from './routes/wallet-ton.js';
@@ -395,6 +396,7 @@ app.use('/tasks', tasksRouter);
 app.use(bountyRouter());
 app.use(payoutMethodRouter);
 app.use(starsRouter);
+app.use(quotaRouter);
 app.use(likesRouter);
 app.use(watchersRouter({ prisma }));
 app.use(remindersRouter({ prisma, tg }));
@@ -629,16 +631,18 @@ app.get('/tasks', async (req, res) => {
     });
 
     let columns = await enrichColumnsWithAssignees(columnsRaw);
-    // Enforce view-own-only if enabled on group (non-owner)
-    const enforceOnlyMine = (async () => {
+    // Enforce view-own-only if enabled on group (non-owner), unless member override disables it
+    const mustOwn = await (async () => {
       try {
-        if (String(g.ownerChatId) === String(chatId)) return false;
-        if ((g).permViewOwnOnly === true) return true;
-        // fallback: if Prisma client doesn't expose new field yet, ignore
-        return false;
-      } catch { return false; }
+        if (String(g.ownerChatId) === String(chatId)) return onlyMine;
+        // member override
+        const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: String(chatId) } });
+        const ov = (gm && gm.permOverrides) || null;
+        if (ov && ov.viewOwnOnly === false) return onlyMine; // explicit allow to view all
+        const def = (g).permViewOwnOnly === true;
+        return def || onlyMine;
+      } catch { return onlyMine; }
     })();
-    const mustOwn = (await enforceOnlyMine) || onlyMine;
     if (mustOwn) {
       columns = columns.map(c => ({ ...c, tasks: c.tasks.filter(t => String(t.assigneeChatId || '') === chatId) }));
     }
@@ -660,6 +664,47 @@ app.post('/webhook', async (req, res) => {
     if (!secret || secret !== process.env.WEBHOOK_SECRET) return res.sendStatus(403);
 
     const update = req.body;
+    // --- Payments: pre_checkout_query for Stars (must answer within 10s) ---
+    if (update?.pre_checkout_query) {
+      try {
+        const q = update.pre_checkout_query;
+        try { console.log('[stars:precheckout]', { id: q?.id, from: q?.from?.id, total: q?.total_amount, payload: q?.invoice_payload }); } catch {}
+        // For digital goods we simply approve
+        await tg('answerPreCheckoutQuery', { pre_checkout_query_id: String(q.id), ok: true });
+      } catch (e) {
+        console.error('[stars:precheckout] error', e);
+      }
+      return res.sendStatus(200);
+    }
+    // Stars successful payment -> apply quota
+    try {
+      const msg = update?.message || update?.edited_message || null;
+      const sp = msg?.successful_payment;
+      const payload = sp?.invoice_payload ? String(sp.invoice_payload) : null;
+      if (sp && payload && payload.startsWith('quota:')) {
+        try { console.log('[stars:payment]', { from: msg?.from?.id, total_amount: sp.total_amount, payload }); } catch {}
+        const parts = payload.split(':'); // quota:chatId:pack:ts
+        const chatId = parts[1] ? String(parts[1]) : null;
+        const pack = parts[2] ? parseInt(parts[2], 10) : 0;
+        const starsPaid = Number(sp.total_amount || 0);
+        if (chatId && [100,1000,5000].includes(pack)) {
+          try {
+            const after = await prisma.$transaction(async (tx) => {
+              const row = await tx.userQuota.upsert({
+                where: { chatId },
+                create: { chatId, totalCapacity: 100 + pack },
+                update: { totalCapacity: { increment: pack } },
+              });
+              await tx.userQuotaPurchase.create({ data: { chatId, pack, stars: starsPaid } });
+              return row;
+            });
+            try { console.log('[quota:apply]', { chatId, pack, newCapacity: after.totalCapacity }); } catch {}
+            try { await tg('sendMessage', { chat_id: msg?.from?.id || chatId, text: `Лимит увеличен на +${pack}. Новый лимит: ${after.totalCapacity}` }); } catch {}
+          } catch (e) { console.error('[quota:apply] failed', e); }
+        }
+        return res.sendStatus(200);
+      }
+    } catch {}
     // --- обработка добавления/удаления бота в группе (my_chat_member)
     if (update?.my_chat_member && update.my_chat_member.chat && update.my_chat_member.new_chat_member) {
       try {
@@ -1113,10 +1158,11 @@ app.post('/webhook', async (req, res) => {
 app.patch('/tasks/:id/move', async (req, res) => {
   try {
     const taskId = String(req.params.id);
-    const { toColumnId, toIndex } = req.body || {};
+    const { toColumnId, toIndex, chatId } = req.body || {};
     if (typeof toColumnId !== 'string' || typeof toIndex !== 'number') {
       return res.status(400).json({ ok: false, error: 'toColumnId (string) и toIndex (number) обязательны' });
     }
+    const actor = String(chatId || '').trim();
 
     const task = await prisma.task.findUnique({ where: { id: taskId } });
     if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
@@ -1133,6 +1179,28 @@ app.patch('/tasks/:id/move', async (req, res) => {
     if (!toCol || !fromCol || toCol.chatId !== task.chatId) {
       return res.status(400).json({ ok: false, error: 'invalid toColumnId' });
     }
+
+    // Permissions: group-level change status
+    try {
+      const groupId = parseGroupIdFromColumnName(fromCol.name);
+      if (groupId && actor) {
+        const g = await prisma.group.findUnique({ where: { id: groupId } });
+        if (g) {
+          const isOwner = String(g.ownerChatId) === actor;
+          let allowAny = (g.permChangeStatusAny !== false);
+          if (!allowAny && !isOwner) {
+            const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: actor } });
+            const ov = (gm && gm.permOverrides) || null;
+            if (ov && ov.changeStatusAny === true) allowAny = true;
+          }
+          if (!isOwner && !allowAny) {
+            // ограничение: менять статус можно только своих задач
+            const isMine = String(task.createdByChatId || '') === actor || String(task.assigneeChatId || '') === actor;
+            if (!isMine) return res.status(403).json({ ok: false, error: 'no_rights' });
+          }
+        }
+      }
+    } catch {}
 
     const result = await prisma.$transaction(async (tx) => {
       if (fromColumnId === toColumnId) {
@@ -1374,7 +1442,7 @@ app.post('/me/theme', async (req, res) => {
 app.patch('/tasks/:id', async (req, res) => {
   try {
     const id = String(req.params.id);
-    const { text, assigneeChatId } = req.body || {};
+    const { text, assigneeChatId, chatId } = req.body || {};
 
     // Сформируем patch
     const data = {};
@@ -1390,10 +1458,47 @@ app.patch('/tasks/:id', async (req, res) => {
     const before = await prisma.task.findUnique({ where: { id } });
     if (!before) return res.status(404).json({ ok: false, error: 'not_found' });
 
-    // 2) Обновляем
+    // 2) Права на редактирование в группе (text/assignee)
+    try {
+      const cur = await prisma.task.findUnique({ where: { id }, include: { column: true } });
+      const nm = String(cur?.column?.name || '');
+      const i = nm.indexOf(GROUP_SEP);
+      const groupId = i > 0 ? nm.slice(0, i) : null;
+      if (groupId) {
+        const g = await prisma.group.findUnique({ where: { id: groupId } });
+        if (g) {
+          const actor = String(chatId || '').trim();
+          const isOwner = actor && String(g.ownerChatId) === actor;
+          const gm = actor ? await prisma.groupMember.findFirst({ where: { groupId, chatId: actor } }) : null;
+          const ov = gm?.permOverrides || null;
+          try { console.log('[perm:update]', { taskId: id, groupId, actor, isOwner, defText: g?.permEditJson?.text ?? null, ovText: ov?.edit?.text ?? null }); } catch {}
+
+          if (typeof text === 'string') {
+            const def = g.permEditJson && g.permEditJson.text;
+            if (def === false) {
+              if (!actor) return res.status(403).json({ ok: false, error: 'no_rights' });
+              if (!isOwner && !(ov && ov.edit && ov.edit.text === true)) {
+                return res.status(403).json({ ok: false, error: 'no_rights' });
+              }
+            }
+          }
+          if (typeof assigneeChatId !== 'undefined') {
+            const def = g.permEditJson && g.permEditJson.assignee;
+            if (def === false) {
+              if (!actor) return res.status(403).json({ ok: false, error: 'no_rights' });
+              if (!isOwner && !(ov && ov.edit && ov.edit.assignee === true)) {
+                return res.status(403).json({ ok: false, error: 'no_rights' });
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // 3) Обновляем
     const updated = await prisma.task.update({ where: { id }, data });
 
-    // 3) Триггер: появился ответственный (assigneeChatId: null -> chatId)
+    // 4) Триггер: появился ответственный (assigneeChatId: null -> chatId)
     try {
       const was = before?.assigneeChatId ? String(before.assigneeChatId) : null;
       const now = updated?.assigneeChatId ? String(updated.assigneeChatId) : null;
@@ -1933,8 +2038,32 @@ app.post('/tasks/:id/media', async (req, res) => {
 app.post('/tasks/:id/complete', async (req, res) => {
   try {
     const id = String(req.params.id);
+    const actor = String(req.body?.chatId || '').trim();
     const task = await prisma.task.findUnique({ where: { id } });
     if (!task) return res.status(404).json({ ok: false, error: 'task not found' });
+    // Permissions: group-level change status
+    try {
+      const curCol = await prisma.column.findUnique({ where: { id: task.columnId } });
+      if (curCol) {
+        const groupId = parseGroupIdFromColumnName(curCol.name);
+        if (groupId && actor) {
+          const g = await prisma.group.findUnique({ where: { id: groupId } });
+          if (g) {
+            const isOwner = String(g.ownerChatId) === actor;
+            let allowAny = (g.permChangeStatusAny !== false);
+            if (!allowAny && !isOwner) {
+              const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: actor } });
+              const ov = (gm && gm.permOverrides) || null;
+              if (ov && ov.changeStatusAny === true) allowAny = true;
+            }
+            if (!isOwner && !allowAny) {
+              const isMine = String(task.createdByChatId || '') === actor || String(task.assigneeChatId || '') === actor;
+              if (!isMine) return res.status(403).json({ ok: false, error: 'no_rights' });
+            }
+          }
+        }
+      }
+    } catch {}
 
     // Если требуется фото, проверим наличие прикреплённых фото
     const cond = String(task.acceptCondition || 'NONE');
@@ -2399,6 +2528,25 @@ app.post('/tasks', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'chatId и text обязательны' });
     }
     const caller = String(chatId).trim();
+    // ----- Quota check (tasks consume 1 slot; exclude process-created) -----
+    try {
+      const quota = await prisma.userQuota.findUnique({ where: { chatId: caller } });
+      const totalCapacity = quota?.totalCapacity ?? 100;
+      const tasksCount = await prisma.task.count({ where: {
+        type: 'TASK', fromProcess: { not: true },
+        OR: [{ createdByChatId: caller }, { AND: [{ createdByChatId: null }, { chatId: caller }] }],
+      }});
+      const eventsCount = await prisma.task.count({ where: {
+        type: 'EVENT',
+        OR: [{ createdByChatId: caller }, { AND: [{ createdByChatId: null }, { chatId: caller }] }],
+      }});
+      const pretasksCount = await prisma.preTask.count({ where: { creatorChatId: caller } });
+      const used = tasksCount + eventsCount + pretasksCount;
+      if (used >= totalCapacity) {
+        try { console.warn('[quota:block:task]', { chatId: caller, used, totalCapacity }); } catch {}
+        return res.status(402).json({ ok: false, error: 'quota_exceeded' });
+      }
+    } catch {}
     const groupId = resolveGroupId(rawGroupId);
 
     let boardChatId = caller;
@@ -2413,7 +2561,12 @@ app.post('/tasks', async (req, res) => {
       // permission: can create tasks in this group
       try {
         const isOwner = String(g.ownerChatId) === caller;
-        const canCreate = isOwner || (g.permCanCreateTasks !== false);
+        let canCreate = isOwner || (g.permCanCreateTasks !== false);
+        if (!canCreate && !isOwner) {
+          const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: caller } });
+          const ov = (gm && gm.permOverrides) || null;
+          if (ov && ov.canCreateTasks === true) canCreate = true;
+        }
         if (!canCreate) return res.status(403).json({ ok: false, error: 'no_rights' });
       } catch {}
       boardChatId = g.ownerChatId; // все групповые задачи у владельца
@@ -2573,6 +2726,40 @@ app.post('/groups/:id/permissions', async (req, res) => {
     }
     const updated = await prisma.group.update({ where: { id }, data });
     res.json({ ok: true, group: updated });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// Member overrides: get
+app.get('/groups/:id/member-perms', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const memberChatId = String(req.query.memberChatId || '').trim();
+    if (!memberChatId) return res.status(400).json({ ok: false, error: 'memberChatId_required' });
+    const gm = await prisma.groupMember.findFirst({ where: { groupId: id, chatId: memberChatId } });
+    if (!gm) return res.json({ ok: true, overrides: null });
+    res.json({ ok: true, overrides: gm.permOverrides || null });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// Member overrides: set (owner only)
+app.post('/groups/:id/member-perms', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { chatId, memberChatId, overrides } = req.body || {};
+    const me = String(chatId || '').trim();
+    const target = String(memberChatId || '').trim();
+    if (!me || !target) return res.status(400).json({ ok: false, error: 'chatId_memberChatId_required' });
+    const g = await prisma.group.findUnique({ where: { id } });
+    if (!g) return res.status(404).json({ ok: false, error: 'group_not_found' });
+    if (String(g.ownerChatId) !== me) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const gm = await prisma.groupMember.findFirst({ where: { groupId: id, chatId: target } });
+    if (!gm) return res.status(404).json({ ok: false, error: 'member_not_found' });
+    const updated = await prisma.groupMember.update({ where: { id: gm.id }, data: { permOverrides: overrides || null } });
+    res.json({ ok: true, member: { chatId: updated.chatId }, overrides: updated.permOverrides || null });
   } catch (e) {
     res.status(500).json({ ok: false, error: 'internal' });
   }

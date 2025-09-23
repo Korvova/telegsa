@@ -20,6 +20,23 @@ async function userIsGroupMemberOrOwner(chatId, groupId) {
   return Boolean(m);
 }
 
+async function canEditField(chatId, task, field) {
+  if (!task?.column) return (String(task.chatId) === String(chatId)) || (task.assigneeChatId && String(task.assigneeChatId) === String(chatId));
+  const groupId = parseGroupIdFromColumnName(task.column.name || '');
+  if (!groupId) return true;
+  const g = await prisma.group.findUnique({ where: { id: groupId } });
+  if (!g) return false;
+  if (String(g.ownerChatId) === String(chatId)) return true;
+  const def = (g.permEditJson && g.permEditJson[field]);
+  if (def === false) {
+    const gm = await prisma.groupMember.findFirst({ where: { groupId, chatId: String(chatId) } });
+    const ov = gm?.permOverrides || null;
+    if (ov && ov.edit && ov.edit[field] === true) return true;
+    return false;
+  }
+  return true;
+}
+
 // PATCH /tasks/:id/expenses   { chatId: string, expenses: number|null }
 router.patch('/tasks/:id/expenses', async (req, res) => {
   try {
@@ -37,6 +54,8 @@ router.patch('/tasks/:id/expenses', async (req, res) => {
     if (groupId) {
       const allowed = await userIsGroupMemberOrOwner(chatId, groupId);
       if (!allowed) return res.status(403).json({ ok: false, error: 'forbidden' });
+      const ok = await canEditField(chatId, task, 'expenses');
+      if (!ok) return res.status(403).json({ ok: false, error: 'no_rights' });
     } else {
       // личная доска: допускаем постановщика и исполнителя
       const amCreator = String(task.chatId) === String(chatId);
@@ -61,4 +80,3 @@ router.patch('/tasks/:id/expenses', async (req, res) => {
 });
 
 export { router as expensesRouter };
-

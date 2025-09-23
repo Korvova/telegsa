@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import TonWalletConnect from '../TonWalletConnect';
 import DeadlinePicker from '../DeadlinePicker';
@@ -572,7 +573,9 @@ export default function CreateTaskModal({
     } finally { setBusy(false); }
   }
 
-  return !open ? null : (
+  if (!open) return null;
+
+  const sheetUi = (
     <div
       onClick={onClose}
       onTouchMove={(e) => { try { const n = e.target as Node; if (!sheetRef.current || !sheetRef.current.contains(n)) e.preventDefault(); } catch {} }}
@@ -962,4 +965,10 @@ export default function CreateTaskModal({
       )}
     </div>
   );
+
+  try {
+    return createPortal(sheetUi, document.body);
+  } catch {
+    return sheetUi;
+  }
 }
