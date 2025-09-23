@@ -10,6 +10,26 @@ import WebApp from '@twa-dev/sdk';
     html.style.setProperty('--kb', `${v}px`);
   };
 
+  // Track if any text input is focused; only then apply kb inset
+  let focusActive = false;
+  const isTextInput = (t: any): boolean => {
+    try {
+      if (!t) return false;
+      const tag = String(t.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+      if ((t as any).isContentEditable) return true;
+    } catch {}
+    return false;
+  };
+  document.addEventListener('focusin', (e) => {
+    focusActive = isTextInput(e.target);
+    update();
+  }, { capture: true });
+  document.addEventListener('focusout', () => {
+    // Defer to allow next focused element to report
+    setTimeout(() => { focusActive = isTextInput(document.activeElement); update(); }, 0);
+  }, { capture: true });
+
   const computeFromVV = () => {
     try {
       const vv = (window as any).visualViewport;
@@ -30,9 +50,12 @@ import WebApp from '@twa-dev/sdk';
   };
 
   const update = () => {
+    // Only lift when a text input is focused; ignore small bar animations
     const k1 = computeFromVV();
     const k2 = computeFromTWA();
-    const k = Math.max(k1 ?? 0, k2 ?? 0);
+    const raw = Math.max(k1 ?? 0, k2 ?? 0);
+    const THRESHOLD = 140; // px: consider keyboard only if larger than bars
+    const k = (focusActive && raw > THRESHOLD) ? raw : 0;
     setKb(k);
   };
 
