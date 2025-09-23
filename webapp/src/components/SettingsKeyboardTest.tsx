@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKeyboardInsets } from '../hooks/useKeyboardInsets';
+
+type Variant = 'hook' | 'micro' | 'pos-above' | 'sticky-top' | 'textarea';
 
 export default function SettingsKeyboardTest({ onBack }: { onBack: () => void }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -7,6 +9,61 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
   const [includeOffset, setIncludeOffset] = useState(true);
   const [stable, setStable] = useState(true);
   const { bottom } = useKeyboardInsets(true, wrapRef as any, 80, true, includeOffset, stable);
+  const [variant, setVariant] = useState<Variant>('hook');
+
+  // Micro-utility (vanilla vv.height+offsetTop)
+  const microRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (variant !== 'micro') return;
+    const el = microRef.current;
+    const vv: any = (window as any).visualViewport;
+    if (!el || !vv) return;
+    let maxSeen = 0;
+    const update = () => {
+      const keyboard = Math.max(0, window.innerHeight - ((vv.height || 0) + (vv.offsetTop || 0)));
+      if (keyboard > 0) maxSeen = Math.max(maxSeen, keyboard); else maxSeen = 0;
+      const k = stable ? Math.max(keyboard, maxSeen) : keyboard;
+      el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    document.addEventListener('focus', update, true);
+    document.addEventListener('blur', update, true);
+    window.addEventListener('orientationchange', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      document.removeEventListener('focus', update, true);
+      document.removeEventListener('blur', update, true);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, [variant, stable]);
+
+  // pos-above-keyboard approach: adjust bottom instead of transform
+  const posAboveRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (variant !== 'pos-above') return;
+    const el = posAboveRef.current;
+    const vv: any = (window as any).visualViewport;
+    if (!el || !vv) return;
+    let baseH = vv.height; // baseline stored once (as в примере)
+    const update = () => {
+      // keep baseH on iOS (do not update while keyboard animates)
+      if (!isiOS) baseH = vv.height;
+      const delta = Math.max(0, baseH - (vv.height || 0));
+      el.style.bottom = `calc(${10 + delta}px + env(safe-area-inset-bottom, 0px))`;
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    window.addEventListener('orientationchange', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, [variant, isiOS]);
 
   return (
     <div ref={wrapRef} style={{ background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:16, padding:12 }}>
@@ -23,7 +80,26 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
         ))}
       </div>
 
-      {/* фиксированный input, «прилипает» к клавиатуре */}
+      {/* Переключение вариантов */}
+      <div style={{ position:'sticky', top:0, zIndex:5, background:'#0b1220', paddingBottom:8 }}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+          {([
+            ['hook','Hook (vv height/offset via useKeyboardInsets)'],
+            ['micro','Micro (vv height+offset, vanilla)'],
+            ['pos-above','pos-above (bottom adjust)'],
+            ['sticky-top','Sticky top (top:0)'],
+            ['textarea','Textarea (iOS autofocus)'],
+          ] as [Variant,string][]).map(([k,label]) => (
+            <button key={k} onClick={()=>setVariant(k)} style={{
+              padding:'6px 10px', borderRadius:999, border:'1px solid #2a3346',
+              background: variant===k ? '#2563eb' : '#202840', color: variant===k ? '#fff' : '#e8eaed', cursor:'pointer'
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Вариант 1: Hook (transform by kb) */}
+      {variant==='hook' && (
       <div
         style={{
           position:'fixed', left:10, right:10, bottom:0, zIndex:10000,
@@ -50,6 +126,46 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
           <span style={{ marginLeft:'auto' }}>kb: {Math.round(bottom)} px</span>
         </div>
       </div>
+      )}
+
+      {/* Вариант 2: Micro-utility (vanilla) */}
+      {variant==='micro' && (
+        <div ref={microRef} style={{ position:'fixed', left:10, right:10, bottom:0, zIndex:10000, transform:'translate3d(0,0,0)', transition:'transform 80ms ease-out', paddingBottom:'env(safe-area-inset-bottom, 0px)' }}>
+          <div style={{ display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
+            <input placeholder="Сообщение…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
+            <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
+          </div>
+        </div>
+      )}
+
+      {/* Вариант 3: pos-above-keyboard (adjust bottom) */}
+      {variant==='pos-above' && (
+        <div ref={posAboveRef} style={{ position:'fixed', left:0, right:0, bottom:'10px', zIndex:10000 }}>
+          <div style={{ margin:'0 10px', display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
+            <input placeholder="Сообщение…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
+            <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
+          </div>
+        </div>
+      )}
+
+      {/* Вариант 4: Sticky top (не над клавиатурой, но не уезжает при скролле) */}
+      {variant==='sticky-top' && (
+        <div style={{ position:'sticky', top:0, zIndex:5, background:'#0b1220', padding:'8px 0' }}>
+          <div style={{ display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
+            <input placeholder="Sticky сверху…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
+            <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
+          </div>
+        </div>
+      )}
+
+      {/* Вариант 5: Textarea с iOS-only autofocus */}
+      {variant==='textarea' && (
+        <div style={{ position:'fixed', left:10, right:10, bottom:0, zIndex:10000, transform:`translate3d(0, -${isiOS?bottom:0}px, 0)`, transition:'transform 80ms ease-out', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div style={{ background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
+            <textarea rows={4} wrap='hard' placeholder='Сообщение…' autoFocus={isiOS} style={{ width:'100%', boxSizing:'border-box', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
