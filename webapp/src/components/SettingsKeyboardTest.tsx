@@ -19,24 +19,43 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
     const vv: any = (window as any).visualViewport;
     if (!el || !vv) return;
     let maxSeen = 0;
+    let raf = 0 as any;
     const update = () => {
       const keyboard = Math.max(0, window.innerHeight - ((vv.height || 0) + (vv.offsetTop || 0)));
       if (keyboard > 0) maxSeen = Math.max(maxSeen, keyboard); else maxSeen = 0;
       const k = stable ? Math.max(keyboard, maxSeen) : keyboard;
       el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
     };
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
-    document.addEventListener('focus', update, true);
-    document.addEventListener('blur', update, true);
-    window.addEventListener('orientationchange', update);
+    const startFollow = () => {
+      const endAt = performance.now() + 900; // активно следим ~0.9s
+      cancelAnimationFrame(raf);
+      const loop = () => {
+        update();
+        if (performance.now() < endAt) raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+    };
+    const onAny = () => { update(); startFollow(); };
+
+    vv.addEventListener('resize', onAny);
+    vv.addEventListener('scroll', onAny);
+    document.addEventListener('focusin', onAny, true);
+    document.addEventListener('focusout', onAny, true);
+    document.addEventListener('click', onAny, true);
+    document.addEventListener('touchstart', onAny, { capture: true, passive: true } as any);
+    window.addEventListener('orientationchange', onAny);
+    // мгновенно при монтировании
     update();
+    startFollow();
     return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
-      document.removeEventListener('focus', update, true);
-      document.removeEventListener('blur', update, true);
-      window.removeEventListener('orientationchange', update);
+      cancelAnimationFrame(raf);
+      vv.removeEventListener('resize', onAny);
+      vv.removeEventListener('scroll', onAny);
+      document.removeEventListener('focusin', onAny, true);
+      document.removeEventListener('focusout', onAny, true);
+      document.removeEventListener('click', onAny, true);
+      document.removeEventListener('touchstart', onAny, { capture: true } as any);
+      window.removeEventListener('orientationchange', onAny);
     };
   }, [variant, stable]);
 
