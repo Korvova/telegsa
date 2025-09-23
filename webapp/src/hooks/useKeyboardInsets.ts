@@ -33,8 +33,8 @@ export function useKeyboardInsets(enabled: boolean, scope?: React.RefObject<HTML
     const compute = () => {
       // Raw keyboard occlusion height by VisualViewport and TWA viewport
       const vvH = vv?.height || window.innerHeight;
-      const vvTop = vv?.offsetTop || 0;
-      const k1 = Math.max(0, window.innerHeight - (vvH + vvTop));
+      // Use height delta only — offsetTop jitter causes jumps on iOS when user drags content
+      const k1 = Math.max(0, window.innerHeight - vvH);
       let k2 = 0;
       try {
         const waH = (WebApp as any)?.viewportHeight || (WebApp as any)?.viewportStableHeight || 0;

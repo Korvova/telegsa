@@ -87,9 +87,15 @@ export default function CreateTaskModal({
   useEffect(() => {
     if (!open || !isiOS) { setKbFallback(0); return; }
     // Fallback to a reasonable keyboard height until viewport reports a value
-    setKbFallback(320);
-    const t = setTimeout(() => setKbFallback(0), 900);
+    setKbFallback(340);
+    const t = setTimeout(() => setKbFallback(0), 1500);
     return () => clearTimeout(t);
+  }, [open, isiOS]);
+
+  // While modal is open on iOS, ask TWA to disable vertical swipes to avoid pull-to-dismiss
+  useEffect(() => {
+    if (!open || !isiOS) return;
+    try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
   }, [open, isiOS]);
 
   const ensureVisible = () => {
@@ -593,6 +599,8 @@ export default function CreateTaskModal({
               position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 9999,
               display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
               paddingBottom: `calc(${Math.max(kbBottom, kbFallback)}px + env(safe-area-inset-bottom, 0px))`,
+              // prevent iOS rubber band pulling the whole window
+              overscrollBehaviorY: 'contain' as any,
             }
           : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
       }
@@ -619,7 +627,8 @@ export default function CreateTaskModal({
                 maxHeight: 'calc(100dvh - 12px)',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch' as any,
-                touchAction: 'manipulation',
+                touchAction: 'auto',
+                overscrollBehaviorY: 'contain' as any,
                 zIndex: 2001,
               }
             : {
