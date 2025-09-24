@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { createTask } from '../../api';
+import { createTask, listGroups, type Group } from '../../api';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
+import GroupPicker from './GroupPicker';
 
 // Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
 
@@ -14,6 +15,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [kbFallback, setKbFallback] = useState(0);
   const [arming, setArming] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(false);
+  // group selection (like Android header)
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -36,6 +43,27 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     requestAnimationFrame(() => setArming(false));
     return () => { clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); setArming(true); };
   }, [open]);
+
+  // load groups when panel opens
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const r = await listGroups(chatId);
+        if ((r as any)?.ok) setGroups((r as any).groups || []);
+      } catch {}
+    })();
+  }, [open, chatId]);
+
+  const groupLabel = () => {
+    try {
+      if (!groupId) return 'Моя группа';
+      const g = groups.find(g => String(g.id) === String(groupId));
+      if (!g) return 'Группа';
+      const isPublic = (g as any)?.isPublic === true;
+      return (isPublic ? '🌍 ' : '📁 ') + (g.title || 'Группа');
+    } catch { return 'Группа'; }
+  };
 
   // accept external focus request from FAB to keep iOS gesture chain
   useEffect(() => {
@@ -76,7 +104,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     if (!val || busy) return;
     setBusy(true);
     try {
-      const r = await createTask(chatId, val, defaultGroupId || undefined);
+      const gid = groupId ?? defaultGroupId ?? undefined;
+      const r = await createTask(chatId, val, gid as any);
       if ((r as any)?.ok !== false) {
         setText('');
         try { onCreated?.(); } catch {}
@@ -134,27 +163,29 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           backfaceVisibility: 'hidden' as any,
         }}
       >
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        {/* group picker header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>Группа</div>
           <button
-            onClick={() => setToolsOpen(v => !v)}
-            title="Роботы"
-            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#8aa0ff' }}
-          >🤖</button>
-
-          <div
-            style={{
-              position: 'relative',
-              background: '#111827',
-              border: '1px solid #2a3346',
-              borderRadius: 12,
-              borderBottomLeftRadius: toolsOpen ? 0 : 12,
-              borderBottomRightRadius: toolsOpen ? 0 : 12,
-              padding: 8,
-              flex: 1,
-              minWidth: 0,
-            }}
+            onClick={() => setPickerOpen(true)}
+            title="Выбрать группу"
+            style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', fontSize: 12, cursor: 'pointer' }}
           >
-          <div style={{ position: 'relative', flex: 1, minWidth: 0, paddingRight: 52 }}>
+            <b>{groupLabel()}</b>
+          </button>
+        </div>
+        <div
+          style={{
+            position: 'relative',
+            background: '#111827',
+            border: '1px solid #2a3346',
+            borderRadius: 12,
+            borderBottomLeftRadius: toolsOpen ? 0 : 12,
+            borderBottomRightRadius: toolsOpen ? 0 : 12,
+            padding: 8,
+          }}
+        >
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, paddingRight: 52, paddingLeft: 52 }}>
             <textarea
               ref={inputRef}
               rows={1}
@@ -167,7 +198,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 width: '100%', boxSizing: 'border-box',
                 background: '#0b1220', color: '#e8eaed',
                 border: '1px solid #1f2937', borderRadius: 14,
-                padding: '8px 12px', paddingLeft: 44,
+                padding: '8px 12px',
                 fontSize: 16, lineHeight: '20px',
                 minHeight: 38, resize: 'none' as any, overflow: 'hidden',
               }}
@@ -200,7 +231,20 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               title="Вложения и действия"
               style={{ position: 'absolute', right: 52, top: 8, width: 28, height: 28, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#9ca3af' }}
             >📎</button>
-          </div>
+
+            {/* robot button inside input (left overlay, symmetric to send) */}
+            <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
+              <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button
+                  onClick={() => setToolsOpen(v => !v)}
+                  title="Роботы"
+                  style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16 }}
+                  aria-label="Роботы"
+                >
+                  🤖
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         {toolsOpen && (
@@ -230,6 +274,20 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             </div>
           </div>
         )}
+        {/* GroupPicker modal */}
+        <GroupPicker
+          open={pickerOpen}
+          groupTab={groupTab}
+          setGroupTab={setGroupTab}
+          ownGroups={(groups || []).filter((g:any)=>g?.kind==='own') as any}
+          memberGroups={(groups || []).filter((g:any)=>g?.kind==='member') as any}
+          groupId={groupId}
+          setGroupId={(id) => setGroupId(id)}
+          selectedLabelId={selectedLabelId}
+          setSelectedLabelId={(id) => setSelectedLabelId(id)}
+          onClose={() => setPickerOpen(false)}
+          onApply={() => { setPickerOpen(false); try { setTimeout(() => inputRef.current?.focus({ preventScroll: true } as any), 0); } catch {} }}
+        />
       </div>
     </div>
   );
