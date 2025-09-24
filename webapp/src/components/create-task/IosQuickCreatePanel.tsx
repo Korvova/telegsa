@@ -225,8 +225,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 width: '100%', boxSizing: 'border-box',
                 background: '#0b1220', color: '#e8eaed',
                 border: '1px solid #1f2937', borderRadius: 14,
-                // reduce left inset; keep clear of 🤖 (8+36=44), use ~52px
-                padding: '8px 12px', paddingLeft: 52,
+                // reduce left inset roughly by half; keep minimal space for leading icon
+                padding: '8px 12px', paddingLeft: 26,
                 fontSize: 16, lineHeight: '20px',
                 minHeight: 38, resize: 'none' as any, overflow: 'hidden',
               }}
@@ -236,7 +236,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <button
               onClick={() => setToolsOpen(v => !v)}
               title="Вознаграждение"
-              style={{ position: 'absolute', left: 78, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
+              style={{ position: 'absolute', left: 12, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
             >🥮</button>
 
             {/* send slot (➤) */}
@@ -261,7 +261,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             >📎</button>
 
             {/* robot button inside input (left overlay, symmetric to send) */}
-            <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
+            <div style={{ position: 'absolute', left: -6, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <button
                   onClick={() => setToolsOpen(v => !v)}
