@@ -5,6 +5,7 @@ import VoiceRecorder from '../VoiceRecorder';
 import useAudioPreview from './hooks/useAudioPreview';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import GroupPicker from './GroupPicker';
+import CameraCaptureModal from '../CameraCaptureModal';
 
 // Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
 
@@ -21,6 +22,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const { url: voiceUrl } = useAudioPreview(voiceFile);
   const [sttBusy, setSttBusy] = useState(false);
+  const [uploadProg, setUploadProg] = useState<{ done: number; total: number } | null>(null);
+  // attachments (docs, gallery, camera)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileAnyRef = useRef<HTMLInputElement | null>(null);
+  const filePhotoRef = useRef<HTMLInputElement | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   // group selection (like Android header)
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
@@ -65,6 +72,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       return (isPublic ? '🌍 ' : '📁 ') + (g.title || 'Группа');
     } catch { return 'Группа'; }
   };
+  const onPickFiles = (files: FileList | null) => {
+    if (!files) return;
+    const arr = Array.from(files).filter(Boolean) as File[];
+    if (!arr.length) return;
+    setPendingFiles(prev => [...prev, ...arr]);
+    // Keep keyboard up
+    try { setTimeout(() => ensureCaretFocus(), 0); } catch {}
+  };
+  const openCamera = () => setCameraOpen(true);
+
+  // Handlers to trigger file pickers in capture phase (bypass overlay preventDefault on iOS)
+  const firePickAny = (e?: any) => { try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {} try { fileAnyRef.current?.click(); } catch {} };
+  const firePickPhoto = (e?: any) => { try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {} try { filePhotoRef.current?.click(); } catch {} };
 
   // accept external focus request from FAB to keep iOS gesture chain
   useEffect(() => {
@@ -99,19 +119,38 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const save = async () => {
     const val = text.trim();
-    if ((val.length === 0 && !voiceFile) || busy) return;
+    if ((val.length === 0 && !voiceFile && pendingFiles.length === 0) || busy) return;
     setBusy(true);
+    setUploadProg(null);
     try {
       const gid = groupId ?? defaultGroupId ?? undefined;
       const baseText = val || 'Голосовое сообщение';
       const r = await createTask(chatId, baseText, gid as any);
       if ((r as any)?.ok !== false) {
         const newTaskId = (r as any)?.task?.id || '';
-        if (voiceFile && newTaskId) {
-          try { await uploadTaskMedia(newTaskId, chatId, voiceFile); } catch {}
+        if (newTaskId) {
+          // Upload sequentially like Android modal
+          const queue: File[] = [];
+          if (voiceFile) queue.push(voiceFile);
+          if (pendingFiles.length) queue.push(...pendingFiles);
+          setUploadProg({ done: 0, total: queue.length });
+          let done = 0;
+          for (const raw of queue) {
+            let f = raw;
+            if (isHeicLike(f)) { f = await convertHeicToJpeg(f); }
+            if (isImageLike(f)) { f = await downscaleImageToMax(f, 2560, 0.9); }
+            // retry up to 2 attempts
+            let ok = false; let lastErr: any = null;
+            for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+              try { await uploadTaskMedia(newTaskId, chatId, f); ok = true; } catch (e) { lastErr = e; }
+            }
+            if (!ok) { try { console.warn('[ios-panel] file upload failed', f?.name, lastErr); } catch {} }
+            done += 1; setUploadProg({ done, total: queue.length });
+          }
         }
         setText('');
         setVoiceFile(null);
+        setPendingFiles([]);
         try { onCreated?.(); } catch {}
         onClose();
       }
@@ -167,6 +206,52 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     }
   };
 
+  // Convert HEIC/HEIF images to JPEG for better backend compatibility
+  const isHeicLike = (f: File) => {
+    const t = String(f.type || '').toLowerCase();
+    const n = String(f.name || '').toLowerCase();
+    return t.includes('image/heic') || t.includes('image/heif') || /\.(heic|heif)$/.test(n);
+  };
+  const loadImage = (src: string) => new Promise<HTMLImageElement>((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = src; });
+  async function convertHeicToJpeg(file: File): Promise<File> {
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const fr = new FileReader(); fr.onload = () => resolve(String(fr.result || '')); fr.onerror = reject; fr.readAsDataURL(file);
+      });
+      const img = await loadImage(dataUrl);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width; canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d'); if (!ctx) return file;
+      ctx.drawImage(img, 0, 0);
+      const blob: Blob = await new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob_failed')), 'image/jpeg', 0.92));
+      const base = (file.name || 'photo').replace(/\.(heic|heif)$/i, '');
+      return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
+    } catch { return file; }
+  }
+
+  const isImageLike = (f: File) => String(f.type || '').toLowerCase().startsWith('image/') && !/image\/(gif)/i.test(f.type || '');
+  async function downscaleImageToMax(file: File, maxEdge = 2560, quality = 0.9): Promise<File> {
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result || '')); fr.onerror = reject; fr.readAsDataURL(file); });
+      const img = await loadImage(dataUrl);
+      let w = img.naturalWidth || img.width; let h = img.naturalHeight || img.height;
+      const scale = Math.max(w, h) > maxEdge ? (maxEdge / Math.max(w, h)) : 1;
+      // Also compress very large files even if under maxEdge
+      if (scale >= 1 && file.size <= 6 * 1024 * 1024) return file;
+      const nw = Math.round(w * scale); const nh = Math.round(h * scale);
+      const canvas = document.createElement('canvas'); canvas.width = nw; canvas.height = nh;
+      const ctx = canvas.getContext('2d'); if (!ctx) return file; ctx.drawImage(img, 0, 0, nw, nh);
+      const blob: Blob = await new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob_failed')), 'image/jpeg', quality));
+      const base = (file.name || 'image').replace(/\.(jpeg|jpg|png|gif|webp|heic|heif)$/i, '');
+      return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
+    } catch { return file; }
+  }
+
+
+  const removePendingAt = (idx: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   if (!open) return null;
 
   // For contentEditable we rely on natural height; keep helper no-op
@@ -195,7 +280,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const overlay = (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
-      onClick={() => { if (!arming) onClose(); }}
+      onClick={() => { if (!arming && !busy) onClose(); }}
       onTouchStart={(e) => {
         try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
       }}
@@ -283,7 +368,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             {/* send slot (➤) or mic (🎙️) when no text */}
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {(text.trim().length > 0 || !!voiceFile) ? (
+                {(text.trim().length > 0 || !!voiceFile || pendingFiles.length > 0) ? (
                   <button
                     disabled={busy}
                     onClick={() => save()}
@@ -344,6 +429,26 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               >✕</button>
             </div>
           )}
+          {/* file chips (documents/photos) inside dark panel */}
+          {pendingFiles.length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop: voiceFile ? 6 : 8 }}>
+              {pendingFiles.map((f, idx) => (
+                <div key={`${idx}-${f.name}-${f.size}`} style={{ display:'inline-flex', alignItems:'center', gap:8, maxWidth:'100%', background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+                  <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth: 200 }}>{f.name || 'файл'}</span>
+                  <button
+                    onClick={() => removePendingAt(idx)}
+                    title="Убрать файл"
+                    style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}
+                  >✕</button>
+                </div>
+              ))}
+              {uploadProg && uploadProg.total > 0 ? (
+                <div style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.9 }}>
+                  Загружаю {uploadProg.done}/{uploadProg.total}…
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
         {toolsOpen && (
           <div
@@ -362,9 +467,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             }}
           >
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
-              <button title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>📑</button>
-              <button title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🖼️</button>
-              <button title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>📸</button>
+              <button onMouseDownCapture={firePickAny} onTouchStartCapture={firePickAny} onClick={firePickAny} title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📑</button>
+              <button onMouseDownCapture={firePickPhoto} onTouchStartCapture={firePickPhoto} onClick={firePickPhoto} title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🖼️</button>
+              <button onClick={openCamera} title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📸</button>
               <button title="🚩 Ярлык" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🚩</button>
               <button title="☝️ Упоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>☝️</button>
               <button title="⏰ Напоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>⏰</button>
@@ -372,6 +477,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             </div>
           </div>
         )}
+        {/* hidden pickers always mounted to avoid iOS unmount race */}
+        <input ref={fileAnyRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
+        <input ref={filePhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
+
         {/* GroupPicker modal */}
         <GroupPicker
           open={pickerOpen}
@@ -394,6 +503,11 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             setPickerOpen(false);
           }}
           dockBottom={Math.max(kbBottom, kbFallback)}
+        />
+        <CameraCaptureModal
+          open={cameraOpen}
+          onClose={() => { setCameraOpen(false); ensureCaretFocus(); }}
+          onCapture={(file) => { setPendingFiles(prev => [...prev, file]); ensureCaretFocus(); }}
         />
       </div>
     </div>
