@@ -210,7 +210,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 width: '100%', boxSizing: 'border-box',
                 background: '#0b1220', color: '#e8eaed',
                 border: '1px solid #1f2937', borderRadius: 14,
-                // like Android composer: compact left inset with leading 🥮 inside field
+                // like Android composer: compact left inset with leading 💰 inside field
                 padding: '8px 12px', paddingLeft: 30,
                 fontSize: 16, lineHeight: '20px',
                 minHeight: 38, resize: 'none' as any, overflow: 'hidden',
@@ -221,8 +221,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <button
               onClick={() => setToolsOpen(v => !v)}
               title="Вознаграждение"
-              style={{ position: 'absolute', left: 65, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
-            >🥮</button>
+              style={{ position: 'absolute', left: 55, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
+            >💰</button>
 
             {/* send slot (➤) */}
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
