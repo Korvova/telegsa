@@ -7,7 +7,7 @@ import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 
 export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGroupId, onCreated }: { open: boolean; onClose: () => void; chatId: string; defaultGroupId?: string | null; onCreated?: () => void; }) {
   const microRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 80, true, false, true);
@@ -23,6 +23,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     const tryFocus = () => {
       try { inputRef.current?.click(); } catch {}
       try { inputRef.current?.focus({ preventScroll: true } as any); } catch {}
+      try {
+        const el = inputRef.current as HTMLTextAreaElement | null;
+        if (el) { const len = (el.value || '').length; el.setSelectionRange?.(len, len); }
+      } catch {}
     };
     tryFocus();
     const t1 = setTimeout(tryFocus, 60);
@@ -39,6 +43,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       try {
         inputRef.current?.click();
         inputRef.current?.focus({ preventScroll: true } as any);
+        const el = inputRef.current as HTMLTextAreaElement | null;
+        if (el) { const len = (el.value || '').length; el.setSelectionRange?.(len, len); }
       } catch {}
     };
     window.addEventListener('create-task-focus', onReq as any);
@@ -85,6 +91,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   if (!open) return null;
 
+  const adjustTextHeight = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    try {
+      el.style.height = 'auto';
+      const maxH = 160; // px, около 4-5 строк
+      const next = Math.min(maxH, el.scrollHeight);
+      el.style.height = next + 'px';
+    } catch {}
+  };
+
   const overlay = (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
@@ -119,20 +135,32 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         }}
       >
         <div
-          style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
+          style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
         >
-          <button
-            onClick={() => setToolsOpen(v => !v)}
-            title="Вложения и действия"
-            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#9fb1ff' }}
-          >📎</button>
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Новая задача…"
-            style={{ flex: 1, background: '#0b1220', color: '#e8eaed', border: '1px solid #1f2937', borderRadius: 8, padding: '10px 12px', fontSize: 16 }}
-          />
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+            <button
+              onClick={() => setToolsOpen(v => !v)}
+              title="Вложения и действия"
+              style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28, borderRadius: 8, border: '1px solid #2a3346', background: '#172133', color: '#9fb1ff' }}
+            >📎</button>
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={text}
+              onChange={(e) => { setText(e.target.value); adjustTextHeight(e.currentTarget); }}
+              onInput={(e) => adjustTextHeight(e.currentTarget as HTMLTextAreaElement)}
+              onFocus={(e) => adjustTextHeight(e.currentTarget)}
+              placeholder="Новая задача…"
+              style={{
+                width: '100%',
+                background: '#0b1220', color: '#e8eaed',
+                border: '1px solid #1f2937', borderRadius: 8,
+                padding: '10px 12px 10px 44px',
+                fontSize: 16, lineHeight: 1.35,
+                resize: 'none' as any, overflow: 'hidden',
+              }}
+            />
+          </div>
           <button
             disabled={!text.trim() || busy}
             onClick={() => save()}
