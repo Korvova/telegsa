@@ -134,18 +134,26 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           backfaceVisibility: 'hidden' as any,
         }}
       >
-        <div
-          style={{
-            position: 'relative',
-            background: '#111827',
-            border: '1px solid #2a3346',
-            borderRadius: 12,
-            // при открытой панели действий убираем нижние скругления, чтобы прижать блоки
-            borderBottomLeftRadius: toolsOpen ? 0 : 12,
-            borderBottomRightRadius: toolsOpen ? 0 : 12,
-            padding: 8,
-          }}
-        >
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <button
+            onClick={() => setToolsOpen(v => !v)}
+            title="Роботы"
+            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#8aa0ff' }}
+          >🤖</button>
+
+          <div
+            style={{
+              position: 'relative',
+              background: '#111827',
+              border: '1px solid #2a3346',
+              borderRadius: 12,
+              borderBottomLeftRadius: toolsOpen ? 0 : 12,
+              borderBottomRightRadius: toolsOpen ? 0 : 12,
+              padding: 8,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
           <div style={{ position: 'relative', flex: 1, minWidth: 0, paddingRight: 52 }}>
             <textarea
               ref={inputRef}
@@ -159,11 +167,18 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 width: '100%', boxSizing: 'border-box',
                 background: '#0b1220', color: '#e8eaed',
                 border: '1px solid #1f2937', borderRadius: 14,
-                padding: '8px 12px',
+                padding: '8px 12px', paddingLeft: 44,
                 fontSize: 16, lineHeight: '20px',
                 minHeight: 38, resize: 'none' as any, overflow: 'hidden',
               }}
             />
+
+            {/* bounty inside input (top-left) */}
+            <button
+              onClick={() => setToolsOpen(v => !v)}
+              title="Вознаграждение"
+              style={{ position: 'absolute', left: 8, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >🥮</button>
 
             {/* send slot (➤) */}
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
@@ -185,6 +200,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               title="Вложения и действия"
               style={{ position: 'absolute', right: 52, top: 8, width: 28, height: 28, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#9ca3af' }}
             >📎</button>
+          </div>
           </div>
         </div>
         {toolsOpen && (
