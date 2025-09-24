@@ -18,7 +18,7 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
     const el = microRef.current;
     const vv: any = (window as any).visualViewport;
     if (!el || !vv) return;
-    let maxSeen = 0;
+    // let maxSeen = 0; // не нужен в жестком режиме
     let baseH = 0; // minimal vv.height while kb is open
     let freezeUpper = 0; // freeze keyboard top after initial settle window
     let lastKh = 0; // last kHeightOnly
@@ -38,15 +38,10 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
       lastKh = kHeightOnly;
       // Клапаны: не выше верхней кромки клавиатуры, и не ниже её (±люфт)
       const ALLOW_UP = 0;  // px — запрет подниматься выше
-      const ALLOW_DOWN = 2; // px
       const frozenUpper = freezeUpper > 0 ? freezeUpper : kHeightOnly;
       const upper = frozenUpper + ALLOW_UP;
-      const lower = Math.max(0, kHeightOnly - ALLOW_DOWN);
-      const clamped = Math.max(lower, Math.min(kWithOffset, upper));
-      // stable: предотвращаем внезапные просадки вниз, но не даём подняться выше upper
-      if (clamped > 0) maxSeen = Math.max(maxSeen, clamped); else maxSeen = 0;
-      let k = stable ? Math.max(clamped, Math.min(maxSeen, upper)) : clamped;
-      k = Math.max(lower, Math.min(k, upper));
+      // Жёстко прилипнуть к верхней кромке клавиатуры: игнорируем offset смещения при драг-свайпах
+      const k = upper; // всегда верхняя граница
       el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
     };
     const startFollow = () => {
