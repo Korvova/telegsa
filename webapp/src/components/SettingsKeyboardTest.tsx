@@ -10,6 +10,7 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
   const [stable, setStable] = useState(true);
   const { bottom } = useKeyboardInsets(true, wrapRef as any, 80, true, includeOffset, stable);
   const [variant, setVariant] = useState<Variant>('micro');
+  const [dbg, setDbg] = useState<{ inner:number; vvH:number; vvTop:number; with:number; hOnly:number; baseH:number; upper:number; trans:number }>(()=>({ inner:0, vvH:0, vvTop:0, with:0, hOnly:0, baseH:0, upper:0, trans:0 }));
 
   // Micro-utility (vanilla vv.height+offsetTop)
   const microRef = useRef<HTMLDivElement | null>(null);
@@ -43,6 +44,7 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
       // Жёстко прилипнуть к верхней кромке клавиатуры: игнорируем offset смещения при драг-свайпах
       const k = upper; // всегда верхняя граница
       el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
+      setDbg({ inner: window.innerHeight, vvH: vh, vvTop: vt, with: kWithOffset, hOnly: kHeightOnly, baseH, upper, trans: k });
     };
     const startFollow = () => {
       freezeUpper = 0; // reset freeze; will capture at the end of follow window
@@ -120,6 +122,13 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
             Текст #{i+1}. Прокрутите страницу вверх/вниз, затем нажмите в поле ввода — панель ввода должна «прилипнуть» над клавиатурой.
           </p>
         ))}
+      </div>
+
+      {/* Debug overlay */}
+      <div style={{ position:'fixed', left:10, right:10, top:10, zIndex:10002, background:'rgba(0,0,0,.6)', border:'1px solid #2a3346', borderRadius:8, padding:8, fontSize:12 }}>
+        <div>inner: {dbg.inner} | vvH: {Math.round(dbg.vvH)} | vvTop: {Math.round(dbg.vvTop)}</div>
+        <div>withOffset: {Math.round(dbg.with)} | heightOnly: {Math.round(dbg.hOnly)} | baseH: {Math.round(dbg.baseH)}</div>
+        <div>upper: {Math.round(dbg.upper)} | transformY: -{Math.round(dbg.trans)}</div>
       </div>
 
       {/* Переключение вариантов */}
