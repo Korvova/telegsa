@@ -1,118 +1,63 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createTask } from '../../api';
+import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 
-// Minimal keyboard-dock hook derived from SettingsKeyboardTest
-function useKeyboardDock<T extends HTMLElement>(
-  ref: React.RefObject<T | null>,
-  opts?: {
-    openFollowMs?: number;
-    closeFollowMs?: number;
-    onHide?: () => void;
-  }
-) {
-  const openFollowMs = opts?.openFollowMs ?? 600;
-  const closeFollowMs = opts?.closeFollowMs ?? 0;
-  const onHide = opts?.onHide;
-
-  const rafRef = useRef<number | null>(null);
-  const baseHRef = useRef<number>(0);
-  const lastTopRef = useRef<number>(0);
-  const frozenTopRef = useRef<number>(0);
-  const focusedRef = useRef<boolean>(false);
-
-  const vv = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined) as VisualViewport | undefined;
-
-  const clearRaf = () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
-
-  const kWithOffset = () => {
-    if (!vv) return 0;
-    const vh = vv.height ?? 0;
-    const vt = vv.offsetTop ?? 0;
-    return Math.max(0, window.innerHeight - (vh + vt));
-  };
-  const kTopOnly = () => {
-    if (!vv) return 0;
-    const vh = vv.height ?? 0;
-    if (kWithOffset() > 0) { if (baseHRef.current === 0) baseHRef.current = vh; } else { baseHRef.current = 0; }
-    const h = baseHRef.current || vh;
-    const t = Math.max(0, window.innerHeight - h);
-    lastTopRef.current = t;
-    return t;
-  };
-
-  const apply = (el: T) => {
-    const raw = kTopOnly();
-    const t = frozenTopRef.current > 0 ? frozenTopRef.current : raw;
-    el.style.transform = t > 0 ? `translateY(-${t}px)` : 'translateY(0)';
-    return t;
-  };
-  const followFor = (ms: number, el: T) => {
-    const until = performance.now() + ms;
-    clearRaf();
-    if (ms <= 0) { apply(el); return; }
-    const tick = () => {
-      const t = apply(el);
-      if (performance.now() < until && t > 0) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        if (lastTopRef.current > 0) frozenTopRef.current = lastTopRef.current;
-        rafRef.current = null;
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
-  };
-
-  useEffect(() => {
-    const el = ref.current as T | null;
-    if (!el || !vv) return;
-
-    const onResizeOrScroll = () => { followFor(focusedRef.current ? openFollowMs : closeFollowMs, el); };
-
-    const onFocusIn = () => { try { (el as any).style.display = ''; (el as any).style.opacity = '1'; (el as any).style.visibility = 'visible'; } catch {}; focusedRef.current = true; followFor(openFollowMs, el); };
-    const onFocusOut = () => { clearRaf(); focusedRef.current = false; frozenTopRef.current = 0; el.style.transform = 'translateY(0)'; setTimeout(() => apply(el), 0); setTimeout(() => apply(el), 80); setTimeout(() => apply(el), 160); };
-
-    const instantHide = () => { clearRaf(); focusedRef.current = false; frozenTopRef.current = 0; try { onHide?.(); } catch {}; try { (document.activeElement as any)?.blur?.(); } catch {}; };
-    const onDocTouchStart = (e: Event) => {
-      try {
-        const n = e.target as Node | null; if (!n) return;
-        const withinDock = el.contains(n);
-        let insideEditable = false;
-        try { const elNode = n as Element; if (elNode && (elNode as any).closest) insideEditable = !!(elNode as any).closest('input,textarea,select,[contenteditable="true"]'); } catch {}
-        if (!withinDock || (withinDock && !insideEditable)) { instantHide(); }
-      } catch {}
-    };
-
-    vv.addEventListener('resize', onResizeOrScroll);
-    vv.addEventListener('scroll', onResizeOrScroll);
-    document.addEventListener('focusin', onFocusIn, true);
-    document.addEventListener('focusout', onFocusOut, true);
-    document.addEventListener('touchstart', onDocTouchStart as any, { capture: true } as any);
-    followFor(closeFollowMs, el);
-    return () => {
-      clearRaf();
-      vv.removeEventListener('resize', onResizeOrScroll);
-      vv.removeEventListener('scroll', onResizeOrScroll);
-      document.removeEventListener('focusin', onFocusIn, true);
-      document.removeEventListener('focusout', onFocusOut, true);
-      document.removeEventListener('touchstart', onDocTouchStart as any, { capture: true } as any);
-    };
-  }, [ref, openFollowMs, closeFollowMs]);
-}
+// Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
 
 export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGroupId, onCreated }: { open: boolean; onClose: () => void; chatId: string; defaultGroupId?: string | null; onCreated?: () => void; }) {
   const microRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-
-  useKeyboardDock(microRef, { onHide: () => { try { onClose(); } catch {} } });
+  const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 80, true, false, true);
+  const [kbFallback, setKbFallback] = useState(0);
 
   useEffect(() => {
     if (!open) return;
-    try { inputRef.current?.focus({ preventScroll: true } as any); } catch {}
-    const t = setTimeout(() => { try { inputRef.current?.focus({ preventScroll: true } as any); } catch {} }, 60);
-    return () => clearTimeout(t);
+    // temporary fallback lift while viewport syncs
+    setKbFallback(340);
+    const tf = setTimeout(() => setKbFallback(0), 1600);
+    const tryFocus = () => {
+      try { inputRef.current?.click(); } catch {}
+      try { inputRef.current?.focus({ preventScroll: true } as any); } catch {}
+    };
+    tryFocus();
+    const t1 = setTimeout(tryFocus, 60);
+    const t2 = setTimeout(tryFocus, 240);
+    return () => { clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); };
+  }, [open]);
+
+  // accept external focus request from FAB to keep iOS gesture chain
+  useEffect(() => {
+    const onReq = () => {
+      try {
+        inputRef.current?.click();
+        inputRef.current?.focus({ preventScroll: true } as any);
+      } catch {}
+    };
+    window.addEventListener('create-task-focus', onReq as any);
+    return () => window.removeEventListener('create-task-focus', onReq as any);
+  }, []);
+
+  // robust body lock while panel is visible on iOS to avoid bounce/offset issues
+  useEffect(() => {
+    if (!open) return;
+    const body = document.body as any;
+    const html = document.documentElement as any;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const prev = { pos: body.style.position, top: body.style.top, width: body.style.width };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    html.style.overscrollBehaviorY = 'contain';
+    return () => {
+      body.style.position = prev.pos;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      html.style.overscrollBehaviorY = '';
+      try { window.scrollTo(0, scrollY); } catch {}
+    };
   }, [open]);
 
   const save = async () => {
@@ -137,7 +82,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
       onClick={() => onClose()}
       onTouchStart={(e) => {
         try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
@@ -161,7 +106,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           bottom: 0,
           pointerEvents: 'auto',
           zIndex: 1000000,
-          transform: 'translate3d(0,0,0)',
+          transform: `translate3d(0, -${Math.max(kbBottom, kbFallback)}px, 0)`,
           transition: 'none',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           willChange: 'transform',
@@ -193,4 +138,3 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   try { return createPortal(overlay, document.body); } catch { return overlay; }
 }
-
