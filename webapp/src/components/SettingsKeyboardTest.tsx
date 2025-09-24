@@ -96,8 +96,8 @@ function useKeyboardDock<T extends HTMLElement>(
     const raw = kTopOnly();
     const t = frozenTopRef.current > 0 ? frozenTopRef.current : raw;
     el.style.transform = t > 0 ? `translateY(-${t}px)` : "translateY(0)";
-    // лочим/анлочим скролл моментально в зависимости от состояния
-    lockScroll(focusedRef.current);
+    // лочим/анлочим скролл только когда панель действительно приподнята над клавиатурой
+    lockScroll(t > 0);
     try {
       onDebug?.({
         inner: window.innerHeight,
@@ -159,12 +159,7 @@ function useKeyboardDock<T extends HTMLElement>(
       // открытие — можно дать чуть «сопровождения»
       try { (el as any).style.display = ''; (el as any).style.opacity = '1'; (el as any).style.visibility = 'visible'; } catch {}
       focusedRef.current = true;
-      // Предсказать верх клавиатуры мгновенно, чтобы панель не появлялась с лагом
-      const vh = vv?.height || 0;
-      const predicted = (lastTopRef.current > 0) ? lastTopRef.current : Math.max(0, window.innerHeight - (vh || 0)) || 340;
-      el.style.transform = predicted > 0 ? `translateY(-${predicted}px)` : 'translateY(0)';
-      // Явно залочим скролл на время ввода
-      lockScroll(true);
+      // Не делаем мгновенный предсказанный скачок — даём follow выставить точную позицию
       followFor(openFollowMs, el);
     };
 
