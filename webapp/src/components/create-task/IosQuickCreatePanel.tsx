@@ -225,7 +225,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 width: '100%', boxSizing: 'border-box',
                 background: '#0b1220', color: '#e8eaed',
                 border: '1px solid #1f2937', borderRadius: 14,
-                padding: '8px 12px',
+                padding: '8px 12px', paddingLeft: 44,
                 fontSize: 16, lineHeight: '20px',
                 minHeight: 38, resize: 'none' as any, overflow: 'hidden',
               }}
@@ -235,7 +235,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <button
               onClick={() => setToolsOpen(v => !v)}
               title="Вознаграждение"
-              style={{ position: 'absolute', left: 8, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ position: 'absolute', left: 8, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
             >🥮</button>
 
             {/* send slot (➤) */}
@@ -260,7 +260,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             >📎</button>
 
             {/* robot button inside input (left overlay, symmetric to send) */}
-            <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <button
                   onClick={() => setToolsOpen(v => !v)}
