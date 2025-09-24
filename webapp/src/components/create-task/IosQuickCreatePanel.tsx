@@ -29,12 +29,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     setKbFallback(340);
     const tf = setTimeout(() => setKbFallback(0), 1600);
     const tryFocus = () => {
-      try { inputRef.current?.click(); } catch {}
-      try { inputRef.current?.focus({ preventScroll: true } as any); } catch {}
-      try {
-        const el = inputRef.current as HTMLTextAreaElement | null;
-        if (el) { const len = (el.value || '').length; el.setSelectionRange?.(len, len); }
-      } catch {}
+      focusEditableEnd();
     };
     tryFocus();
     const t1 = setTimeout(tryFocus, 60);
@@ -70,10 +65,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   useEffect(() => {
     const onReq = () => {
       try {
-        inputRef.current?.click();
-        inputRef.current?.focus({ preventScroll: true } as any);
-        const el = inputRef.current as HTMLTextAreaElement | null;
-        if (el) { const len = (el.value || '').length; el.setSelectionRange?.(len, len); }
+        focusEditableEnd();
       } catch {}
     };
     window.addEventListener('create-task-focus', onReq as any);
@@ -121,17 +113,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   if (!open) return null;
 
-  const adjustTextHeight = (el: HTMLTextAreaElement | null) => {
-    if (!el) return;
-    try {
-      el.style.height = 'auto';
-      const maxH = 160; // px, около 4-5 строк
-      const next = Math.min(maxH, el.scrollHeight);
-      el.style.height = next + 'px';
-    } catch {}
-  };
+  // For contentEditable we rely on natural height; keep helper no-op
+  const adjustTextHeight = (_el: HTMLElement | null) => {};
 
-  const refocusWithCaret = () => {
+  const focusEditableEnd = () => {
     try {
       const el = inputRef.current as HTMLTextAreaElement | null;
       if (!el) return;
@@ -144,11 +129,11 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const refocusWithCaretStrong = () => {
     try { inputRef.current?.click(); } catch {}
     try { bootRef.current?.focus({ preventScroll: true } as any); } catch {}
-    refocusWithCaret();
+    focusEditableEnd();
     // schedule a couple more attempts for iOS
-    setTimeout(() => refocusWithCaret(), 0);
-    setTimeout(() => refocusWithCaret(), 60);
-    requestAnimationFrame(() => refocusWithCaret());
+    setTimeout(() => focusEditableEnd(), 0);
+    setTimeout(() => focusEditableEnd(), 60);
+    requestAnimationFrame(() => focusEditableEnd());
   };
 
   const overlay = (
@@ -236,7 +221,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <button
               onClick={() => setToolsOpen(v => !v)}
               title="Вознаграждение"
-              style={{ position: 'absolute', left: 35, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
+              style={{ position: 'absolute', left: 65, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
             >🥮</button>
 
             {/* send slot (➤) */}
