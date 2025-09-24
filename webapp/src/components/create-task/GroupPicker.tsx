@@ -15,6 +15,7 @@ export default function GroupPicker({
   setSelectedLabelId,
   onClose,
   onApply,
+  dockBottom,
 }: {
   open: boolean;
   groupTab: 'own' | 'member';
@@ -27,6 +28,7 @@ export default function GroupPicker({
   setSelectedLabelId: (id: string | null) => void;
   onClose: () => void;
   onApply: () => void;
+  dockBottom?: number;
 }) {
   if (!open) return null;
   const [labels, setLabels] = useState<GroupLabel[]>([]);
@@ -58,7 +60,9 @@ export default function GroupPicker({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 2300,
+        zIndex: 1000001,
+        // lift content above the iOS keyboard if value provided
+        paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom || 0)}px)`,
       }}
     >
       <div

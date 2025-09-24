@@ -287,6 +287,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           setSelectedLabelId={(id) => setSelectedLabelId(id)}
           onClose={() => setPickerOpen(false)}
           onApply={() => { setPickerOpen(false); try { setTimeout(() => inputRef.current?.focus({ preventScroll: true } as any), 0); } catch {} }}
+          dockBottom={Math.max(kbBottom, kbFallback)}
         />
       </div>
     </div>
