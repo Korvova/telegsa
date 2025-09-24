@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { createTask, listGroups, type Group } from '../../api';
+import { createTask, listGroups, uploadTaskMedia, transcribeVoice, type Group } from '../../api';
+import VoiceRecorder from '../VoiceRecorder';
+import useAudioPreview from './hooks/useAudioPreview';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import GroupPicker from './GroupPicker';
 
@@ -16,6 +18,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [kbFallback, setKbFallback] = useState(0);
   const [arming, setArming] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [voiceFile, setVoiceFile] = useState<File | null>(null);
+  const { url: voiceUrl } = useAudioPreview(voiceFile);
+  const [sttBusy, setSttBusy] = useState(false);
   // group selection (like Android header)
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
@@ -94,13 +99,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const save = async () => {
     const val = text.trim();
-    if (!val || busy) return;
+    if ((val.length === 0 && !voiceFile) || busy) return;
     setBusy(true);
     try {
       const gid = groupId ?? defaultGroupId ?? undefined;
-      const r = await createTask(chatId, val, gid as any);
+      const baseText = val || 'Голосовое сообщение';
+      const r = await createTask(chatId, baseText, gid as any);
       if ((r as any)?.ok !== false) {
+        const newTaskId = (r as any)?.task?.id || '';
+        if (voiceFile && newTaskId) {
+          try { await uploadTaskMedia(newTaskId, chatId, voiceFile); } catch {}
+        }
         setText('');
+        setVoiceFile(null);
         try { onCreated?.(); } catch {}
         onClose();
       }
@@ -108,6 +119,51 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       try { alert('Не удалось создать задачу'); } catch {}
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Simple caret helper to keep iOS keyboard up when starting mic
+  const ensureCaretFocus = () => {
+    try {
+      // tap hidden input first to preserve gesture chain
+      bootRef.current?.focus({ preventScroll: true } as any);
+    } catch {}
+    try {
+      const el = inputRef.current as HTMLTextAreaElement | null;
+      if (el) {
+        el.focus({ preventScroll: true } as any);
+        const len = (el.value || '').length; el.setSelectionRange?.(len, len);
+      }
+    } catch {}
+  };
+
+  // STT animation label (А./А../А...)
+  const [sttTick, setSttTick] = useState(0);
+  useEffect(() => {
+    if (!sttBusy) return;
+    const t = setInterval(() => setSttTick((n) => (n + 1) % 3), 500);
+    return () => clearInterval(t);
+  }, [sttBusy]);
+  const sttLabel = (() => 'А' + '.'.repeat((sttTick % 3) + 1))();
+
+  const handleTranscribe = async (lang: 'ru' | 'en' = 'ru') => {
+    if (!voiceFile || sttBusy) return;
+    setSttBusy(true);
+    try {
+      const r = await transcribeVoice(voiceFile, lang);
+      if ((r as any)?.ok && typeof (r as any).text === 'string') {
+        const recognized = String((r as any).text || '').trim();
+        if (recognized) {
+          setText((prev) => (prev.trim() ? `${prev}\n${recognized}` : recognized));
+          setTimeout(() => ensureCaretFocus(), 0);
+        }
+      } else {
+        alert((r as any)?.error || 'Не удалось распознать речь');
+      }
+    } catch (e: any) {
+      try { alert(e?.message || 'Ошибка распознавания'); } catch {}
+    } finally {
+      setSttBusy(false);
     }
   };
 
@@ -224,17 +280,23 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               style={{ position: 'absolute', left: 55, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
             >💰</button>
 
-            {/* send slot (➤) */}
+            {/* send slot (➤) or mic (🎙️) when no text */}
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <button
-                  disabled={!text.trim() || busy}
-                  onClick={() => save()}
-                  style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: (!text.trim() || busy) ? 0.6 : 1 }}
-                  aria-label="Создать"
-                >
-                  ➤
-                </button>
+                {(text.trim().length > 0 || !!voiceFile) ? (
+                  <button
+                    disabled={busy}
+                    onClick={() => save()}
+                    style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1 }}
+                    aria-label="Создать"
+                  >
+                    ➤
+                  </button>
+                ) : (
+                  <div onMouseDownCapture={ensureCaretFocus} onTouchStartCapture={ensureCaretFocus} style={{ width:'100%', height:'100%' }}>
+                    <VoiceRecorder maxSeconds={30} buttonStyle={{ width:'100%', height:'100%' }} onRecorded={(file) => { setVoiceFile(file); setTimeout(() => ensureCaretFocus(), 0); }} />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -259,6 +321,29 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               </div>
             </div>
           </div>
+          {/* voice attachment row */}
+          {voiceFile && (
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:8 }}>
+              {voiceUrl ? (
+                <audio src={voiceUrl} controls style={{ height: 28, maxWidth: '70%' }} />
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.85, flex: 1, minWidth: 0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{voiceFile.name || 'voice'}</div>
+              )}
+              <button
+                onClick={() => handleTranscribe('ru')}
+                disabled={sttBusy}
+                title="Распознать речь"
+                style={{ padding: '6px 10px', borderRadius: 999, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', fontSize: 12, cursor: 'pointer' }}
+              >
+                {sttBusy ? sttLabel : '~А'}
+              </button>
+              <button
+                onClick={() => setVoiceFile(null)}
+                title="Убрать голосовой файл"
+                style={{ width: 28, height: 28, borderRadius: 999, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', fontSize: 14, cursor: 'pointer' }}
+              >✕</button>
+            </div>
+          )}
         </div>
         {toolsOpen && (
           <div
