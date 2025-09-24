@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import CreateTaskModal from './create-task/CreateTaskModal';
+import IosQuickCreatePanel from './create-task/IosQuickCreatePanel';
 import type { Group } from '../api';
 
 type Props = {
@@ -142,8 +143,8 @@ export default function CreateTaskFab({
           width: 56,
           height: 56,
           borderRadius: 28,
-          background: '#2563eb',
-          color: '#fff',
+          background: isIOS() ? '#9ca3af' : '#2563eb',
+          color: isIOS() ? '#0b1220' : '#fff',
           border: 'none',
           boxShadow: '0 10px 24px rgba(0,0,0,.35)',
           fontSize: 28,
@@ -156,18 +157,28 @@ export default function CreateTaskFab({
         +
       </button>
 
-      <CreateTaskModal
-        open={open}
-        onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); setPreEditInit(null); }}
-        chatId={_chatId}
-        defaultGroupId={(overrideGroupId !== null ? overrideGroupId : _defaultGroupId)}
-        groups={_groupsProp}
-        onCreated={onCreated}
-        initialEdge={edgeInit || undefined}
-        initialTaskEdge={taskEdgeInit || undefined}
-        initialPreTaskEdit={preEditInit || undefined}
-        initialEdit={editInit || undefined}
-      />
+      {isIOS() ? (
+        <IosQuickCreatePanel
+          open={open}
+          onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); setPreEditInit(null); }}
+          chatId={_chatId}
+          defaultGroupId={(overrideGroupId !== null ? overrideGroupId : _defaultGroupId) || undefined}
+          onCreated={onCreated}
+        />
+      ) : (
+        <CreateTaskModal
+          open={open}
+          onClose={() => { setOpen(false); setEdgeInit(null); setTaskEdgeInit(null); setEditInit(null); setPreEditInit(null); }}
+          chatId={_chatId}
+          defaultGroupId={(overrideGroupId !== null ? overrideGroupId : _defaultGroupId)}
+          groups={_groupsProp}
+          onCreated={onCreated}
+          initialEdge={edgeInit || undefined}
+          initialTaskEdge={taskEdgeInit || undefined}
+          initialPreTaskEdit={preEditInit || undefined}
+          initialEdit={editInit || undefined}
+        />
+      )}
     </div>
   );
 }
