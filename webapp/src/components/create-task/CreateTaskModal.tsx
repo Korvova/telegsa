@@ -85,6 +85,7 @@ export default function CreateTaskModal({
   // iOS: use keyboard HEIGHT only (without visualViewport.offsetTop) to avoid over-lifting the sheet
   const { bottom: kbBottom } = useKeyboardInsets(open && isiOS, sheetRef as any, 80, true, false);
   const [kbFallback, setKbFallback] = useState(0);
+  const [overlayArming, setOverlayArming] = useState(false);
   useEffect(() => {
     if (!open || !isiOS) { setKbFallback(0); return; }
     // Fallback to a reasonable keyboard height until viewport reports a value
@@ -96,6 +97,9 @@ export default function CreateTaskModal({
   // While modal is open on iOS, ask TWA to disable vertical swipes to avoid pull-to-dismiss
   useEffect(() => {
     if (!open || !isiOS) return;
+    // arm overlay for a frame to avoid immediate close by the opening click
+    setOverlayArming(true);
+    requestAnimationFrame(() => setOverlayArming(false));
     try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
     try { (WebApp as any)?.expand?.(); } catch {}
   }, [open, isiOS]);
@@ -615,7 +619,7 @@ export default function CreateTaskModal({
 
   const sheetUi = (
     <div
-      onClick={onClose}
+      onClick={() => { if (!overlayArming) onClose(); }}
       onTouchMove={(e) => { try { const n = e.target as Node; if (!sheetRef.current || !sheetRef.current.contains(n)) e.preventDefault(); } catch {} }}
       style={
         isiOS
@@ -625,6 +629,10 @@ export default function CreateTaskModal({
               paddingBottom: `env(safe-area-inset-bottom, 0px)`,
               // prevent iOS rubber band pulling the whole window
               overscrollBehaviorY: 'contain' as any,
+              isolation: 'isolate' as any,
+              contain: 'layout paint size' as any,
+              backfaceVisibility: 'hidden' as any,
+              transform: 'translateZ(0)'
             }
           : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
       }
