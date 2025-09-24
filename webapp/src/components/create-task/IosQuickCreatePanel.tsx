@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { createTask, listGroups, uploadTaskMedia, transcribeVoice, type Group } from '../../api';
+import { createTask, listGroups, transcribeVoice, API_BASE, type Group } from '../../api';
 import VoiceRecorder from '../VoiceRecorder';
 import useAudioPreview from './hooks/useAudioPreview';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
@@ -135,6 +135,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           if (pendingFiles.length) queue.push(...pendingFiles);
           setUploadProg({ done: 0, total: queue.length });
           let done = 0;
+          const failed: File[] = [];
           for (const raw of queue) {
             let f = raw;
             if (isHeicLike(f)) { f = await convertHeicToJpeg(f); }
@@ -142,10 +143,22 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             // retry up to 2 attempts
             let ok = false; let lastErr: any = null;
             for (let attempt = 0; attempt < 2 && !ok; attempt++) {
-              try { await uploadTaskMedia(newTaskId, chatId, f); ok = true; } catch (e) { lastErr = e; }
+              try { await uploadFileXHR(newTaskId, chatId, f); ok = true; } catch (e) { lastErr = e; }
             }
-            if (!ok) { try { console.warn('[ios-panel] file upload failed', f?.name, lastErr); } catch {} }
+            if (!ok) {
+              try { console.warn('[ios-panel] file upload failed', f?.name, lastErr); } catch {}
+              failed.push(raw);
+            }
             done += 1; setUploadProg({ done, total: queue.length });
+          }
+          // If some files failed, keep panel open and leave failed files in the list for retry
+          if (failed.length > 0) {
+            setPendingFiles(failed.filter(x => x !== voiceFile));
+            setVoiceFile(failed.includes(voiceFile as any) ? voiceFile : null);
+            setBusy(false);
+            setUploadProg(null);
+            try { alert(`Не удалось загрузить: ${failed.map(f => f.name || 'файл').join(', ')}`); } catch {}
+            return; // do not clear/close
           }
         }
         setText('');
@@ -205,6 +218,26 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       setSttBusy(false);
     }
   };
+
+  // XHR upload with better reliability on iOS and large files
+  function uploadFileXHR(taskId: string, chatId2: string, file: File): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        const url = `${API_BASE}/tasks/${encodeURIComponent(taskId)}/media?chatId=${encodeURIComponent(chatId2)}`;
+        const form = new FormData();
+        form.append('file', file, file.name);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.responseType = 'json';
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) return resolve();
+          return reject(new Error(`upload_failed_${xhr.status}`));
+        };
+        xhr.onerror = () => reject(new Error('upload_network_error'));
+        try { xhr.send(form); } catch (e) { reject(e as any); }
+      } catch (e) { reject(e as any); }
+    });
+  }
 
   // Convert HEIC/HEIF images to JPEG for better backend compatibility
   const isHeicLike = (f: File) => {
