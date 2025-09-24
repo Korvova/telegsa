@@ -135,9 +135,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         }}
       >
         <div
-          style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
+          style={{ position: 'relative', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
         >
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, paddingRight: 52 }}>
             <textarea
               ref={inputRef}
               rows={1}
@@ -147,28 +147,36 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               onFocus={(e) => adjustTextHeight(e.currentTarget)}
               placeholder="Новая задача…"
               style={{
-                width: '100%',
+                width: '100%', boxSizing: 'border-box',
                 background: '#0b1220', color: '#e8eaed',
-                border: '1px solid #1f2937', borderRadius: 8,
-                padding: '10px 12px',
-                fontSize: 16, lineHeight: 1.35,
-                resize: 'none' as any, overflow: 'hidden',
+                border: '1px solid #1f2937', borderRadius: 14,
+                padding: '8px 12px',
+                fontSize: 16, lineHeight: '20px',
+                minHeight: 38, resize: 'none' as any, overflow: 'hidden',
               }}
             />
+
+            {/* send slot (➤) */}
+            <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
+              <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button
+                  disabled={!text.trim() || busy}
+                  onClick={() => save()}
+                  style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: (!text.trim() || busy) ? 0.6 : 1 }}
+                  aria-label="Создать"
+                >
+                  ➤
+                </button>
+              </div>
+            </div>
+
+            {/* paperclip inside input (top-right, before send) */}
+            <button
+              onClick={() => setToolsOpen(v => !v)}
+              title="Вложения и действия"
+              style={{ position: 'absolute', right: 52, top: 8, width: 28, height: 28, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#9ca3af' }}
+            >📎</button>
           </div>
-          <button
-            onClick={() => setToolsOpen(v => !v)}
-            title="Вложения и действия"
-            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#9fb1ff' }}
-          >📎</button>
-          <button
-            disabled={!text.trim() || busy}
-            onClick={() => save()}
-            style={{ borderRadius: 999, padding: '10px 14px', background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: (!text.trim() || busy) ? 0.6 : 1 }}
-            aria-label="Создать"
-          >
-            ➤
-          </button>
         </div>
         {toolsOpen && (
           <div style={{ marginTop: 8, background: '#0f1422', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}>
