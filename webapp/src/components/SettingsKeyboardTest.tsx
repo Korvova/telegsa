@@ -27,9 +27,9 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
       const vh = vv.height || 0;
       const vt = vv.offsetTop || 0;
       const kWithOffset = Math.max(0, window.innerHeight - (vh + vt)); // «полный» инсет
-      // freeze baseline to the minimal height while keyboard is open
+      // freeze baseline height once when keyboard opens; reset on close
       if (kWithOffset > 0) {
-        baseH = (baseH === 0) ? vh : Math.min(baseH, vh);
+        if (baseH === 0) baseH = vh;
       } else {
         baseH = 0;
       }
