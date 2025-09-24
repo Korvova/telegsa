@@ -19,7 +19,9 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
     const vv: any = (window as any).visualViewport;
     if (!el || !vv) return;
     let maxSeen = 0;
-    let baseH = 0; // track minimal vv.height while kb is open
+    let baseH = 0; // minimal vv.height while kb is open
+    let freezeUpper = 0; // freeze keyboard top after initial settle window
+    let lastKh = 0; // last kHeightOnly
     let raf = 0 as any;
     const update = () => {
       const vh = vv.height || 0;
@@ -33,10 +35,12 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
       }
       const h = baseH || vh;
       const kHeightOnly = Math.max(0, window.innerHeight - h);         // базовый верх клавиатуры
-      // Клапаны: не выше верхней кромки клавиатуры (+люфт), и не ниже её (-люфт)
+      lastKh = kHeightOnly;
+      // Клапаны: не выше верхней кромки клавиатуры, и не ниже её (±люфт)
       const ALLOW_UP = 0;  // px — запрет подниматься выше
       const ALLOW_DOWN = 2; // px
-      const upper = kHeightOnly + ALLOW_UP;
+      const frozenUpper = freezeUpper > 0 ? freezeUpper : kHeightOnly;
+      const upper = frozenUpper + ALLOW_UP;
       const lower = Math.max(0, kHeightOnly - ALLOW_DOWN);
       const clamped = Math.max(lower, Math.min(kWithOffset, upper));
       // stable: предотвращаем внезапные просадки вниз, но не даём подняться выше upper
@@ -46,11 +50,16 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
       el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
     };
     const startFollow = () => {
+      freezeUpper = 0; // reset freeze; will capture at the end of follow window
       const endAt = performance.now() + 900; // активно следим ~0.9s
       cancelAnimationFrame(raf);
       const loop = () => {
         update();
         if (performance.now() < endAt) raf = requestAnimationFrame(loop);
+        else {
+          // capture final keyboard top for the rest of the session until kb hides
+          if (lastKh > 0) freezeUpper = lastKh;
+        }
       };
       raf = requestAnimationFrame(loop);
     };
