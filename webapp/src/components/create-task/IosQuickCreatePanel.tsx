@@ -130,6 +130,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     } catch {}
   };
 
+  const refocusWithCaret = () => {
+    try {
+      const el = inputRef.current as HTMLTextAreaElement | null;
+      if (!el) return;
+      el.focus({ preventScroll: true } as any);
+      const len = (el.value || '').length;
+      el.setSelectionRange?.(len, len);
+    } catch {}
+  };
+
   const overlay = (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
@@ -167,7 +177,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.85 }}>Группа</div>
           <button
-            onClick={() => { setPickerOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }}
+            onClick={() => {
+              setPickerOpen(true);
+              try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}
+            }}
             title="Выбрать группу"
             style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', fontSize: 12, cursor: 'pointer' }}
           >
@@ -285,8 +298,20 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           setGroupId={(id) => setGroupId(id)}
           selectedLabelId={selectedLabelId}
           setSelectedLabelId={(id) => setSelectedLabelId(id)}
-          onClose={() => { setPickerOpen(false); try { setTimeout(() => inputRef.current?.focus({ preventScroll: true } as any), 0); } catch {} }}
-          onApply={() => { setPickerOpen(false); try { setTimeout(() => inputRef.current?.focus({ preventScroll: true } as any), 0); } catch {} }}
+          onClose={() => {
+            setPickerOpen(false);
+            try {
+              setTimeout(() => { refocusWithCaret(); }, 0);
+              setTimeout(() => { refocusWithCaret(); }, 60);
+            } catch {}
+          }}
+          onApply={() => {
+            setPickerOpen(false);
+            try {
+              setTimeout(() => { refocusWithCaret(); }, 0);
+              setTimeout(() => { refocusWithCaret(); }, 60);
+            } catch {}
+          }}
           dockBottom={Math.max(kbBottom, kbFallback)}
         />
       </div>
