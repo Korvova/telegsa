@@ -19,22 +19,29 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
     const vv: any = (window as any).visualViewport;
     if (!el || !vv) return;
     let maxSeen = 0;
+    let baseH = 0; // track minimal vv.height while kb is open
     let raf = 0 as any;
     const update = () => {
       const vh = vv.height || 0;
       const vt = vv.offsetTop || 0;
       const kWithOffset = Math.max(0, window.innerHeight - (vh + vt)); // «полный» инсет
-      const kHeightOnly = Math.max(0, window.innerHeight - vh);         // базовый верх клавиатуры
+      // freeze baseline to the minimal height while keyboard is open
+      if (kWithOffset > 0) {
+        baseH = (baseH === 0) ? vh : Math.min(baseH, vh);
+      } else {
+        baseH = 0;
+      }
+      const h = baseH || vh;
+      const kHeightOnly = Math.max(0, window.innerHeight - h);         // базовый верх клавиатуры
       // Клапаны: не выше верхней кромки клавиатуры (+люфт), и не ниже её (-люфт)
-      const ALLOW_UP = 6;  // px
+      const ALLOW_UP = 0;  // px — запрет подниматься выше
       const ALLOW_DOWN = 2; // px
       const upper = kHeightOnly + ALLOW_UP;
       const lower = Math.max(0, kHeightOnly - ALLOW_DOWN);
       const clamped = Math.max(lower, Math.min(kWithOffset, upper));
-
+      // stable: предотвращаем внезапные просадки вниз, но не даём подняться выше upper
       if (clamped > 0) maxSeen = Math.max(maxSeen, clamped); else maxSeen = 0;
-      let k = stable ? Math.max(clamped, maxSeen) : clamped;
-      // Финальная защита в пределах [lower, upper]
+      let k = stable ? Math.max(clamped, Math.min(maxSeen, upper)) : clamped;
       k = Math.max(lower, Math.min(k, upper));
       el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
     };
