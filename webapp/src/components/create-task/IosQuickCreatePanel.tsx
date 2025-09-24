@@ -9,6 +9,7 @@ import GroupPicker from './GroupPicker';
 export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGroupId, onCreated }: { open: boolean; onClose: () => void; chatId: string; defaultGroupId?: string | null; onCreated?: () => void; }) {
   const microRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const bootRef = useRef<HTMLInputElement | null>(null); // hidden input to keep iOS gesture chain
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 80, true, false, true);
@@ -140,6 +141,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     } catch {}
   };
 
+  const refocusWithCaretStrong = () => {
+    try { inputRef.current?.click(); } catch {}
+    try { bootRef.current?.focus({ preventScroll: true } as any); } catch {}
+    refocusWithCaret();
+    // schedule a couple more attempts for iOS
+    setTimeout(() => refocusWithCaret(), 0);
+    setTimeout(() => refocusWithCaret(), 60);
+    requestAnimationFrame(() => refocusWithCaret());
+  };
+
   const overlay = (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
@@ -156,6 +167,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       onTouchMove={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
       onWheel={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
     >
+      {/* hidden focus target to rebootstrap iOS keyboard reliably */}
+      <input ref={bootRef} aria-hidden={true} tabIndex={-1} style={{ position:'fixed', opacity:0, width:1, height:1, bottom:0, left:0, pointerEvents:'none' }} />
+
       <div
         ref={microRef}
         onClick={(e) => e.stopPropagation()}
@@ -299,18 +313,14 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           selectedLabelId={selectedLabelId}
           setSelectedLabelId={(id) => setSelectedLabelId(id)}
           onClose={() => {
+            // try to restore caret immediately and with retries
+            try { refocusWithCaretStrong(); } catch {}
             setPickerOpen(false);
-            try {
-              setTimeout(() => { refocusWithCaret(); }, 0);
-              setTimeout(() => { refocusWithCaret(); }, 60);
-            } catch {}
           }}
           onApply={() => {
+            // try to restore caret immediately and with retries
+            try { refocusWithCaretStrong(); } catch {}
             setPickerOpen(false);
-            try {
-              setTimeout(() => { refocusWithCaret(); }, 0);
-              setTimeout(() => { refocusWithCaret(); }, 60);
-            } catch {}
           }}
           dockBottom={Math.max(kbBottom, kbFallback)}
         />
