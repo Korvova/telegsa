@@ -135,7 +135,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         }}
       >
         <div
-          style={{ position: 'relative', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
+          style={{
+            position: 'relative',
+            background: '#111827',
+            border: '1px solid #2a3346',
+            borderRadius: 12,
+            // при открытой панели действий убираем нижние скругления, чтобы прижать блоки
+            borderBottomLeftRadius: toolsOpen ? 0 : 12,
+            borderBottomRightRadius: toolsOpen ? 0 : 12,
+            padding: 8,
+          }}
         >
           <div style={{ position: 'relative', flex: 1, minWidth: 0, paddingRight: 52 }}>
             <textarea
@@ -179,7 +188,21 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           </div>
         </div>
         {toolsOpen && (
-          <div style={{ marginTop: 8, background: '#0f1422', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}>
+          <div
+            style={{
+              // без зазора к верхнему блоку
+              marginTop: 0,
+              background: '#0f1422',
+              border: '1px solid #2a3346',
+              // убираем двойную границу и скругление сверху — прилипает вплотную
+              borderTopWidth: 0,
+              borderTopLeftRadius: 0,
+              borderTopRightRadius: 0,
+              borderBottomLeftRadius: 12,
+              borderBottomRightRadius: 12,
+              padding: 8,
+            }}
+          >
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
               <button title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>📑</button>
               <button title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🖼️</button>
