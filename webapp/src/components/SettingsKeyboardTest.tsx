@@ -45,11 +45,9 @@ function useKeyboardDock<T extends HTMLElement>(
     if (enable) {
       if (lockedRef.current) return;
       const scrollY = window.scrollY || window.pageYOffset || 0;
+      // Фиксируем только позицию и top, избегая изменения ширины/границ — чтобы контент не "расползался"
       body.style.position = "fixed";
       body.style.top = `-${scrollY}px`;
-      body.style.left = "0";
-      body.style.right = "0";
-      body.style.width = "100%";
       (docEl.style as any).overscrollBehaviorY = "contain";
       lockedRef.current = { scrollY };
     } else {
@@ -57,9 +55,6 @@ function useKeyboardDock<T extends HTMLElement>(
       const { scrollY } = lockedRef.current;
       body.style.position = "";
       body.style.top = "";
-      body.style.left = "";
-      body.style.right = "";
-      body.style.width = "";
       (docEl.style as any).overscrollBehaviorY = "";
       // сразу возвращаем скролл (без анимации)
       window.scrollTo(0, scrollY);
@@ -358,6 +353,9 @@ export default function SettingsKeyboardTest({ onBack: _onBack }: { onBack: () =
               const el = microRef.current as HTMLDivElement | null;
               if (el) { el.style.display = ''; el.style.opacity = '1'; el.style.visibility = 'visible'; }
               setHidden(false);
+              // Синхронный фокус внутри пользовательского жеста — поднимет клавиатуру сразу
+              try { inputRef.current?.focus({ preventScroll: true } as any); } catch {}
+              // fallback через тик, если iOS применит layout после клика
               setTimeout(() => { try { inputRef.current?.focus({ preventScroll: true } as any); } catch {} }, 0);
             } catch {}
           }}
