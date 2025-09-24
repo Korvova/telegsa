@@ -12,6 +12,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [busy, setBusy] = useState(false);
   const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 80, true, false, true);
   const [kbFallback, setKbFallback] = useState(0);
+  const [arming, setArming] = useState(true);
 
   useEffect(() => {
     if (!open) return;
@@ -25,7 +26,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     tryFocus();
     const t1 = setTimeout(tryFocus, 60);
     const t2 = setTimeout(tryFocus, 240);
-    return () => { clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); };
+    // arm overlay for one frame to ignore the opening click
+    setArming(true);
+    requestAnimationFrame(() => setArming(false));
+    return () => { clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); setArming(true); };
   }, [open]);
 
   // accept external focus request from FAB to keep iOS gesture chain
@@ -82,8 +86,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
-      onClick={() => onClose()}
+      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
+      onClick={() => { if (!arming) onClose(); }}
       onTouchStart={(e) => {
         try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
       }}

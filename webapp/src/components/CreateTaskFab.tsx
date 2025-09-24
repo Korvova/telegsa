@@ -132,9 +132,10 @@ export default function CreateTaskFab({
         style={{ position: 'fixed', opacity: 0, width: 1, height: 1, bottom: 0, left: 0, pointerEvents: 'none' }}
       />
       <button
-        onMouseDown={() => { if (isIOS()) { try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {} } }}
-        onTouchStart={() => { if (isIOS()) { try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {} } }}
-        onClick={openModal}
+        onMouseDown={(e) => { if (isIOS()) { try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {} } openModal(); e.preventDefault(); }}
+        onTouchStart={() => { if (isIOS()) { try { iosFocusRef.current?.focus({ preventScroll: true } as any); } catch {} } openModal(); }}
+        // avoid duplicate click close by not using onClick for opening on iOS
+        onClick={() => { if (!isIOS()) openModal(); }}
         aria-label="Создать задачу"
         style={{
           position: 'fixed',
