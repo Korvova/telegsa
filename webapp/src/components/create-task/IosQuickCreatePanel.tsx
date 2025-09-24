@@ -13,6 +13,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 80, true, false, true);
   const [kbFallback, setKbFallback] = useState(0);
   const [arming, setArming] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -120,6 +121,11 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         <div
           style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
         >
+          <button
+            onClick={() => setToolsOpen(v => !v)}
+            title="Вложения и действия"
+            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#9fb1ff' }}
+          >📎</button>
           <input
             ref={inputRef}
             value={text}
@@ -136,6 +142,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             ➤
           </button>
         </div>
+        {toolsOpen && (
+          <div style={{ marginTop: 8, background: '#0f1422', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+              <button title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>📑</button>
+              <button title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🖼️</button>
+              <button title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>📸</button>
+              <button title="🚩 Ярлык" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🚩</button>
+              <button title="☝️ Упоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>☝️</button>
+              <button title="⏰ Напоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>⏰</button>
+              <button title="🔘 Предзадача" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🔘</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
