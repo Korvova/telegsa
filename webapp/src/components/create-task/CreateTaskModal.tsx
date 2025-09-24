@@ -617,6 +617,12 @@ export default function CreateTaskModal({
 
   if (!open) return null;
 
+  // guard against over-lift on iOS: prefer VisualViewport height if available
+  const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+  const vvH = vv?.height || (typeof window !== 'undefined' ? window.innerHeight : 0);
+  const vvLift = Math.max(0, (typeof window !== 'undefined' ? window.innerHeight : 0) - vvH);
+  const lift = vvLift > 0 ? Math.min(Math.max(kbBottom, kbFallback), vvLift) : Math.max(kbBottom, kbFallback);
+
   const sheetUi = (
     <div
       onClick={() => { if (!overlayArming) onClose(); }}
@@ -662,7 +668,7 @@ export default function CreateTaskModal({
                 touchAction: 'auto',
                 overscrollBehaviorY: 'contain' as any,
                 zIndex: 10000,
-                transform: `translate3d(0, -${Math.max(kbBottom, kbFallback)}px, 0)`,
+                transform: `translate3d(0, -${lift}px, 0)`,
                 transition: 'transform 80ms ease-out',
                 backfaceVisibility: 'hidden',
                 willChange: 'transform',
