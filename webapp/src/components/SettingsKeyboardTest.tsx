@@ -24,15 +24,18 @@ export default function SettingsKeyboardTest({ onBack }: { onBack: () => void })
       const vh = vv.height || 0;
       const vt = vv.offsetTop || 0;
       const kWithOffset = Math.max(0, window.innerHeight - (vh + vt)); // «полный» инсет
-      const kHeightOnly = Math.max(0, window.innerHeight - vh);         // жёсткая верхняя граница
-      // Запрещаем подъём выше фактической высоты клавиатуры: clamp к heightOnly (+ небольшой люфт)
-      const ALLOWANCE = 6; // px — небольшой люфт на анимацию
-      const allowed = Math.max(0, Math.min(kWithOffset, kHeightOnly + ALLOWANCE));
+      const kHeightOnly = Math.max(0, window.innerHeight - vh);         // базовый верх клавиатуры
+      // Клапаны: не выше верхней кромки клавиатуры (+люфт), и не ниже её (-люфт)
+      const ALLOW_UP = 6;  // px
+      const ALLOW_DOWN = 2; // px
+      const upper = kHeightOnly + ALLOW_UP;
+      const lower = Math.max(0, kHeightOnly - ALLOW_DOWN);
+      const clamped = Math.max(lower, Math.min(kWithOffset, upper));
 
-      if (allowed > 0) maxSeen = Math.max(maxSeen, allowed); else maxSeen = 0;
-      let k = stable ? Math.max(allowed, maxSeen) : allowed;
-      // Финальная защита: никогда не выше допустимого
-      k = Math.min(k, allowed);
+      if (clamped > 0) maxSeen = Math.max(maxSeen, clamped); else maxSeen = 0;
+      let k = stable ? Math.max(clamped, maxSeen) : clamped;
+      // Финальная защита в пределах [lower, upper]
+      k = Math.max(lower, Math.min(k, upper));
       el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
     };
     const startFollow = () => {
