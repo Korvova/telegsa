@@ -137,12 +137,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         <div
           style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: '#111827', border: '1px solid #2a3346', borderRadius: 12, padding: 8 }}
         >
-          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-            <button
-              onClick={() => setToolsOpen(v => !v)}
-              title="Вложения и действия"
-              style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 28, height: 28, borderRadius: 8, border: '1px solid #2a3346', background: '#172133', color: '#9fb1ff' }}
-            >📎</button>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <textarea
               ref={inputRef}
               rows={1}
@@ -155,12 +150,17 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 width: '100%',
                 background: '#0b1220', color: '#e8eaed',
                 border: '1px solid #1f2937', borderRadius: 8,
-                padding: '10px 12px 10px 44px',
+                padding: '10px 12px',
                 fontSize: 16, lineHeight: 1.35,
                 resize: 'none' as any, overflow: 'hidden',
               }}
             />
           </div>
+          <button
+            onClick={() => setToolsOpen(v => !v)}
+            title="Вложения и действия"
+            style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #2a3346', background: '#172133', color: '#9fb1ff' }}
+          >📎</button>
           <button
             disabled={!text.trim() || busy}
             onClick={() => save()}
