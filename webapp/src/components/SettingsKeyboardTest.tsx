@@ -1,221 +1,375 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useKeyboardInsets } from '../hooks/useKeyboardInsets';
+// src/components/SettingsKeyboardTest.tsx
+import React, { useEffect, useRef, useState } from "react";
 
-type Variant = 'hook' | 'micro' | 'pos-above' | 'sticky-top' | 'textarea';
+/**
+ * useKeyboardDock — «прилипает» контейнер к верхней кромке iOS-клавиатуры.
+ * Отличие: моментальное скрытие при закрытии клавиатуры (closeFollowMs=0),
+ * без «подвисаний» на 300–900 мс.
+ */
+function useKeyboardDock<T extends HTMLElement>(
+  ref: React.RefObject<T | null>,
+  opts?: {
+    openFollowMs?: number;   // сколько активно «следовать» во время ОТКРЫТИЯ клавиатуры
+    closeFollowMs?: number;  // во время ЗАКРЫТИЯ (по умолчанию 0 — мгновенно)
+    noLift?: boolean;        // блокировать поднятие пальцем и скролл страницы при открытой клавиатуре
+    onHide?: (reason: 'outside') => void; // уведомление о мгновенном скрытии по тапу вне
+    onShowAbove?: () => void;             // показался над клавиатурой
+    onShowBottom?: () => void;            // показался внизу
+    onDebug?: (m: { inner: number; vvH: number; vvTop: number; kWithOffset: number; kHeightOnly: number; appliedTop: number; baseH: number; frozenTop: number; open: boolean; locked: boolean }) => void;
+  }
+) {
+  const openFollowMs = opts?.openFollowMs ?? 700;
+  const closeFollowMs = opts?.closeFollowMs ?? 0; // ключ к мгновенному исчезновению
+  const noLift = opts?.noLift ?? true;
+  const onHide = opts?.onHide;
+  const onShowAbove = opts?.onShowAbove;
+  const onShowBottom = opts?.onShowBottom;
+  const onDebug = opts?.onDebug;
 
-export default function SettingsKeyboardTest({ onBack }: { onBack: () => void }) {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const isiOS = useMemo(() => /iPad|iPhone|iPod/i.test(navigator.userAgent || ''), []);
-  const [includeOffset, setIncludeOffset] = useState(true);
-  const [stable, setStable] = useState(true);
-  const { bottom } = useKeyboardInsets(true, wrapRef as any, 80, true, includeOffset, stable);
-  const [variant, setVariant] = useState<Variant>('micro');
-  const [dbg, setDbg] = useState<{ inner:number; vvH:number; vvTop:number; with:number; hOnly:number; baseH:number; upper:number; trans:number }>(()=>({ inner:0, vvH:0, vvTop:0, with:0, hOnly:0, baseH:0, upper:0, trans:0 }));
+  const rafRef = useRef<number | null>(null);
+  const baseHRef = useRef<number>(0);     // минимальная vv.height пока клавиатура открыта
+  const lastTopRef = useRef<number>(0);   // последний top клавиатуры
+  const frozenTopRef = useRef<number>(0); // зафиксированный top на время активной клавиатуры
+  const lockedRef = useRef<null | { scrollY: number }>(null);
+  const focusedRef = useRef<boolean>(false); // есть ли фокус в инпуте
+  const suppressUntilRef = useRef<number>(0); // подавить автопоказ снизу/промежуточные перерисовки
 
-  // Micro-utility (vanilla vv.height+offsetTop)
-  const microRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (variant !== 'micro') return;
-    const el = microRef.current;
-    const vv: any = (window as any).visualViewport;
-    if (!el || !vv) return;
-    // let maxSeen = 0; // не нужен в жестком режиме
-    let baseH = 0; // minimal vv.height while kb is open
-    let freezeUpper = 0; // freeze keyboard top after initial settle window
-    let lastKh = 0; // last kHeightOnly
-    let raf = 0 as any;
-    const update = () => {
-      const vh = vv.height || 0;
-      const vt = vv.offsetTop || 0;
-      const kWithOffset = Math.max(0, window.innerHeight - (vh + vt)); // «полный» инсет
-      // freeze baseline height once when keyboard opens; reset on close
-      if (kWithOffset > 0) {
-        if (baseH === 0) baseH = vh;
+  const vv = (typeof window !== "undefined" ? (window as any).visualViewport : undefined) as VisualViewport | undefined;
+
+  const clearRaf = () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null; };
+
+  const lockScroll = (enable: boolean) => {
+    if (!noLift) return;
+    const docEl = document.documentElement;
+    const body = document.body;
+    if (enable) {
+      if (lockedRef.current) return;
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      body.style.position = "fixed";
+      body.style.top = `-${scrollY}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      (docEl.style as any).overscrollBehaviorY = "contain";
+      lockedRef.current = { scrollY };
+    } else {
+      if (!lockedRef.current) return;
+      const { scrollY } = lockedRef.current;
+      body.style.position = "";
+      body.style.top = "";
+      body.style.left = "";
+      body.style.right = "";
+      body.style.width = "";
+      (docEl.style as any).overscrollBehaviorY = "";
+      // сразу возвращаем скролл (без анимации)
+      window.scrollTo(0, scrollY);
+      lockedRef.current = null;
+    }
+  };
+
+  const kWithOffset = () => {
+    if (!vv) return 0;
+    const vh = vv.height ?? 0;
+    const vt = vv.offsetTop ?? 0;
+    return Math.max(0, window.innerHeight - (vh + vt));
+  };
+
+  // верх клавиатуры: window.innerHeight - min(vv.height) (игнорим offsetTop)
+  const kTopOnly = () => {
+    if (!vv) return 0;
+    const vh = vv.height ?? 0;
+    if (kWithOffset() > 0) {
+      if (baseHRef.current === 0) baseHRef.current = vh;
+    } else {
+      baseHRef.current = 0; // клавиатура скрылась
+    }
+    const h = baseHRef.current || vh;
+    const t = Math.max(0, window.innerHeight - h);
+    lastTopRef.current = t;
+    return t;
+  };
+
+  const apply = (el: T) => {
+    const vh = vv?.height || 0;
+    const vt = vv?.offsetTop || 0;
+    const open = Math.max(0, window.innerHeight - (vh + vt)) > 0;
+    const raw = kTopOnly();
+    const t = frozenTopRef.current > 0 ? frozenTopRef.current : raw;
+    el.style.transform = t > 0 ? `translateY(-${t}px)` : "translateY(0)";
+    // лочим/анлочим скролл моментально в зависимости от состояния
+    lockScroll(focusedRef.current);
+    try {
+      onDebug?.({
+        inner: window.innerHeight,
+        vvH: vh,
+        vvTop: vt,
+        kWithOffset: Math.max(0, window.innerHeight - (vh + vt)),
+        kHeightOnly: Math.max(0, window.innerHeight - vh),
+        appliedTop: t,
+        baseH: baseHRef.current || vh,
+        frozenTop: frozenTopRef.current || 0,
+        open,
+        locked: !!lockedRef.current,
+      });
+    } catch {}
+    return t;
+  };
+
+  const followFor = (ms: number, el: T) => {
+    const until = performance.now() + ms;
+    clearRaf();
+    if (ms <= 0) {
+      // мгновенно применяем и выходим
+      apply(el);
+      return;
+    }
+    const tick = () => {
+      const t = apply(el);
+      if (performance.now() < until && t > 0) {
+        rafRef.current = requestAnimationFrame(tick);
       } else {
-        baseH = 0;
+        // зафиксируем достигнутый top до закрытия клавиатуры
+        if (lastTopRef.current > 0) frozenTopRef.current = lastTopRef.current;
+        rafRef.current = null;
+        // если фокус активен и док зафиксирован над клавиатурой — сообщим
+        try { if (focusedRef.current && frozenTopRef.current > 0) onShowAbove?.(); } catch {}
       }
-      const h = baseH || vh;
-      const kHeightOnly = Math.max(0, window.innerHeight - h);         // базовый верх клавиатуры
-      lastKh = kHeightOnly;
-      // Клапаны: не выше верхней кромки клавиатуры, и не ниже её (±люфт)
-      const ALLOW_UP = 0;  // px — запрет подниматься выше
-      const frozenUpper = freezeUpper > 0 ? freezeUpper : kHeightOnly;
-      const upper = frozenUpper + ALLOW_UP;
-      // Жёстко прилипнуть к верхней кромке клавиатуры: игнорируем offset смещения при драг-свайпах
-      const k = upper; // всегда верхняя граница
-      el.style.transform = k > 0 ? `translateY(-${k}px)` : 'translateY(0)';
-      setDbg({ inner: window.innerHeight, vvH: vh, vvTop: vt, with: kWithOffset, hOnly: kHeightOnly, baseH, upper, trans: k });
     };
-    const startFollow = () => {
-      freezeUpper = 0; // reset freeze; will capture at the end of follow window
-      const endAt = performance.now() + 900; // активно следим ~0.9s
-      cancelAnimationFrame(raf);
-      const loop = () => {
-        update();
-        if (performance.now() < endAt) raf = requestAnimationFrame(loop);
-        else {
-          // capture final keyboard top for the rest of the session until kb hides
-          if (lastKh > 0) freezeUpper = lastKh;
-        }
-      };
-      raf = requestAnimationFrame(loop);
-    };
-    const onAny = () => { update(); startFollow(); };
+    rafRef.current = requestAnimationFrame(tick);
+  };
 
-    vv.addEventListener('resize', onAny);
-    vv.addEventListener('scroll', onAny);
-    document.addEventListener('focusin', onAny, true);
-    document.addEventListener('focusout', onAny, true);
-    document.addEventListener('click', onAny, true);
-    document.addEventListener('touchstart', onAny, { capture: true, passive: true } as any);
-    window.addEventListener('orientationchange', onAny);
-    // мгновенно при монтировании
-    update();
-    startFollow();
-    return () => {
-      cancelAnimationFrame(raf);
-      vv.removeEventListener('resize', onAny);
-      vv.removeEventListener('scroll', onAny);
-      document.removeEventListener('focusin', onAny, true);
-      document.removeEventListener('focusout', onAny, true);
-      document.removeEventListener('click', onAny, true);
-      document.removeEventListener('touchstart', onAny, { capture: true } as any);
-      window.removeEventListener('orientationchange', onAny);
-    };
-  }, [variant, stable]);
-
-  // pos-above-keyboard approach: adjust bottom instead of transform
-  const posAboveRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (variant !== 'pos-above') return;
-    const el = posAboveRef.current;
-    const vv: any = (window as any).visualViewport;
+    const el = ref.current as T | null;
     if (!el || !vv) return;
-    let baseH = vv.height; // baseline stored once (as в примере)
-    const update = () => {
-      // keep baseH on iOS (do not update while keyboard animates)
-      if (!isiOS) baseH = vv.height;
-      const delta = Math.max(0, baseH - (vv.height || 0));
-      el.style.bottom = `calc(${10 + delta}px + env(safe-area-inset-bottom, 0px))`;
+
+    // Не перехватываем тачи, чтобы не мешать фокусу инпута; поднимание предотвращаем заморозкой скролла
+    const onResizeOrScroll = () => {
+      // если фокус внутри — даём сопровождение; иначе — мгновенно скрываем/держим внизу
+      const now = performance.now();
+      if (!focusedRef.current && now < suppressUntilRef.current) {
+        // во время подавления — не пытаемся что‑то показать; держим скрытым
+        try { (el as any).style.display = 'none'; } catch {}
+        return;
+      }
+      const ms = focusedRef.current ? openFollowMs : closeFollowMs;
+      followFor(ms, el);
     };
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
-    window.addEventListener('orientationchange', update);
-    update();
+
+    const onFocusIn = () => {
+      // открытие — можно дать чуть «сопровождения»
+      try { (el as any).style.display = ''; (el as any).style.opacity = '1'; (el as any).style.visibility = 'visible'; } catch {}
+      focusedRef.current = true;
+      // Предсказать верх клавиатуры мгновенно, чтобы панель не появлялась с лагом
+      const vh = vv?.height || 0;
+      const predicted = (lastTopRef.current > 0) ? lastTopRef.current : Math.max(0, window.innerHeight - (vh || 0)) || 340;
+      el.style.transform = predicted > 0 ? `translateY(-${predicted}px)` : 'translateY(0)';
+      // Явно залочим скролл на время ввода
+      lockScroll(true);
+      followFor(openFollowMs, el);
+    };
+
+    const onFocusOut = () => {
+      // закрытие — сразу убрать док без ожидания
+      clearRaf();
+      lockScroll(false);
+      focusedRef.current = false;
+      frozenTopRef.current = 0;
+      el.style.transform = "translateY(0)";
+      const now = performance.now();
+      if (now >= suppressUntilRef.current) {
+        // вернуть отображение панели внизу
+        try { (el as any).style.display = ""; (el as any).style.opacity = "1"; (el as any).style.visibility = "visible"; } catch {}
+        try { onShowBottom?.(); } catch {}
+      } else {
+        // держим скрытым до окончания подавления
+        try { (el as any).style.display = "none"; } catch {}
+      }
+      // iOS иногда обновляет viewport чуть позже — сделаем пару быстрых повторов
+      setTimeout(() => apply(el), 0);
+      setTimeout(() => apply(el), 80);
+      setTimeout(() => apply(el), 160);
+    };
+
+    // Мгновенное скрытие по тапу вне дока (до blur), чтобы не было задержки ~500мс
+    const instantHide = () => {
+      clearRaf();
+      lockScroll(false);
+      focusedRef.current = false;
+      frozenTopRef.current = 0;
+      suppressUntilRef.current = performance.now() + 600; // подавим автопоказ снизу на короткое время
+      try {
+        (el as any).style.display = 'none';
+        (el as any).style.opacity = '0';
+        (el as any).style.visibility = 'hidden';
+      } catch {}
+      el.style.transform = 'translateY(0)';
+      try { onHide?.('outside'); } catch {}
+      try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
+    };
+
+    const onDocTouchStart = (e: Event) => {
+      try {
+        const n = e.target as Node | null;
+        if (!n) return;
+        const withinDock = el.contains(n);
+        let insideEditable = false;
+        try {
+          const elNode = n as Element;
+          if (elNode && elNode.closest) {
+            insideEditable = !!elNode.closest('input,textarea,select,[contenteditable="true"]');
+          }
+        } catch {}
+        // Скрываем если тап снаружи панели ИЛИ внутри панели, но не по полю ввода
+        if (!withinDock || (withinDock && !insideEditable)) {
+          if (!focusedRef.current && !lockedRef.current) return; // не активны
+          instantHide();
+        }
+      } catch {}
+    };
+    const onDocPointerDown = onDocTouchStart;
+    const onDocMouseDown = onDocTouchStart;
+    const onDocClick = onDocTouchStart;
+
+    vv.addEventListener("resize", onResizeOrScroll);
+    vv.addEventListener("scroll", onResizeOrScroll);
+    window.addEventListener("orientationchange", onResizeOrScroll);
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    document.addEventListener("touchstart", onDocTouchStart, { capture: true } as any);
+    document.addEventListener("pointerdown", onDocPointerDown as any, { capture: true } as any);
+    document.addEventListener("mousedown", onDocMouseDown as any, { capture: true } as any);
+    document.addEventListener("click", onDocClick as any, { capture: true } as any);
+
+    // старт
+    followFor(closeFollowMs, el); // если клава закрыта — сразу 0; если открыта — применится
+
     return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
-      window.removeEventListener('orientationchange', update);
+      clearRaf();
+      vv.removeEventListener("resize", onResizeOrScroll);
+      vv.removeEventListener("scroll", onResizeOrScroll);
+      window.removeEventListener("orientationchange", onResizeOrScroll);
+      document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("focusout", onFocusOut, true);
+      document.removeEventListener("touchstart", onDocTouchStart as any, { capture: true } as any);
+      document.removeEventListener("pointerdown", onDocPointerDown as any, { capture: true } as any);
+      document.removeEventListener("mousedown", onDocMouseDown as any, { capture: true } as any);
+      document.removeEventListener("click", onDocClick as any, { capture: true } as any);
+      lockScroll(false);
     };
-  }, [variant, isiOS]);
+  }, [ref, openFollowMs, closeFollowMs, noLift]);
+}
+
+export default function SettingsKeyboardTest({ onBack: _onBack }: { onBack: () => void }) {
+  const microRef = useRef<HTMLDivElement | null>(null);
+  const [dbg, setDbg] = useState<string | null>(null);
+  const dbgTimer = useRef<number | null>(null);
+  const [tone, setTone] = useState<'dark' | 'white'>('dark');
+  const toneTimer = useRef<number | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const [metrics, setMetrics] = useState<{ inner: number; vvH: number; vvTop: number; kWithOffset: number; kHeightOnly: number; appliedTop: number; baseH: number; frozenTop: number; open: boolean; locked: boolean } | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const flash = (s: string) => {
+    setDbg(s);
+    if (dbgTimer.current) clearTimeout(dbgTimer.current);
+    dbgTimer.current = window.setTimeout(() => setDbg(null), 800);
+  };
+  const flashWhite = () => {
+    setTone('white');
+    if (toneTimer.current) clearTimeout(toneTimer.current);
+    toneTimer.current = window.setTimeout(() => setTone('dark'), 700);
+  };
+  // Строгая фиксация: блокируем подложку при открытой клавиатуре, чтобы док не «улетал» вверх
+  useKeyboardDock(microRef, {
+    openFollowMs: 600,
+    closeFollowMs: 0,
+    noLift: true,
+    onHide: () => { setHidden(true); flash('HIDE (outside)'); /* hide instantly, no color flash */ },
+    onShowAbove: () => { setHidden(false); flash('SHOW above'); },
+    onShowBottom: () => { setHidden(false); flash('SHOW bottom'); flashWhite(); },
+    onDebug: (m) => setMetrics(m),
+  });
 
   return (
-    <div ref={wrapRef} style={{ background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:16, padding:12 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-        <button onClick={onBack} style={{ background:'transparent', border:'1px solid #2a3346', color:'#e8eaed', borderRadius:8, padding:'6px 10px', cursor:'pointer' }}>← Назад</button>
-        <div style={{ fontWeight:800 }}>🧪 Тест клавиатуры (iOS веб)</div>
-      </div>
-
-      <div style={{ lineHeight:1.55, opacity:.95 }}>
-        {Array.from({ length: 30 }).map((_,i)=> (
-          <p key={i} style={{ margin:'8px 0' }}>
-            Текст #{i+1}. Прокрутите страницу вверх/вниз, затем нажмите в поле ввода — панель ввода должна «прилипнуть» над клавиатурой.
+    <div style={{ minHeight: "100svh", background: "#0b1220", color: "#e8eaed" }}>
+      {dbg && (
+        <div style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', background: '#2563eb', color: '#fff', border: '1px solid #1f2937', borderRadius: 999, padding: '4px 10px', fontSize: 12, zIndex: 20000 }}>
+          {dbg}
+        </div>
+      )}
+      {metrics && (
+        <div style={{ position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 60px)', left: 10, zIndex: 20000, background: 'rgba(0,0,0,.6)', color: '#fff', border: '1px solid #1f2937', borderRadius: 8, padding: '6px 8px', fontSize: 12, lineHeight: 1.4 }}>
+          <div>kb open: {metrics.open ? 'yes' : 'no'} | locked: {metrics.locked ? 'yes' : 'no'}</div>
+          <div>kHeightOnly: {Math.round(metrics.kHeightOnly)} px</div>
+          <div>kWithOffset: {Math.round(metrics.kWithOffset)} px</div>
+          <div>appliedTop: {Math.round(metrics.appliedTop)} px</div>
+          <div>vv.height: {Math.round(metrics.vvH)} | vv.top: {Math.round(metrics.vvTop)}</div>
+        </div>
+      )}
+      <div style={{ padding: 12 }}>
+        {Array.from({ length: 60 }).map((_, i) => (
+          <p key={i} style={{ margin: "10px 0", lineHeight: 1.6, opacity: 0.95 }}>
+            Это тестовый текст #{i + 1}. Прокручивай страницу — панель ввода снизу
+            должна оставаться строго над клавиатурой на iOS, не смещаясь ни вверх,
+            ни вниз, пока клавиатура открыта.
           </p>
         ))}
       </div>
-
-      {/* Debug overlay */}
-      <div style={{ position:'fixed', left:10, right:10, top:10, zIndex:10002, background:'rgba(0,0,0,.6)', border:'1px solid #2a3346', borderRadius:8, padding:8, fontSize:12 }}>
-        <div>inner: {dbg.inner} | vvH: {Math.round(dbg.vvH)} | vvTop: {Math.round(dbg.vvTop)}</div>
-        <div>withOffset: {Math.round(dbg.with)} | heightOnly: {Math.round(dbg.hOnly)} | baseH: {Math.round(dbg.baseH)}</div>
-        <div>upper: {Math.round(dbg.upper)} | transformY: -{Math.round(dbg.trans)}</div>
-      </div>
-
-      {/* Переключение вариантов */}
-      <div style={{ position:'sticky', top:0, zIndex:5, background:'#0b1220', paddingBottom:8 }}>
-        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-          {([
-            ['hook','Hook (vv height/offset via useKeyboardInsets)'],
-            ['micro','Micro (vv height+offset, vanilla)'],
-            ['pos-above','pos-above (bottom adjust)'],
-            ['sticky-top','Sticky top (top:0)'],
-            ['textarea','Textarea (iOS autofocus)'],
-          ] as [Variant,string][]).map(([k,label]) => (
-            <button key={k} onClick={()=>setVariant(k)} style={{
-              padding:'6px 10px', borderRadius:999, border:'1px solid #2a3346',
-              background: variant===k ? '#2563eb' : '#202840', color: variant===k ? '#fff' : '#e8eaed', cursor:'pointer'
-            }}>{label}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Вариант 1: Hook (transform by kb) */}
-      {variant==='hook' && (
       <div
+        ref={microRef}
         style={{
-          position:'fixed', left:10, right:10, bottom:0, zIndex:10000,
-          transform: `translate3d(0, -${isiOS ? bottom : 0}px, 0)`,
-          transition: 'transform 80ms ease-out',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          position: "fixed",
+          left: 10,
+          right: 10,
+          bottom: 0,
+          zIndex: 10000,
+          transform: "translate3d(0,0,0)",
+          transition: "none",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          willChange: "transform",
+          backfaceVisibility: "hidden" as any,
+          // touchAction не задаём, чтобы не мешать фокусу инпута на iOS
         }}
       >
-        <div style={{ display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            background: tone === 'white' ? '#ffffff' : '#111827',
+            border: tone === 'white' ? '1px solid #e5e7eb' : '1px solid #2a3346',
+            borderRadius: 12,
+            padding: 8,
+          }}
+        >
           <input
             placeholder="Сообщение…"
-            style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }}
-            onFocus={()=>{ try { window.scrollTo({ top: 0, behavior:'smooth' }); } catch {} }}
+            style={{
+              flex: 1,
+              background: tone === 'white' ? '#ffffff' : '#0b1220',
+              color: tone === 'white' ? '#111827' : '#e8eaed',
+              border: tone === 'white' ? '1px solid #d1d5db' : '1px solid #1f2937',
+              borderRadius: 8,
+              padding: '10px 12px',
+              fontSize: 16,
+            }}
+            ref={inputRef}
           />
-          <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
-        </div>
-        <div style={{ display:'flex', gap:8, marginTop:8, opacity:.85, fontSize:12 }}>
-          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <input type="checkbox" checked={includeOffset} onChange={e=>setIncludeOffset(e.target.checked)} /> height + offsetTop
-          </label>
-          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <input type="checkbox" checked={stable} onChange={e=>setStable(e.target.checked)} /> stable (не опускать при панорамировании)
-          </label>
-          <span style={{ marginLeft:'auto' }}>kb: {Math.round(bottom)} px</span>
         </div>
       </div>
-      )}
-
-      {/* Вариант 2: Micro-utility (vanilla) */}
-      {variant==='micro' && (
-        <div ref={microRef} style={{ position:'fixed', left:10, right:10, bottom:0, zIndex:10000, transform:'translate3d(0,0,0)', transition:'none', paddingBottom:'env(safe-area-inset-bottom, 0px)' }}>
-          <div style={{ display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
-            <input placeholder="Сообщение…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
-            <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
-          </div>
-        </div>
-      )}
-
-      {/* Вариант 3: pos-above-keyboard (adjust bottom) */}
-      {variant==='pos-above' && (
-        <div ref={posAboveRef} style={{ position:'fixed', left:0, right:0, bottom:'10px', zIndex:10000 }}>
-          <div style={{ margin:'0 10px', display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
-            <input placeholder="Сообщение…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
-            <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
-          </div>
-        </div>
-      )}
-
-      {/* Вариант 4: Sticky top (не над клавиатурой, но не уезжает при скролле) */}
-      {variant==='sticky-top' && (
-        <div style={{ position:'sticky', top:0, zIndex:5, background:'#0b1220', padding:'8px 0' }}>
-          <div style={{ display:'flex', gap:8, alignItems:'center', background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
-            <input placeholder="Sticky сверху…" style={{ flex:1, background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
-            <button style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отпр.</button>
-          </div>
-        </div>
-      )}
-
-      {/* Вариант 5: Textarea с iOS-only autofocus */}
-      {variant==='textarea' && (
-        <div style={{ position:'fixed', left:10, right:10, bottom:0, zIndex:10000, transform:`translate3d(0, -${isiOS?bottom:0}px, 0)`, transition:'transform 80ms ease-out', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-          <div style={{ background:'#111827', border:'1px solid #2a3346', borderRadius:12, padding:8 }}>
-            <textarea rows={4} wrap='hard' placeholder='Сообщение…' autoFocus={isiOS} style={{ width:'100%', boxSizing:'border-box', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:8, padding:'10px 12px', fontSize:16 }} />
-          </div>
-        </div>
+      {hidden && (
+        <button
+          onClick={() => {
+            try {
+              const el = microRef.current as HTMLDivElement | null;
+              if (el) { el.style.display = ''; el.style.opacity = '1'; el.style.visibility = 'visible'; }
+              setHidden(false);
+              setTimeout(() => { try { inputRef.current?.focus({ preventScroll: true } as any); } catch {} }, 0);
+            } catch {}
+          }}
+          style={{ position: 'fixed', left: 10, bottom: 10, zIndex: 20001, background: '#2563eb', color: '#fff', border: '1px solid #1f2937', borderRadius: 999, padding: '8px 12px', fontSize: 12 }}
+        >
+          Показать поле
+        </button>
       )}
     </div>
   );

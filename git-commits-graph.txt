@@ -1,0 +1,320 @@
+* f63bfa3 (origin/process) kb-test: добавлен onscreen debug для Micro
+* 696fe7a kb-test micro: жесткая привязка transform=-upper, baseline фикс на первом открытии
+* bc97d20 kb-test micro: baseline фиксируется на первом открытии, верхняя граница не повышается; нижний клапан сохранён
+* 9ef49c6 kb-test micro: freeze верхней границы после settle окна, без подъёма при свайпах
+* 0f2350b (HEAD -> process) kb-test micro: жёсткая верхняя граница (baseline=min vv.height), без подъёма; нижний клапан сохраняем
+* 683faa7 kb-test micro: запрет опускаться ниже верхней кромки клавиатуры (нижний клапан)
+* 957dbec kb-test: clamp панели не выше высоты клавиатуры (min(height+offset, heightOnly+allowance))
+* 46c7703 kb-test: micro вариант — мгновенный док + RAF-follow
+* 0796a1f kb-test: default Micro + без transition (мгновенно)
+* 1760247 kb-test: добавлены гипотезы (hook/micro/pos-above/sticky-top/textarea) и стабилизация;
+* e83529e kb-test: отдельная страница с инпутом над клавиатурой + переключатели; hook: stable max и includeOffset; восстановлен запрет сворачивания TWA
+* 8757416 settings: пункт 🧪 Тест клавиатуры + страница с input над клавиатурой; глобально disableVerticalSwipes()
+* acb3684 ios: include offsetTop option in hook; sheet translate3d with transition; :root min-height:100dvh
+* 211ebfd ios: sheet fixed bottom + translate3d, expand() on open
+* 5d11abb ios: portal + body scroll-lock; overlay paddingBottom=max(kb,fallback); overscroll contain; viewport-fit=cover; disableVerticalSwipes while modal open; height-only VisualViewport
+* 6b393ad ios: устойчивый подсчёт (без offsetTop), overlay overscroll contain, disableVerticalSwipes на время модалки, fallback kb
+* e05bc3a ios: строгий подъём плашки — paddingBottom=max(kb,fallback); портал в body; z-index 9999
+* 76ef749 ios: render CreateTaskModal via portal; overlay paddingBottom based on useKeyboardInsets; isolate from feed transforms
+* 002305a ios: overlay paddingBottom=kb (без transform), скролл ленты не блокируем; useKeyboardInsets локально; ширина листа под iOS
+* d70114c ios: useKeyboardInsets hook (VisualViewport+TWA) для листа и комментариев; overlay не блокирует внутренний скролл; lock body через position:fixed; ширина листа под iOS
+* df0bf29 ios: kb var only when input focused and > threshold; remove body overscroll tweak; cleanup composer
+* 3e8c896 ios: модалка как bottom-sheet — стопим скролл, плашка строго над клавиатурой по --kb только при фокусе; слегка шире на iOS; запрет overscroll сворачивания
+* 5c43101 ios: верстка клавиатуры — плашка и комментарии фикс над клавиатурой; запрет вертикальных свайпов в TWA; стабильный расчёт через VisualViewport (--kb)
+* 7428946 feat(groups-perms): add group-level permissions (view-own-only, change-status-any, can-create-tasks, edit-json); server endpoints to get/set; enforce view-own-only on board and create-task rights; UI in GroupEdit → ‘Права’ modal; client alert on no rights
+* 31ab2b8 ui(groups+settings): section titles ‘Мои проекты’, ‘Публичные группы’, ‘Проекты со мной’ in black; settings container uses themed background var(--app-bg)
+* 7bda8d1 ui(groups): set Section title color black only for ‘Мои проекты’ to improve contrast on themed background
+* 72cb507 ui(feed): shrink ‘Запустят после’ ribbons to inline-block to avoid overflow past card edges
+* 6240092 feat(theme): apply saved background on app start; use var(--app-bg) in Home feed and TaskView so the list and task pages reflect user background color
+* 96f410f ux(pretask): hide links/search list in 🔘 panel when editing pre-task; keep only trigger condition; pass hidePreLinks flag; save trigger params on 💾
+* 144b48f feat(pretask): long‑press opens the same CreateTaskModal sheet; wire edit-pretask-open through CreateTaskFab; basic rename save for pretask in CreateTaskModal; stop opening legacy PreTaskEditModal
+* 3f6d57f feat(pretask): long‑press opens same bottom sheet as task; add 💾 save on title row and align styles with CreateTaskModal
+* 111263f fix(feed): Завершение из ленты переводит в Готово; long‑press для предзадач с нижней панелью редактирования; canvas: перетаскивание из Done создаёт задачу, а не предзадачу
+* dbaf6f4 chore(ui): remove legacy group process and TaskView process UI; keep only task-feed process; disable pretask badge click in feed
+* 4c22ecc chore(ui): remove group process UI and TaskView process links; keep only task-feed process overlay
+* 79956bf fix(process): correct task-scope rendering and feed indicators
+* 915b630 taskview: добавил плавающую круглую кнопку со стрелкой назад (как в комментариях) + корректный возврат в ленту/группу
+* 76a9989 taskview: стрелка назад возвращает в ленту, если задача открыта из фида (origin=feed); иначе — в доску группы
+* fba4edd settings/theme: убрал длинные подсказки/пресеты — оставил только 'Цвет фона [свотч]' + модалка с react-colorful
+* 9bec04e settings/theme: упростил UX — строка 'Цвет фона [ ]' и модальное полотно с react-colorful HexColorPicker
+* c6240e4 settings: добавил полноэкранный цветовой пикер (HSV): перетаскивание пальцем по палитре + полоса тона; live-превью и сохранение
+* 02159d0 theme: применяю фон через CSS var --app-bg у корневого контейнера и body; фон теперь меняется сразу
+* 1df1fff api/webapp: user theme background
+* c0dea7a groups: поднял кнопку [ + ] выше синей FAB; в модалке проекта — табы и большой набор эмодзи-иконок
+* 52c51da groups: плавающая кнопка [ + ] для создания проекта + модалка с выбором иконки
+* 77459d8 create-task: выбор группы + ярлыка в одном окне (GroupPicker)
+* 9d0ad41 migrate: SQLite -> Postgres (Prisma)
+* d0f66cb webapp: настройки — профиль: ФИО и ID пользователя
+* 8eb7f1b Task progress: DB field + PATCH /tasks/:id/progress; TaskView slider for 'В работе' with auto-complete at 100%; show (N%) near 'В работе' in Home feed and process canvas badges; build + restart API
+* 2d63965 tasks/graph: переносим координаты fired предзадач на ключ задачи (task:<id>) для корректного позиционирования при гидрации без SSE)
+* 35525d5 Process canvas: для личных задач используем task-scope по умолчанию (groupId = task:<rootId>) — сохраняем/читаем точные позиции узлов
+* 73604b7 Process canvas: при FIRE предзадачи сохраняю граф сразу (без дебаунса), чтобы новая задача встала ровно на позицию предзадачи перед перезагрузкой
+* 5d0c8ff Feed: CommentsStrip теперь точно совпадает по ширине с карточкой (та же ширина и отступы)
+* 5a36899 GroupList: по умолчанию показываю вкладку 'Мои проекты' вместо 'Публичные'
+* a6c3eaa CreateTaskModal: поменял порядок — ярлык слева, кнопка группы справа (группа ближе к краю)
+* ac9afe2 CreateTaskModal: зеркально поменял позиции — X слева, выбор группы и ярлыка справа
+* 2869583 group member description: DB field, API routes, UI modal with delete/description/rights stub; 📜 indicator in list; build + pm2 restart
+* 9c4e341 ( клик по группе как отдельное меню)
+* 660de40 Полотно процессов: отрисовка и UX\n\n- task-scope: серверный граф tasks/:id/graph + гидратация\n- FIRED: предзадачи → задачи на месте (позиции/рёбра)\n- стабильные позиции (metaJson.key) + автосохранение\n- статус‑бейджи, StageQuickBar на полотне\n- нормализация колонок для QuickBar, meChatId в узлы\n- SSE и мягкий reload после смены статуса
+* 01e599c feat(taskfeedprocess): узел на полотне стилизован как карточка ленты (белый фон, бордер, id, типографика)
+* 97593b2 feat(taskfeedprocess): новая страница-полотно на React Flow для карточки из ленты; открывается по клику на серый круг; добавлена кнопка назад в синем кружке; индикатор — белый круг со стрелкой ➜
+* bbe1456 feat(feed): стрелочки в кружках на карточках в ленте (белый круг + синяя стрелка ➜; центр по грани, без клиппинга)
+* 9b37140 chore(ui): make html/body background transparent to avoid black side gutters; restore on cleanup
+* f177e04 fix(feed): attach edge indicator as absolute sibling inside card wrapper (no portal) to eliminate tracking lag; ensure wrapper has isolation+overflow:visible
+* 6fc37f7 fix(feed): render pre-task indicator via portal (position:fixed by anchor rect) to avoid any clipping; raise z-index; wrapper isolation
+* fde98a7 fix(feed): indicator now rendered as sibling overlay of the card (not inside) and wrapper overflow:visible; prevents clipping on the right edge
+* 5918da6 fix(process): render handles in an absolute overlay layer (pointer-events preserved) to avoid clipping by node background/border
+* 9f380e6 fix(process): prevent handle circles from being clipped — overflow:visible on node; raise handle z-index; keep nodes from clipping handles
+* cf029c5 fix(feed): keep edge badge above card — set overflow:visible on card button so circle/arrow aren’t clipped; align circle center exactly on card edge
+* 5a9261a feat(feed): edge indicator — gray circle if no pre-tasks, blue circle with arrow when present; centered on card edge
+* 8d8ca6d (origin/main, main) tweak(stories): invert morph control — dragging down (scroll up) increases, dragging up (scroll down) decreases
+* 0096b06 feat(stories): morph from dot→ring on scroll; show full bar after threshold; collapses back on top
+* 6d807a7 tweak(stories): align mini view circles on the same vertical center (BACK_TOP offset)
+* bbf96fe feat(stories): mini view with two overlapping rings at top; expand to full bar on scroll down; collapse back at top
+* baf98ef tweak(feed): tighten spacing between top header and achievements row (smaller margins/paddings)
+* 55e059c fix(feed): фиксированные заголовки в ленте
+* 42aa4fb fix(feed): robust fixed page label for TWA — uses IntersectionObserver + fixed top; remove unused stickyOffset
+* 6e1e8ec feat(feed): add global sticky page label synced with horizontal slider; remove per-section sticky to avoid overlap
+* ea55f29 feat(feed): make column title sticky on vertical scroll; sticky top header offsets section header to avoid overlap
+*   da2e1d0 merge: stories bar, public groups UI, smooth long-press scroll
+|\  
+| | * d42ddff (origin/фича, фича) fix(feed): фиксированные заголовки в ленте
+| |/  
+| *   a9fb73b merge: bring public groups UI into фича
+| |\  
+| * | 85e5ab0 tune(long-press): add start delay + scroll cancel; increase slop to 16px; keep passive events for smooth scrolling
+| * | 6bc8523 feat(home): restore Stories bar at top and overlay viewer (today-only)
+| | | *-.   fa1b46b (refs/stash) On публичные-группы: temp workspace changes before switching to фича
+| | | |\ \  
+| | | | | * f3658f4 untracked files on публичные-группы: 88ece77 feat(home): restore Stories bar at top and overlay viewer (today-only)
+| | | | * 75ff9be index on публичные-группы: 88ece77 feat(home): restore Stories bar at top and overlay viewer (today-only)
+| | | |/  
+| | | * 88ece77 (публичные-группы) feat(home): restore Stories bar at top and overlay viewer (today-only)
+| | |/  
+| | * b6dc167 (origin/публичные-группы) fix(ui): принудительно зелёный стиль для публичных групп в ленте (fallback по groupId → groupPublicById)
+| | * 54b5573 feat(ui): TaskView — зелёный текст и 🌍 для публичных групп (кнопка группы)
+| | * b836acc feat(ui): в ленте для публичных групп — зелёный текст + зелёная рамка, фон прозрачный
+| | * 37edf0a feat(ui): 🌍+зелёный для публичных групп везде\n\n- CreateTaskModal: зелёный и 🌍 в выборе группы\n- GroupPicker: пометка публичных групп\n- GroupFilterModal: добавлен таб 'Публичные', 🌍 и зелёный\n- Home feed chip: зелёный + 🌍 через isPublicGroup\n- API feed: отдаёт isPublicGroup
+| | * c2b2a5e feat(ui): 🌍 + зелёный для публичных групп (в списках и в ленте)\n\n- GroupCard: показывает 🌍 и зелёный для isPublic\n- Public таб уже с зелёным\n- Home feed chip: зелёный и 🌍 для isPublicGroup\n- API feed: отдаёт isPublicGroup
+| | * b423fde feat(public-groups): schema + API + UI groundwork\n\n- Prisma: Group.isPublic/publicSince + GroupWatcher\n- API: toggle public, list public, watch/unwatch, public read-only in /tasks\n- Webapp: public groups tab, subscribe toggle, public flag in GroupEdit
+| |/  
+| * 2b7f097 feat(ui): увеличен зазор между колонками ленты на 30px (визуальный воздух)\n\n- добавлен flex gap для слайдера страниц\n- колесо/свайп учитывает gap при прокрутке между страницами
+| * c449785 fix(api): robust ECMWF weather check\n\n- handle missing hourly value (no 0.0 default)\n- try nearest/floor/ceil hours and ±1h neighbors\n- fallback request without models param\n- on no data or error: cancel pretask and notify
+| * 3b359f9 feat(api): weather gate using ECMWF (Open‑Meteo) for DATE_PLUS pretasks\n\n- fetch hourly temperature_2m from ecmwf_ifs04 at startAt hour (UTC)\n- compare with payload.weather (GE/LE) and threshold\n- cancel pretask + notify creator if not matched; otherwise create task
+| * 3d337ec feat: погодное планирование\n\n- модалка выбора погоды (дата/город/оператор/значение)\n- сохранение weatherCfg, скрытие 🤖, подпись под textarea\n- передача payload.weather в createPreTask (с triggerMode=DATE_PLUS)\n- отображение 🌦️ и условия в ленте для предзадач
+| * 8e298e3 fix: фокус на textarea после отмены в 🤖 и blur при открытии робота
+| * 31cd2d2 feat: 🤖 вместо 🕒 + выбор режима\n\n- добавлен RobotPicker с пунктами: плановое и от погоды\n- кнопка 🤖 перед textarea, по выбору 🕒 открываем планировщик\n- заглушка-модалка для погоды
+| * 560a2d7 feat: подписи условий/напоминаний под полем\n\n- показываем выбранные условия приёма\n- список напоминаний под textarea\n- фокус при закрытии планировщика 🕒
+| * a196af8 feat: работает фокус после 🕒\n\n- blur textarea при открытии планировщика\n- фокус на textarea при закрытии планировщика\n- стабильно держит клавиатуру на мобилках
+| * 75e1e04 CreateTask: add 🕒 button before input; ensure single scheduled info block; keep swipe input empty + focus; right slot ➤ for scheduled/linked; fix PostCreate onMake taskId; focus on open; minor cleanups
+| * 2f0d013 CreateTask: split into modular components; restore swipe (edge-pre-open) and edit (edit-task-open) flows; add TextComposer, AttachBar, ExistingMedia; add hooks useTonPayment/useAudioPreview; re-enable paperclip inside input; focus handling on open; correct PreTask creation via ➤; fix PostCreateActionsLauncher taskId return; integrate GroupPicker and DeleteConfirmModal; move task on group change; events for pre-task-created
+| * 70565b2 feat(comments UX): add floating back FAB above composer; set caret to end when entering edit; keep previews for attachments
+| * 6af1ec6 feat(edit-task UX): caret to end when opening edit; show existing attachment previews in simple mode too
+| * cba97d3 feat(edit-task UI): show previews for existing attachments (photos/docs/audio) with limit; fix group change to move task to target group Inbox; patch feed with new group + labels
+| * a85547e fix(edit group): raise group picker z-index above main modal; prefill existing attachments in edit mode and show as info list; acceptCondition/reminders fully editable; keep one label
+| * d28b01a feat(edit-task): prefill reminders and accept condition; allow changing/deleting reminders and accept; replace labels set; save pipeline updated; include acceptCondition in edit-task-open detail
+| * 737d64b feat(edit-task): long-press opens CreateTaskFab in edit mode with prefilled text, deadline, label, bounty; save via 💾 updates task and closes; feed updates via task-patched; autofocus retained
+| * d67d96b feat(CreateTaskFab): auto-expand textarea up to 6 lines, then scroll; applied to both simple and master modes
+| * d16d4b0 feat(comments): autofocus composer input when opening overlay
+| * 15e4684 tune(long-press): 1s hold duration on feed cards
+| * 463c154 fix(long-press): don't block scroll — use passive pointer listeners only and remove preventDefault
+| * d82cbf4 fix(long-press): align outline by rendering absolute inside card instead of viewport-fixed; keeps in sync with transforms
+| * dd3fb9f tune(long-press): 3s progress, non-passive start to prevent scroll, stronger glow and z-index
+| * 533d569 feat(feed): neon blue long-press outline, thicker stroke and clearer left-to-right fill using dasharray
+| * 49323de feat(feed): long-press progress outline on cards; shows demo modal when completed
+| * f831b68 feat(feed): animated comments view — card flies to header and back on ←
+| * 6c8d768 feat(feed): comments overlay — pinned card header, scrollable thread, fixed composer with back arrow
+| * 5084acb (feature/pre-tasks) feat(feed): add comments strip under task card and expose commentsCount in /tasks/feed; tweak styles (flat bottom corners)
+| * 1918571 (origin/Ficha) feat(settings): add SettingsRank component with (GET/POST) /me/rank; selectable rank list; UI integrated under Settings
+| * 67be7fb feat(achievements): add 💣 filter; build full list across boards for filters; UI: ensure clear-filter visible and panel closer to left
+| * afaa3a7 fix(achievements): move meChatId before ach filter effect; ensure no TS errors; keep counts matching filters
+| * e893fa2 ui(achievements): tighter left padding so (i) and ✕ фильтр видны; server(feed): raise limit cap to 500; fix filters and counts alignment
+| * 67e2cff fix(achievements): align panel left; use 🦅 base in panel; exclude Done in 🌰 filter; enlarge feed limit under filters; adjust 🌰 = total − 🌱
+| * ce0c924 feat(achievements): add (i) info button + detailed modal; client-side total 🌰 compute; clickable filters (🌰/🌱/🦅/⚫/🚀) that apply to feed; add rank fields to User schema
+| * 6a3eced feat(achievements): use /tasks/created/count for 🌰 (active-only); fix EVENT & shared-newtask author; show full 🌱; refresh on list/status changes
+| * 5ecde0e fix(acorns): add GET /me/acorns and use it to override acorns in client; ensures 🌰 increments immediately after task/event creation regardless of board owner
+| * 1e8a682 fix(events): set createdByChatId on event creation so acorns (🌰) count includes events created by user
+| * 34f1dcd fix(achievements): refetch rating on feed reload to ensure 🌰 updates right after task creation
+| * e37a1bf fix(achievements): compute stats from backend /me/rating when available to avoid local miscount; fallback to local feed calc
+| * 2a96a9c chore(achievements): remove numbered rules section from rules modal (keep legend only)
+| * 5eb0d79 docs(achievements): add legend to rules modal with icon explanations
+| * e33e838 feat(achievements): achievements panel + centered rules modal; rank modal via shared overlay; add /me/rating backend route and wire server\n\n- Panel: shows 🌰|🌱|🦅/🐦‍🔥|⚫/🔴|🚀|💣, opens modal centered, closes on backdrop click\n- Rank: same modal with collapsible perks per rank, shared OverlayModal\n- API: GET /me/rating to compute stats, rank, and feature flags
+| * 2e62917 (origin/feature/pre-tasks) feat(feed): optimistic 'pre-task-created' event for immediate counters; fix swipe IDs (string) across lists; stronger white shadow & outline for layered effect in dark theme
+| * 010eb25 fix(swipe): normalize IDs to string for pretasks (handles 4th and beyond); style: add layered box-shadow for expanded pretask lists with subtle tone
+| * 937008d feat(pretask): add recursive 'Запустят после' in expanded lists; highlight pretasks with children via emphasis border; add swipe+create for nested items
+| * ecaf41b feat(feed): enable swipe-to-create on pretasks inside expanded 'Запустят после' lists (tasks and pretasks); add swipe background
+| * 376ee41 style(pretask): add subtle tone for PreTaskCard; apply to expanded 'Запустят после' lists for better visual separation
+| * fab9c29 fix(pretask): footer stripe inside PreTaskCard; swipe background + swipe-to-create on pretask cards (injected and tail); exclude self from children list; edge-pre-open handles preTaskId
+| * 25bd5a3 feat(feed): swipe-to-pretask for pretask cards; edge-pre-open supports preTaskId; show 'Запустят после' and children for pretasks; typed openAfter keys
+| * 5b812b7 refactor(feed): keep 'Запустят после' strip inside card but render PreTaskCard list outside under the card
+| * b02548a fix(feed): move 'Запустят после (N)' strip inside the task card just under assignee row; render PreTaskCard list inside
+| * 856ae81 feat(feed): attach 'Запустят после (N)' strip tightly to card and render linked items using PreTaskCard for full functionality
+| * cd2ec6f feat(feed): collapsible strip under task to show linked pre-tasks (Запустят после (N) ⬇/⬆)
+| * d9320fa feat(feed): swipe-to-pretask only in All + slide reveal; open quick actions by clicking status badge; CreateTaskFab opens on edge-pre-open with pinned card; link manager add 'Select' modal
+| * 9995987 feat(pre-tasks): add pre-task system (DB, API, scheduler, webapp UI); editor, group filter, colored statuses, interleaved feed, TG notify; delete-empty pretask with confirm
+| * 0fae98a (origin/feature/prebounty-payment-and-refund-x, feature/prebounty-payment-and-refund-x) fix(server): remove TS 'as any' assertions causing SyntaxError in Node ESM
+| * f3c93b0 feat(bounty): auto-refund to task owner on Done without assignee, on Cancel move, and on Delete (async via /bounty/refund-request). Refund endpoint now supports amountRub/chatId/taskId and updates task status.
+| * af33b5a ux(TaskView): show payout modal first on Done, block back close until paid, then run thumbs-up collapse animation
+| * 6334a81 feat(webapp): play coin.mp3 when executor payout succeeds
+| * 4f8c973 fix(bounty): robust TON/RUB rate resolver with cache and Coingecko fallback; use it in release-request to avoid 503 rate_unavailable
+| * 1c4861a feat(webapp): force payout modal in TaskView when Done with unpaid bounty for assignee
+| * 09bbe91 fix(server): do not mark bounty as PAID on Done; allow executor payout modal to appear and trigger escrow release
+| * b9a2aa5 feat(bounty): pretask payment via TonConnect, refund on (x); executor forced payout modal until paid; switch provider to Toncenter; clamp TON precision; improve UI labels and remove extra lines
+| * a719446 (origin/Фитча, Фитча) Escrow: implement TON refunds via TonAPI send; sign with WalletContractV4 from mnemonic; build external message; get seqno via runGetMethod
+| * 8217130 Icons: use 💰 for pledged and 💫 for paid across TaskCard/TaskView/StarBadge
+| * aae1470 Bounty: add PATCH /tasks/:id/bounty to persist RUB amount and status; frontend sets bounty on task creation; ensure FAB hidden when panel open
+| * 5016cf1 CreateTask: unlock panel and clear draft after sending; keep group FAB hidden via existing event
+| * 6d1171b UX: TON→RUB conversion in picker; auto-pay on apply; lock create panel when bounty set; hide close; draft persists across reloads; backend /bounty/rates
+| * f27b8e0 CreateTask: request TON payment after task creation (pass taskId to fund-request); remove legacy fakeDeposit
+| * 8a3e677 Bounty: switch to native TON payments (no USDT jetton dependency); UI labels to TON; keep fee 1%
+| * 858875e Bounty: resolve USDT jetton wallet via runGetMethod(get_wallet_address) on master; avoid TonAPI listings; robust stack parsing
+| * 8be0c89 TonConnect: fix network mapping (chain -239 => mainnet); rebuild
+| * 976c6ba Bounty: use TonAPI /v2/jettons/{jetton}/wallets?owner=… to resolve USDT wallet; keep fallbacks; better logging
+| * efb6cc7 Wallet: proper disconnect; Bounty: TonAPI-based fund-request with USDT jetton payload; Settings: replace Stars with USDT wallet connect
+| * ae238a0 Home: скрывать 📁/🏷️ FAB при открытии CreateTask
+| * 7b921a6 UI: скрывать FAB 📁/🏷️ при открытии CreateTask; возвращать при закрытии
+| * feb27fd feat(ton): add wallet routes (connect-start/verify/status/disconnect), user TON fields; add manifest; TonWalletConnect component; surface in bounty UI (MVP)
+| * fb51fdf fix(webhook): keep sourceChatId as group chat for reply threading (use createdByChatId to show creator)
+| * eee8bec feat(complete): send status updates to TG group (or DM fallback to creator) on move to Approval/Done
+| * 2654d75 feat(webhook): in groups delete user's original message after posting bot message to keep chat clean
+| * b7c7ca0 feat(tasks): store createdByChatId on task; prefer it as creator in feed/getTask; set from webhook and app; keep group post for TG projects
+| * ccca5f5 feat(tasks): when creating task in TG project, post message to group with deep-link; fix feed creator to prefer sourceChatId only if it's a known user
+| * e347f4c feat(webhook): upsert User profiles for chat administrators to enable @username assignment; keep groupMember admin sync
+| * 60b4f51 feat(feed/webhook): show creator from sourceChatId; service message text = task text without prefix
+| * 60f0046 chore(webhook): remove legacy /g_* command handlers; keep only mention-based task creation
+| * bfba987 fix(webhook): mention detection fallback via raw text includes to handle missing entities
+| * 019c16c feat(webhook): create tasks only when bot is mentioned; create in TG group project; assign trailing @mention as assignee; keep service message with deep link
+| * c213d09 feat(webapp): mark TG projects in GroupList with ➡️📁 icon and #42aaff title
+| * da2ad67 feat(tg-groups): add isTelegramGroup/tgChatId; sync via webhook; show TG projects as ➡️📁 with #42aaff in CreateTaskFab, FeedScopeTabs, Home cards, TaskView; forbid rename of TG groups; show TG groups as 'own' for admins
+| * 4d49c31 fix(webapp): after upload auto-complete according to accept rules; update local media immediately; render /files links as image with onError fallback to link
+| * ac2e48b fix(webapp): for DOC_AND_APPROVAL treat any attachment as satisfying requirement; update prompt text to 'прикрепите файл'
+| * e1c38ae fix(complete): DOC_AND_APPROVAL accepts any attachment (photo or document) before moving to Approval
+| * 646e712 fix(complete): avoid loop — if task already in Approval, next complete moves to Done (ignores requiresApproval)
+| * 1bc37a4 fix(complete): when accept condition requires approval, move task to Approval instead of Done; keep bounty payout only for Done
+| * 07733ac feat(accept): add PHOTO_AND_APPROVAL and DOC_AND_APPROVAL; enforce on server; update TaskView and CreateTaskFab UI + logic
+| * 5e4f433 feat(webapp): allow removing draft reminders in CreateTaskFab via (x) chips
+| * 1581463 feat(webapp): CreateTaskFab — add ⏰ reminder setup during creation with modal; create reminders after task is created
+| * fe1c1d7 feat(webapp): add reminders modal, ⏰ button in TaskView, list with delete/strike; show nearest reminder on Home cards
+| * 7c811c9 feat(feed+webapp): include nextReminderAt in /tasks/feed; add webapp reminders API module
+| * f59033f feat(scheduler): support TaskReminder plan/fire; schedule on create; cancel on delete
+| * 567d651 feat(api): add task reminders routes (list/create/delete) and mount into server
+| * f9bea40 chore(prisma): remove duplicate TaskWatcher migration to fix shadow DB error
+| * 64a9460 feat(reminders): add TaskReminder model and ReminderTarget enum
+| * 90ed155 fix(api/watchers): remove TS non-null operator, ensure group exists for invite
+| * 279cc82 fix(api): move WATCH invite handling into /invites/accept; remove accidental await block in app.listen
+| * c49b505 fix(api): remove stray eventsRouter.patch block from server.js (handled in routes/events.js)
+| * 103da23 migrations(sqlite): add TaskWatcher table + indexes
+| * 8cd2e31 feat(watchers): task watchers block — subscribe/unsubscribe, list with remove; invite link (watch__ token) and accept flow; DB model + routes
+| * aa9ca63 chore(feed): show only assignee on card footer (hide creator→assignee chain)
+| * e96ce8c feat(assign UX): show placeholder '(назначаю …)' until assignee name resolves
+| * c699157 feat(assign UX): optimistic update on assign — instantly show assignee without waiting for poll
+| * 6d8627f feat(assign): unassign endpoint + UI — add (×) to remove assignee with confirm; show invite button when none
+| * 60459c1 feat(api): support APPROVAL condition in accept-condition; extend Prisma enum and regenerate client
+| * 57d4e61 feat(approval): new accept condition APPROVAL 🤝; route Done→Approval; creator approval actions; assignee waits; creation/UI pickers updated
+| * 8abf242 feat(comments): likes — show count and toggle like/unlike per comment
+| * ba1cf41 feat(comments): autofocus input; robust autoscroll after send/focus; scroll on image load
+| * c664fa6 feat(stars): add virtual bounty schema and routes (bounty, payout-method, stars summary); frontend picker + badges + settings summary; integrate with task create; no real payments yet
+| * 5535a1a ux(create): replace 🔗 with 🧷; make toggle circular, subtle, and placed inside textarea without overlapping border
+| * 296bd97 ux(create): ensure 🔗 toggle is visible and away from send button; focus returns after actions; fix autosave to trigger only on actual text changes (no timer flicker)
+| * 7bfb7b2 ux(create): hide attachment buttons by default; add 🔗 toggle inside textarea; replace @ with 📑; refocus input to keep keyboard open
+| * c96f662 ux(create): refocus text input after pickers/attachments to keep keyboard open on mobile; add autosave status and upload indicators + overdue badges
+| * 0097f7c ui: add photo upload loading indicators; autosave status tick; stronger overdue deadline badge in TaskView/Home/Board
+| * e6272ac feat(task): autosave text, remove Save/Complete buttons; acceptance photo flow split (🖼️/📸) in TaskView/Home/Board; fix CreateTaskFab to apply deadline + acceptCondition in simple mode; drag-to-Done prompts for photo
+| * 5ac9d01 feat(acceptance): add acceptCondition (NONE|PHOTO) with backend route and enforcement; UI: picker in create/task view, indicator on cards, complete with photo flow, and render photo comments; feed/board propagation
+| * 419a45e fix(comments): clear input on send and reload list immediately for instant appearance
+| * 95ec27d feat(deadline): add Task.deadlineAt, backend deadline route, DeadlinePicker UI, attach/edit from create, home feed, board, and task view
+| * 1b57344 ui(create-task): group and label pills sized to 40% each, with truncation and emojis
+| * 01a977f feat(create-task): add label emoji in selector and attach chosen label on create
+| * 09791f1 feat(home): auto-refresh feed after creating a task via FAB
+| * 6ea5866 docs: update info/README.md quick start and useful links
+| * f9ccf18 feat(info): add info/README.md with short project info
+|/  
+* c60fa71 Процесс постройение 2
+* 3fb9a38 Процесс постройение 2
+* 20dd597 Процесс постройение 2
+* 065a443 Процесс постройение 2
+* 2cae96e Процесс постройение 2
+* d958ff4 Процесс постройение
+* 9ba94ed ярлыки  в ленте фильтр
+* 497eec5 ярлыки  на карточке
+* 2403560 ярлыки
+* 451728f выбор группы через колесный слайдер
+* 2fe3191 нормальный скрол
+* 408361b стиль над колонкой
+* 176e596 В ленте статусы и канбан модалка
+* 664a071 В ленте статусы и канбан
+* 787255d В ленте статусы
+* bcb2712 Wisper
+* 6bb2d7f Голосовая заметка воспроизведение задча
+* c1fdaf2 Голосовая заметка
+* dce2bf2 нормальная верстка для отправки
+* e2db3b7 После отправки выбирает тип отправки
+* 87e15e5 Правка события + камера
+* 27dfd74 Правка события
+* 85d2059 Стадии в таске
+* 1fe91de 6-ть колонок при создании
+* 8dd16de сториз настрокка линий
+* 656f393 сториз 2
+* 67ada08 сториз
+* f7091ba выбор группы
+* 0e470ce выбор группы
+* eefc846 выбор группы
+* df6c691 главная страница
+* 4499e20 главная со списком задач
+* 3a19c0d Сохранение с фото
+* 9c66cbc кнопки прикрепить файл
+* 8f788cf центрирует в процессах ввод текста
+* c321806 в процессах норм текст
+* 72bd126 нормально переносит текст в карточке
+* 54f3f33 правка
+* 66f1422 лайк когда доне в задаче
+* 0694705 лайк когда доне в задаче
+* b2dddfe быстрое создание задачи через +
+* 5ecc3b2 картинки и файлы в боте и в задаче
+* 07d54f7 Копировать по ссылке в меню
+* a692663 вверхнее меню по клику
+* c904e35 стабильные связи
+* a50d3c3 подсвечиваются связи
+* 8ffcfb7 связи
+* 372277f смена иконок
+* ae6336a статусы в узлах
+* a3873db Выбор на пк пользователей и условия
+* 469a2ba Сохранение отсвенного
+* 61b0956 Смена отсвеного
+* 0030453 Видно отвесвенного
+* 4163a42 Видно связи в нодах при сохранении
+* 5c2e575 Ноды и сервер
+* 2e6251e Ноды и сервер
+* 3011545 Создания событий в календре первый день
+* 351d13b Создания событий в календаре без отправки
+* 5535298 Создания событий в календаре
+* 3279413 каллендарь отдельная страница
+* 5017cf9 комментриай к задаче уведомление репли
+* 025ea8f комментриай к задаче
+* ac0ea84 отвесвенный когда принял задачу
+* be1a74e поделиться в мессенджер без окошко скопировать
+* 0e257b9 поделиться в мессенджер
+* 7798a11 поделиться с меседжерами
+* 84c1523 отправить в задаче
+* e46c45a Обезательная подписка на телеграм
+* 1a7a94f Увемление когда завершил задачу
+* 40d99d7 Уведомление когда принял задачу
+* b99a350 участники в группе
+* 0077bd8 Редактировать и удалить группу
+* 4b59f65 группа над задачей
+* d4c2eb3 поделиться задачей
+* 73d3c92 выбирает пользователя и остается в вебап
+* eaa29d4 группы по пунтам
+* 3659a95 Владельцы в задаче и зеленая когда готово
+* ca46068 задача созадтелю
+* feedb3b сылка на задачу
+* 0da9992 кнопка назад в задаче из группы
+* 0d9c5a3 кнопка назад в задаче
+* d0441b0 выбор группы через /
+* 105d488 задача в группах
+* 65ab806 Отдельные группы
+* 645c261 меню и пункты
+* fa0900a горизотальный и вертикальный рабочий скрол
+* 80519de Initial commit: Kanban webapp + API (dnd-kit + авто-скролл, мобильные фиксы)2
+* 8291f35 Initial commit: Kanban webapp + API (dnd-kit + авто-скролл, мобильные фиксы)2
+* 6b4aaed Initial commit: Kanban webapp + API (dnd-kit + авто-скролл, мобильные фиксы)

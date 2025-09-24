@@ -1,0 +1,1848 @@
+commit 0f2350b97ce609d01319a2f701eb5f836731d913 (HEAD -> process)
+Author: codex <codex@example.com>
+Date:   2025-09-24 05:34:06 +0000
+
+    kb-test micro: жёсткая верхняя граница (baseline=min vv.height), без подъёма; нижний клапан сохраняем
+
+commit 683faa786541dba7b4cfcd807f2d9b24c4b5d1d8
+Author: codex <codex@example.com>
+Date:   2025-09-24 05:27:51 +0000
+
+    kb-test micro: запрет опускаться ниже верхней кромки клавиатуры (нижний клапан)
+
+commit 957dbec0105032dbc3d02f28c58690cbc2c97f69
+Author: codex <codex@example.com>
+Date:   2025-09-23 21:05:38 +0000
+
+    kb-test: clamp панели не выше высоты клавиатуры (min(height+offset, heightOnly+allowance))
+
+commit 46c7703daaab7749b859715efac72e68a0cc2b19
+Author: codex <codex@example.com>
+Date:   2025-09-23 21:01:22 +0000
+
+    kb-test: micro вариант — мгновенный док + RAF-follow
+
+commit 0796a1f1339eac0e754d4b65b802cfb65c8721e4
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:57:09 +0000
+
+    kb-test: default Micro + без transition (мгновенно)
+
+commit 1760247b254e45383f32a1da3259f80da5ec7f1c
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:50:44 +0000
+
+    kb-test: добавлены гипотезы (hook/micro/pos-above/sticky-top/textarea) и стабилизация;
+
+commit e83529eabe1b337efe8ba6f7b665d5fa82486a67
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:39:12 +0000
+
+    kb-test: отдельная страница с инпутом над клавиатурой + переключатели; hook: stable max и includeOffset; восстановлен запрет сворачивания TWA
+
+commit 8757416f7e8887b720c271c101b807e3bb6f2c10
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:34:03 +0000
+
+    settings: пункт 🧪 Тест клавиатуры + страница с input над клавиатурой; глобально disableVerticalSwipes()
+
+commit acb3684a26762642c8619d34f11a06729b6688c0
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:27:37 +0000
+
+    ios: include offsetTop option in hook; sheet translate3d with transition; :root min-height:100dvh
+
+commit 211ebfd0ba416402265878843d7b934e9e39f806
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:21:16 +0000
+
+    ios: sheet fixed bottom + translate3d, expand() on open
+
+commit 5d11abb12b364fad4fec6adf211da1a25ddb4823
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:14:41 +0000
+
+    ios: portal + body scroll-lock; overlay paddingBottom=max(kb,fallback); overscroll contain; viewport-fit=cover; disableVerticalSwipes while modal open; height-only VisualViewport
+
+commit 6b393adca6a79bf3b70a9734aebce067ee0354fd
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:09:23 +0000
+
+    ios: устойчивый подсчёт (без offsetTop), overlay overscroll contain, disableVerticalSwipes на время модалки, fallback kb
+
+commit e05bc3abb3be9491761272017236e8e7e39698ef
+Author: codex <codex@example.com>
+Date:   2025-09-23 20:03:54 +0000
+
+    ios: строгий подъём плашки — paddingBottom=max(kb,fallback); портал в body; z-index 9999
+
+commit 76ef74901e60e54d1711ba68052b9a4c0c1c844c
+Author: codex <codex@example.com>
+Date:   2025-09-23 19:59:42 +0000
+
+    ios: render CreateTaskModal via portal; overlay paddingBottom based on useKeyboardInsets; isolate from feed transforms
+
+commit 002305a513e0d26b91e64842532b48f31ce97925
+Author: codex <codex@example.com>
+Date:   2025-09-23 19:50:47 +0000
+
+    ios: overlay paddingBottom=kb (без transform), скролл ленты не блокируем; useKeyboardInsets локально; ширина листа под iOS
+
+commit d70114c15f21241f94403950a9a20d2c9ecb4f13
+Author: codex <codex@example.com>
+Date:   2025-09-23 19:46:37 +0000
+
+    ios: useKeyboardInsets hook (VisualViewport+TWA) для листа и комментариев; overlay не блокирует внутренний скролл; lock body через position:fixed; ширина листа под iOS
+
+commit df0bf29fcc9eb9cdad4a35e85a90232041e18785
+Author: codex <codex@example.com>
+Date:   2025-09-23 19:42:13 +0000
+
+    ios: kb var only when input focused and > threshold; remove body overscroll tweak; cleanup composer
+
+commit 3e8c8961e16df1268841291428dea0173a8750be
+Author: codex <codex@example.com>
+Date:   2025-09-23 19:29:40 +0000
+
+    ios: модалка как bottom-sheet — стопим скролл, плашка строго над клавиатурой по --kb только при фокусе; слегка шире на iOS; запрет overscroll сворачивания
+
+commit 5c43101eedf0c9366920a8d155b2ae204ce6037f
+Author: codex <codex@example.com>
+Date:   2025-09-23 19:23:10 +0000
+
+    ios: верстка клавиатуры — плашка и комментарии фикс над клавиатурой; запрет вертикальных свайпов в TWA; стабильный расчёт через VisualViewport (--kb)
+
+commit 7428946ddd5d7627d6494760cef8ac11fac2533f
+Author: codex <codex@example.com>
+Date:   2025-09-22 12:24:08 +0000
+
+    feat(groups-perms): add group-level permissions (view-own-only, change-status-any, can-create-tasks, edit-json); server endpoints to get/set; enforce view-own-only on board and create-task rights; UI in GroupEdit → ‘Права’ modal; client alert on no rights
+
+commit 31ab2b8ed66270ae7186b1e5d66e65b8fc94bc7b
+Author: codex <codex@example.com>
+Date:   2025-09-22 11:55:47 +0000
+
+    ui(groups+settings): section titles ‘Мои проекты’, ‘Публичные группы’, ‘Проекты со мной’ in black; settings container uses themed background var(--app-bg)
+
+commit 7bda8d1f06528167bc31fec45a938c9798307d73
+Author: codex <codex@example.com>
+Date:   2025-09-22 11:52:38 +0000
+
+    ui(groups): set Section title color black only for ‘Мои проекты’ to improve contrast on themed background
+
+commit 72cb5072a1bd82df5db690e85ec8cc9d21a828c1
+Author: codex <codex@example.com>
+Date:   2025-09-22 11:41:09 +0000
+
+    ui(feed): shrink ‘Запустят после’ ribbons to inline-block to avoid overflow past card edges
+
+commit 62400923035786cbcadb90dba6be31136f995a46
+Author: codex <codex@example.com>
+Date:   2025-09-22 11:36:31 +0000
+
+    feat(theme): apply saved background on app start; use var(--app-bg) in Home feed and TaskView so the list and task pages reflect user background color
+
+commit 96f410fc59cbbf462fc0a03fa8ae5adbbfb32f35
+Author: codex <codex@example.com>
+Date:   2025-09-22 11:17:14 +0000
+
+    ux(pretask): hide links/search list in 🔘 panel when editing pre-task; keep only trigger condition; pass hidePreLinks flag; save trigger params on 💾
+
+commit 144b48faebb4f7d53177292356dd854710cad01e
+Author: codex <codex@example.com>
+Date:   2025-09-22 10:56:39 +0000
+
+    feat(pretask): long‑press opens the same CreateTaskModal sheet; wire edit-pretask-open through CreateTaskFab; basic rename save for pretask in CreateTaskModal; stop opening legacy PreTaskEditModal
+
+commit 3f6d57ffc10f86d945ac72af112eb94870bec966
+Author: codex <codex@example.com>
+Date:   2025-09-22 10:46:18 +0000
+
+    feat(pretask): long‑press opens same bottom sheet as task; add 💾 save on title row and align styles with CreateTaskModal
+
+commit 111263f5c4fe914d4203d1c48f17d46466ed03a3
+Author: codex <codex@example.com>
+Date:   2025-09-21 18:23:39 +0000
+
+    fix(feed): Завершение из ленты переводит в Готово; long‑press для предзадач с нижней панелью редактирования; canvas: перетаскивание из Done создаёт задачу, а не предзадачу
+
+commit dbaf6f42ddd32de657a928f61ef58688971cd14b
+Author: codex <codex@example.com>
+Date:   2025-09-21 12:23:49 +0000
+
+    chore(ui): remove legacy group process and TaskView process UI; keep only task-feed process; disable pretask badge click in feed
+
+commit 4c22eccad3c72ba73a86d881736efd54ee26b0bb
+Author: codex <codex@example.com>
+Date:   2025-09-21 12:09:42 +0000
+
+    chore(ui): remove group process UI and TaskView process links; keep only task-feed process overlay
+
+commit 79956bf3e862c8fd0a5d232e884c0ec92e01f607
+Author: codex <codex@example.com>
+Date:   2025-09-21 11:56:54 +0000
+
+    fix(process): correct task-scope rendering and feed indicators
+    
+    - Merge-based save for /groups/:groupId/process (no mass delete)
+    - Fix preTask → task migration (positions, edges), remove 'full' error
+    - Extend GET /tasks/:id/graph with full process nodes/edges and remap fired pretasks
+    - Add SSE endpoint /sse/stream and switch frontend listeners
+    - Feed: show arrow badge for tasks with links; include counts from API
+    - Feed: open correct root task scope and focus current task (no overlay)
+    - Feed: show arrow badge for pretask cards
+
+commit 915b63081f60bd5694a3ed22356162d1b540305e
+Author: codex <codex@example.com>
+Date:   2025-09-19 17:31:47 +0000
+
+    taskview: добавил плавающую круглую кнопку со стрелкой назад (как в комментариях) + корректный возврат в ленту/группу
+
+commit 76a9989ba05370f8081cc2fd26523e457c07dd70
+Author: codex <codex@example.com>
+Date:   2025-09-19 17:28:25 +0000
+
+    taskview: стрелка назад возвращает в ленту, если задача открыта из фида (origin=feed); иначе — в доску группы
+
+commit fba4eddbfaa296d71258f5557622b03a1e499c27
+Author: codex <codex@example.com>
+Date:   2025-09-19 17:20:34 +0000
+
+    settings/theme: убрал длинные подсказки/пресеты — оставил только 'Цвет фона [свотч]' + модалка с react-colorful
+
+commit 9bec04e2b0ee91f21955743835a78260a07a75b5
+Author: codex <codex@example.com>
+Date:   2025-09-19 17:15:25 +0000
+
+    settings/theme: упростил UX — строка 'Цвет фона [ ]' и модальное полотно с react-colorful HexColorPicker
+
+commit c6240e4cafe37a55717b73c4aa789fe74a614b3f
+Author: codex <codex@example.com>
+Date:   2025-09-19 15:13:41 +0000
+
+    settings: добавил полноэкранный цветовой пикер (HSV): перетаскивание пальцем по палитре + полоса тона; live-превью и сохранение
+
+commit 02159d05da792fa17fd7b810632c55551a69978c
+Author: codex <codex@example.com>
+Date:   2025-09-19 15:09:29 +0000
+
+    theme: применяю фон через CSS var --app-bg у корневого контейнера и body; фон теперь меняется сразу
+
+commit 1df1fff028defd317c081ece386d1624ef936b36
+Author: codex <codex@example.com>
+Date:   2025-09-19 15:03:58 +0000
+
+    api/webapp: user theme background
+    
+    - Prisma: add User.themeBg and migration
+    - Server: GET/POST /me/theme to fetch/set color (#RRGGBB)
+    - Webapp: SettingsTheme to pick & save color; apply to body via CSS var
+    - Settings page: include theme block
+
+commit c0dea7ab4e284298cc82b4a84b1c518566bd0aec
+Author: codex <codex@example.com>
+Date:   2025-09-19 14:58:37 +0000
+
+    groups: поднял кнопку [ + ] выше синей FAB; в модалке проекта — табы и большой набор эмодзи-иконок
+
+commit 52c51da8582b0d57db152fe5963a55d219fc0036
+Author: codex <codex@example.com>
+Date:   2025-09-19 14:54:06 +0000
+
+    groups: плавающая кнопка [ + ] для создания проекта + модалка с выбором иконки
+    
+    - Новый CreateGroupModal: ввод названия и выбор emoji-иконки (обязательная)
+    - Кнопка внизу справа (жёлтый квадрат) поверх списка групп
+    - Кнопка '+ Создать проект' теперь открывает ту же модалку
+    - Иконка подставляется в title проекта (например: '📁 Мой проект')
+
+commit 77459d8a37a7bebed432de0ed00d0f9fb3b3fe93
+Author: codex <codex@example.com>
+Date:   2025-09-19 14:46:35 +0000
+
+    create-task: выбор группы + ярлыка в одном окне (GroupPicker)
+    
+    - Добавил правую панель выбора ярлыка рядом с радиокнопками групп
+    - Подгружаю ярлыки для выбранной группы, поддержка 'Без ярлыка'
+    - Прокидываю состояние selectedLabelId между модалками
+
+commit 9d0ad411e3960867e4db910e04c1dde521d6548c
+Author: codex <codex@example.com>
+Date:   2025-09-19 14:41:46 +0000
+
+    migrate: SQLite -> Postgres (Prisma)
+    
+    - Switch datasource to postgresql in schema
+    - Create PG role/db and apply new migration
+    - Reset migrations; keep SQLite migrations under migrations_sqlite_backup_*
+    - Update migration lock to postgresql
+    - Webapp: settings — show user FIO and ID
+    - Misc: include new assets and pending changes
+
+commit d0f66cb47d528066290febab9ec127f649b405bf
+Author: codex <codex@example.com>
+Date:   2025-09-19 14:34:16 +0000
+
+    webapp: настройки — профиль: ФИО и ID пользователя
+
+commit 8eb7f1bc0420867166bc576495656f2b46dc1a47
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:59:14 +0000
+
+    Task progress: DB field + PATCH /tasks/:id/progress; TaskView slider for 'В работе' with auto-complete at 100%; show (N%) near 'В работе' in Home feed and process canvas badges; build + restart API
+
+commit 2d63965ec22614b031a3742f6f4883ee890e4cf7
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:37:05 +0000
+
+    tasks/graph: переносим координаты fired предзадач на ключ задачи (task:<id>) для корректного позиционирования при гидрации без SSE)
+
+commit 35525d5eaeb20bfb6af1d8921b3adf6a7914ae2d
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:30:25 +0000
+
+    Process canvas: для личных задач используем task-scope по умолчанию (groupId = task:<rootId>) — сохраняем/читаем точные позиции узлов
+
+commit 73604b7e527626e9fedb3675d514998f1e450d36
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:24:28 +0000
+
+    Process canvas: при FIRE предзадачи сохраняю граф сразу (без дебаунса), чтобы новая задача встала ровно на позицию предзадачи перед перезагрузкой
+
+commit 5d0c8ffeef04b40da37af0898d536d36c2cc85f4
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:12:24 +0000
+
+    Feed: CommentsStrip теперь точно совпадает по ширине с карточкой (та же ширина и отступы)
+
+commit 5a3689953d520c1f582ed53414c3bed2d7de60db
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:09:00 +0000
+
+    GroupList: по умолчанию показываю вкладку 'Мои проекты' вместо 'Публичные'
+
+commit a6c3eaa482c94f9669375a171ce7bda197ebd640
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:06:22 +0000
+
+    CreateTaskModal: поменял порядок — ярлык слева, кнопка группы справа (группа ближе к краю)
+
+commit ac9afe258eaba41116e18710bb8496455b0c2936
+Author: codex <codex@example.com>
+Date:   2025-09-19 07:04:04 +0000
+
+    CreateTaskModal: зеркально поменял позиции — X слева, выбор группы и ярлыка справа
+
+commit 2869583eb4df9b0ea8db223fed33682404093bf1
+Author: codex <codex@example.com>
+Date:   2025-09-19 06:55:33 +0000
+
+    group member description: DB field, API routes, UI modal with delete/description/rights stub; 📜 indicator in list; build + pm2 restart
+
+commit 9c4e3416fbbf98d4f458bee375d2bc9506d4a530
+Author: codex <codex@example.com>
+Date:   2025-09-19 06:38:38 +0000
+
+    ( клик по группе как отдельное меню)
+
+commit 660de404545a0a4ac93efee5c9ffef3cccf87ed5
+Author: codex <codex@example.com>
+Date:   2025-09-18 15:41:22 +0000
+
+    Полотно процессов: отрисовка и UX\n\n- task-scope: серверный граф tasks/:id/graph + гидратация\n- FIRED: предзадачи → задачи на месте (позиции/рёбра)\n- стабильные позиции (metaJson.key) + автосохранение\n- статус‑бейджи, StageQuickBar на полотне\n- нормализация колонок для QuickBar, meChatId в узлы\n- SSE и мягкий reload после смены статуса
+
+commit 01e599c3ccc2a098ec4397447cd4cd10e1525e80
+Author: codex <codex@example.com>
+Date:   2025-09-18 08:56:01 +0000
+
+    feat(taskfeedprocess): узел на полотне стилизован как карточка ленты (белый фон, бордер, id, типографика)
+
+commit 97593b2d976e30fd3152613548b349281e2cb2fe
+Author: codex <codex@example.com>
+Date:   2025-09-18 08:51:25 +0000
+
+    feat(taskfeedprocess): новая страница-полотно на React Flow для карточки из ленты; открывается по клику на серый круг; добавлена кнопка назад в синем кружке; индикатор — белый круг со стрелкой ➜
+
+commit bbe14560bded402dfd800009038a1e9f168240af
+Author: codex <codex@example.com>
+Date:   2025-09-18 08:43:29 +0000
+
+    feat(feed): стрелочки в кружках на карточках в ленте (белый круг + синяя стрелка ➜; центр по грани, без клиппинга)
+
+commit 9b371409a8b63686fbb955a42ac785d7ea7ee175
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:43:05 +0000
+
+    chore(ui): make html/body background transparent to avoid black side gutters; restore on cleanup
+
+commit f177e0449d229d0b13166dd08c433c35a73b967b
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:36:36 +0000
+
+    fix(feed): attach edge indicator as absolute sibling inside card wrapper (no portal) to eliminate tracking lag; ensure wrapper has isolation+overflow:visible
+
+commit 6fc37f7c7f270e2f32171b40f8b40e02ccea18b7
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:31:30 +0000
+
+    fix(feed): render pre-task indicator via portal (position:fixed by anchor rect) to avoid any clipping; raise z-index; wrapper isolation
+
+commit fde98a712d0d7cd630bcdc4e86baa399a9350127
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:19:46 +0000
+
+    fix(feed): indicator now rendered as sibling overlay of the card (not inside) and wrapper overflow:visible; prevents clipping on the right edge
+
+commit 5918da64a4b015ac85a68282c7c3deb67f2e6aea
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:12:42 +0000
+
+    fix(process): render handles in an absolute overlay layer (pointer-events preserved) to avoid clipping by node background/border
+
+commit 9f380e617bc946970fd38ed2d4f721aaa43a1b81
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:09:09 +0000
+
+    fix(process): prevent handle circles from being clipped — overflow:visible on node; raise handle z-index; keep nodes from clipping handles
+
+commit cf029c5ed511971b7ad432cb287937070895f1d3
+Author: codex <codex@example.com>
+Date:   2025-09-18 07:01:19 +0000
+
+    fix(feed): keep edge badge above card — set overflow:visible on card button so circle/arrow aren’t clipped; align circle center exactly on card edge
+
+commit 5a9261aadfb4e7f24eac02727ec80f29ca9c83a8
+Author: codex <codex@example.com>
+Date:   2025-09-18 06:55:09 +0000
+
+    feat(feed): edge indicator — gray circle if no pre-tasks, blue circle with arrow when present; centered on card edge
+
+commit 8d8ca6d3e578a856afe9c0025cd24bfd622fe8f4 (origin/main, main)
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:57:52 +0000
+
+    tweak(stories): invert morph control — dragging down (scroll up) increases, dragging up (scroll down) decreases
+
+commit 0096b06dcccd8676264c1fe0da194e21f0b5caed
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:54:31 +0000
+
+    feat(stories): morph from dot→ring on scroll; show full bar after threshold; collapses back on top
+
+commit 6d807a731753aa2de4b6e8b90321415242ad9ff2
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:40:40 +0000
+
+    tweak(stories): align mini view circles on the same vertical center (BACK_TOP offset)
+
+commit bbf96fe1b084c74c0c2780ca5162e01bcb5ee36f
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:35:26 +0000
+
+    feat(stories): mini view with two overlapping rings at top; expand to full bar on scroll down; collapse back at top
+
+commit baf98efc01536da1bfe82a84e8000cec611ecb22
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:21:24 +0000
+
+    tweak(feed): tighten spacing between top header and achievements row (smaller margins/paddings)
+
+commit 55e059ce07e73094148e03db6f6ba505fdaa9742
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:17:48 +0000
+
+    fix(feed): фиксированные заголовки в ленте
+
+commit 42aa4fba63357847b4ca63c9dce6a9d6ee76b6dc
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:15:25 +0000
+
+    fix(feed): robust fixed page label for TWA — uses IntersectionObserver + fixed top; remove unused stickyOffset
+
+commit 6e1e8ecf7f7f0b3a2eae486f4cb40f25d581acbc
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:08:10 +0000
+
+    feat(feed): add global sticky page label synced with horizontal slider; remove per-section sticky to avoid overlap
+
+commit ea55f290a7d7e648dac36d95c4c900ff553a5745
+Author: codex <codex@example.com>
+Date:   2025-09-17 14:03:55 +0000
+
+    feat(feed): make column title sticky on vertical scroll; sticky top header offsets section header to avoid overlap
+
+commit da2e1d067cec0a60a1c55257598e9cd8dd05f2fa
+Merge: c60fa71 a9fb73b
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:58:31 +0000
+
+    merge: stories bar, public groups UI, smooth long-press scroll
+
+commit a9fb73b70afe3ee14c57efb42585e28a06c24c15
+Merge: 85e5ab0 b6dc167
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:54:59 +0000
+
+    merge: bring public groups UI into фича
+
+commit 85e5ab0766c7a7eb865d73a8ddb9112354257b23
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:51:33 +0000
+
+    tune(long-press): add start delay + scroll cancel; increase slop to 16px; keep passive events for smooth scrolling
+
+commit 6bc8523ee3b75d4b4ddb6859ef1b67c60ce6003e
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:47:29 +0000
+
+    feat(home): restore Stories bar at top and overlay viewer (today-only)
+
+commit b6dc167304ae0ef949376483f01b6dbae716072e (origin/публичные-группы)
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:24:20 +0000
+
+    fix(ui): принудительно зелёный стиль для публичных групп в ленте (fallback по groupId → groupPublicById)
+
+commit 54b557331e0d5ff32fd841f9d5573d5b4ff7f90e
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:15:48 +0000
+
+    feat(ui): TaskView — зелёный текст и 🌍 для публичных групп (кнопка группы)
+
+commit b836acc894a5422f17cc7f0a35fadf70f9b25871
+Author: codex <codex@example.com>
+Date:   2025-09-17 13:10:24 +0000
+
+    feat(ui): в ленте для публичных групп — зелёный текст + зелёная рамка, фон прозрачный
+
+commit 37edf0a129705736d969c4438c8229d1715b0c22
+Author: codex <codex@example.com>
+Date:   2025-09-17 12:55:14 +0000
+
+    feat(ui): 🌍+зелёный для публичных групп везде\n\n- CreateTaskModal: зелёный и 🌍 в выборе группы\n- GroupPicker: пометка публичных групп\n- GroupFilterModal: добавлен таб 'Публичные', 🌍 и зелёный\n- Home feed chip: зелёный + 🌍 через isPublicGroup\n- API feed: отдаёт isPublicGroup
+
+commit c2b2a5e7fe8b921e517447fb4c561513def989d9
+Author: codex <codex@example.com>
+Date:   2025-09-17 12:40:05 +0000
+
+    feat(ui): 🌍 + зелёный для публичных групп (в списках и в ленте)\n\n- GroupCard: показывает 🌍 и зелёный для isPublic\n- Public таб уже с зелёным\n- Home feed chip: зелёный и 🌍 для isPublicGroup\n- API feed: отдаёт isPublicGroup
+
+commit b423fde10339d5f1c75a56b4f774a7d3ca4ae3f9
+Author: codex <codex@example.com>
+Date:   2025-09-17 12:23:26 +0000
+
+    feat(public-groups): schema + API + UI groundwork\n\n- Prisma: Group.isPublic/publicSince + GroupWatcher\n- API: toggle public, list public, watch/unwatch, public read-only in /tasks\n- Webapp: public groups tab, subscribe toggle, public flag in GroupEdit
+
+commit 2b7f09718ef8d580116b510fe5e4fc1a3e61571d
+Author: codex <codex@example.com>
+Date:   2025-09-17 11:49:57 +0000
+
+    feat(ui): увеличен зазор между колонками ленты на 30px (визуальный воздух)\n\n- добавлен flex gap для слайдера страниц\n- колесо/свайп учитывает gap при прокрутке между страницами
+
+commit c4497855adda0f17535d467c2ad4c2a512202c2e
+Author: codex <codex@example.com>
+Date:   2025-09-17 11:30:16 +0000
+
+    fix(api): robust ECMWF weather check\n\n- handle missing hourly value (no 0.0 default)\n- try nearest/floor/ceil hours and ±1h neighbors\n- fallback request without models param\n- on no data or error: cancel pretask and notify
+
+commit 3b359f95023c7f418be6ab4633408eba3f801c52
+Author: codex <codex@example.com>
+Date:   2025-09-17 11:16:48 +0000
+
+    feat(api): weather gate using ECMWF (Open‑Meteo) for DATE_PLUS pretasks\n\n- fetch hourly temperature_2m from ecmwf_ifs04 at startAt hour (UTC)\n- compare with payload.weather (GE/LE) and threshold\n- cancel pretask + notify creator if not matched; otherwise create task
+
+commit 3d337ec8e25c5f8ecb6196db6ed62e4e386d7eb5
+Author: codex <codex@example.com>
+Date:   2025-09-17 11:08:44 +0000
+
+    feat: погодное планирование\n\n- модалка выбора погоды (дата/город/оператор/значение)\n- сохранение weatherCfg, скрытие 🤖, подпись под textarea\n- передача payload.weather в createPreTask (с triggerMode=DATE_PLUS)\n- отображение 🌦️ и условия в ленте для предзадач
+
+commit 8e298e3f1aa92360afe32c045ac68158619ee705
+Author: codex <codex@example.com>
+Date:   2025-09-17 10:48:48 +0000
+
+    fix: фокус на textarea после отмены в 🤖 и blur при открытии робота
+
+commit 31cd2d2792dc165aca405354ac5f2a4a5cc1ab47
+Author: codex <codex@example.com>
+Date:   2025-09-17 10:46:16 +0000
+
+    feat: 🤖 вместо 🕒 + выбор режима\n\n- добавлен RobotPicker с пунктами: плановое и от погоды\n- кнопка 🤖 перед textarea, по выбору 🕒 открываем планировщик\n- заглушка-модалка для погоды
+
+commit 560a2d7a8e8c2790624cd06ce4cdafb828296624
+Author: codex <codex@example.com>
+Date:   2025-09-17 10:31:09 +0000
+
+    feat: подписи условий/напоминаний под полем\n\n- показываем выбранные условия приёма\n- список напоминаний под textarea\n- фокус при закрытии планировщика 🕒
+
+commit a196af828ff3abe8d2f01b65b55d8201fcf80c5a
+Author: codex <codex@example.com>
+Date:   2025-09-17 10:14:58 +0000
+
+    feat: работает фокус после 🕒\n\n- blur textarea при открытии планировщика\n- фокус на textarea при закрытии планировщика\n- стабильно держит клавиатуру на мобилках
+
+commit 75e1e04fde3a996cbb0d7cba42493482a9ad5f3a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-17 08:05:13 +0000
+
+    CreateTask: add 🕒 button before input; ensure single scheduled info block; keep swipe input empty + focus; right slot ➤ for scheduled/linked; fix PostCreate onMake taskId; focus on open; minor cleanups
+
+commit 2f0d0138950909086ba247d486ab28bb15e80562
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-17 07:39:41 +0000
+
+    CreateTask: split into modular components; restore swipe (edge-pre-open) and edit (edit-task-open) flows; add TextComposer, AttachBar, ExistingMedia; add hooks useTonPayment/useAudioPreview; re-enable paperclip inside input; focus handling on open; correct PreTask creation via ➤; fix PostCreateActionsLauncher taskId return; integrate GroupPicker and DeleteConfirmModal; move task on group change; events for pre-task-created
+
+commit 70565b27790ad7fb74d02e3c4612490932ddeb3f
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 08:50:44 +0000
+
+    feat(comments UX): add floating back FAB above composer; set caret to end when entering edit; keep previews for attachments
+
+commit 6af1ec65691703abd70ddec135776d5b44c1586e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 08:42:14 +0000
+
+    feat(edit-task UX): caret to end when opening edit; show existing attachment previews in simple mode too
+
+commit cba97d3b9c8f38f035d0f39008bf481914049cfa
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 08:30:27 +0000
+
+    feat(edit-task UI): show previews for existing attachments (photos/docs/audio) with limit; fix group change to move task to target group Inbox; patch feed with new group + labels
+
+commit a85547e9ca5941a260003b9d29610462ff0850cc
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 08:23:15 +0000
+
+    fix(edit group): raise group picker z-index above main modal; prefill existing attachments in edit mode and show as info list; acceptCondition/reminders fully editable; keep one label
+
+commit d28b01a0f4cd893bd81d8a415fb72b23faf577b5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 08:15:56 +0000
+
+    feat(edit-task): prefill reminders and accept condition; allow changing/deleting reminders and accept; replace labels set; save pipeline updated; include acceptCondition in edit-task-open detail
+
+commit 737d64bdbead1eb31bca1da6c93da683760fe59e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 08:02:21 +0000
+
+    feat(edit-task): long-press opens CreateTaskFab in edit mode with prefilled text, deadline, label, bounty; save via 💾 updates task and closes; feed updates via task-patched; autofocus retained
+
+commit d67d96be0e5d60fd1e8d8c80b1202f278fd19e46
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:42:02 +0000
+
+    feat(CreateTaskFab): auto-expand textarea up to 6 lines, then scroll; applied to both simple and master modes
+
+commit d16d4b0d41c4e77bfd0d0de88956412acc560791
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:35:55 +0000
+
+    feat(comments): autofocus composer input when opening overlay
+
+commit 15e4684a87b198283dc6985bbed2a35a2c93a032
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:32:53 +0000
+
+    tune(long-press): 1s hold duration on feed cards
+
+commit 463c1542bcbb4912703f221589c14569e7ad4f72
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:30:42 +0000
+
+    fix(long-press): don't block scroll — use passive pointer listeners only and remove preventDefault
+
+commit d82cbf4188e436a7530c3a691fee7ca98003e2e0
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:27:40 +0000
+
+    fix(long-press): align outline by rendering absolute inside card instead of viewport-fixed; keeps in sync with transforms
+
+commit dd3fb9f78342b2feb0d90e056b5adabbbe0134e7
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:16:19 +0000
+
+    tune(long-press): 3s progress, non-passive start to prevent scroll, stronger glow and z-index
+
+commit 533d56913e93e059cfacd862ef81987ce371f763
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:12:37 +0000
+
+    feat(feed): neon blue long-press outline, thicker stroke and clearer left-to-right fill using dasharray
+
+commit 49323de23e3eda5ad4870a6abe2b753b678fde4c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:09:31 +0000
+
+    feat(feed): long-press progress outline on cards; shows demo modal when completed
+
+commit f831b68642974d47f9c577cbb3b795b538ba7583
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 07:00:44 +0000
+
+    feat(feed): animated comments view — card flies to header and back on ←
+
+commit 6c8d768de361fe2ecb50281c1630c85910128b2e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 06:44:29 +0000
+
+    feat(feed): comments overlay — pinned card header, scrollable thread, fixed composer with back arrow
+
+commit 5084acb5d6f71e5922a292656212cf18c8dee9d6 (feature/pre-tasks)
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-16 06:35:28 +0000
+
+    feat(feed): add comments strip under task card and expose commentsCount in /tasks/feed; tweak styles (flat bottom corners)
+
+commit 19185716cf2acaae64bb27258f83815aca0644e2 (origin/Ficha)
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 13:41:33 +0000
+
+    feat(settings): add SettingsRank component with (GET/POST) /me/rank; selectable rank list; UI integrated under Settings
+
+commit 67be7fb5cad024f242485bcc8505ed193b1a2db2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 13:26:13 +0000
+
+    feat(achievements): add 💣 filter; build full list across boards for filters; UI: ensure clear-filter visible and panel closer to left
+
+commit afaa3a7030af13f86de6e0e7e3cc876f731c6000
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 13:20:01 +0000
+
+    fix(achievements): move meChatId before ach filter effect; ensure no TS errors; keep counts matching filters
+
+commit e893fa290b50f20d168241ebdf210823e3ead8fd
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 13:07:31 +0000
+
+    ui(achievements): tighter left padding so (i) and ✕ фильтр видны; server(feed): raise limit cap to 500; fix filters and counts alignment
+
+commit 67e2cffb00db1df169710743a1156653507533a0
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 12:59:57 +0000
+
+    fix(achievements): align panel left; use 🦅 base in panel; exclude Done in 🌰 filter; enlarge feed limit under filters; adjust 🌰 = total − 🌱
+
+commit ce0c92418b2510409dee228fdd89fb71587d46ac
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 12:43:42 +0000
+
+    feat(achievements): add (i) info button + detailed modal; client-side total 🌰 compute; clickable filters (🌰/🌱/🦅/⚫/🚀) that apply to feed; add rank fields to User schema
+
+commit 6a3eced35c56dfad94f19134a13e0643262d057a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 11:27:35 +0000
+
+    feat(achievements): use /tasks/created/count for 🌰 (active-only); fix EVENT & shared-newtask author; show full 🌱; refresh on list/status changes
+
+commit 5ecde0eca8d03941bf6a315b0f3263445a8aa42e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 10:42:42 +0000
+
+    fix(acorns): add GET /me/acorns and use it to override acorns in client; ensures 🌰 increments immediately after task/event creation regardless of board owner
+
+commit 1e8a682b9977797cc8c9371b17a0b79fad1ee4d5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 10:37:23 +0000
+
+    fix(events): set createdByChatId on event creation so acorns (🌰) count includes events created by user
+
+commit 34f1dcd19ef32cee827776c1955f6660f70bb7aa
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 08:52:41 +0000
+
+    fix(achievements): refetch rating on feed reload to ensure 🌰 updates right after task creation
+
+commit e37a1bfa2698901592a67f0f4322b5d1f5b3b7ac
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 08:40:01 +0000
+
+    fix(achievements): compute stats from backend /me/rating when available to avoid local miscount; fallback to local feed calc
+
+commit 2a96a9cc0aca7780f2b1c796db69b85bfc6d95ff
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 08:35:08 +0000
+
+    chore(achievements): remove numbered rules section from rules modal (keep legend only)
+
+commit 5eb0d797ad97a973dde52077509e8698de92e8f5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 08:32:14 +0000
+
+    docs(achievements): add legend to rules modal with icon explanations
+
+commit e33e8387fd24942039809fb0a19fa63433982abf
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-15 08:30:24 +0000
+
+    feat(achievements): achievements panel + centered rules modal; rank modal via shared overlay; add /me/rating backend route and wire server\n\n- Panel: shows 🌰|🌱|🦅/🐦‍🔥|⚫/🔴|🚀|💣, opens modal centered, closes on backdrop click\n- Rank: same modal with collapsible perks per rank, shared OverlayModal\n- API: GET /me/rating to compute stats, rank, and feature flags
+
+commit 2e62917b18fea9e50b3b016c5eae914fc46d44c3 (origin/feature/pre-tasks)
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 17:24:24 +0000
+
+    feat(feed): optimistic 'pre-task-created' event for immediate counters; fix swipe IDs (string) across lists; stronger white shadow & outline for layered effect in dark theme
+
+commit 010eb2587c20f49b230e24b9100881fc9b2c64a7
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 17:07:46 +0000
+
+    fix(swipe): normalize IDs to string for pretasks (handles 4th and beyond); style: add layered box-shadow for expanded pretask lists with subtle tone
+
+commit 937008d45fa3de5a591aef6463b0ce821f9d40ee
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:47:18 +0000
+
+    feat(pretask): add recursive 'Запустят после' in expanded lists; highlight pretasks with children via emphasis border; add swipe+create for nested items
+
+commit ecaf41b0a2b445495402459d853965dfb81c9f79
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:37:26 +0000
+
+    feat(feed): enable swipe-to-create on pretasks inside expanded 'Запустят после' lists (tasks and pretasks); add swipe background
+
+commit 376ee4165bc22c4c80448f3c9cbfb9198fef23ad
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:32:56 +0000
+
+    style(pretask): add subtle tone for PreTaskCard; apply to expanded 'Запустят после' lists for better visual separation
+
+commit fab9c29fc827e0dd36903129e62dca807eaff046
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:26:21 +0000
+
+    fix(pretask): footer stripe inside PreTaskCard; swipe background + swipe-to-create on pretask cards (injected and tail); exclude self from children list; edge-pre-open handles preTaskId
+
+commit 25bd5a3e9e23a33ea15b488ca4d929943841db3b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:13:31 +0000
+
+    feat(feed): swipe-to-pretask for pretask cards; edge-pre-open supports preTaskId; show 'Запустят после' and children for pretasks; typed openAfter keys
+
+commit 5b812b7f736687a168a2fc5fb6369f5d521744ef
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:05:01 +0000
+
+    refactor(feed): keep 'Запустят после' strip inside card but render PreTaskCard list outside under the card
+
+commit b02548a9a942542d2c743be5fd8f3e208d3af4ee
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 16:01:31 +0000
+
+    fix(feed): move 'Запустят после (N)' strip inside the task card just under assignee row; render PreTaskCard list inside
+
+commit 856ae81c46fdba905e2e41ec317cf8ea911d45e5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 15:54:31 +0000
+
+    feat(feed): attach 'Запустят после (N)' strip tightly to card and render linked items using PreTaskCard for full functionality
+
+commit cd2ec6f1a3c98c31cd8db8b4bf2628f5013db4e5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 15:49:01 +0000
+
+    feat(feed): collapsible strip under task to show linked pre-tasks (Запустят после (N) ⬇/⬆)
+
+commit d9320fa7412a400757d6dd8fe0da21e305890428
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 15:36:45 +0000
+
+    feat(feed): swipe-to-pretask only in All + slide reveal; open quick actions by clicking status badge; CreateTaskFab opens on edge-pre-open with pinned card; link manager add 'Select' modal
+
+commit 9995987a0659a9cde4e25dd914c0f0ed792b41f0
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-14 12:41:29 +0000
+
+    feat(pre-tasks): add pre-task system (DB, API, scheduler, webapp UI); editor, group filter, colored statuses, interleaved feed, TG notify; delete-empty pretask with confirm
+
+commit 0fae98ab90161f0e63e68fa1a4c20274c27c9b63 (origin/feature/prebounty-payment-and-refund-x, feature/prebounty-payment-and-refund-x)
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 18:37:13 +0000
+
+    fix(server): remove TS 'as any' assertions causing SyntaxError in Node ESM
+
+commit f3c93b097fa1c8828c7af0b9de3aeb40fb8832f5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 18:25:35 +0000
+
+    feat(bounty): auto-refund to task owner on Done without assignee, on Cancel move, and on Delete (async via /bounty/refund-request). Refund endpoint now supports amountRub/chatId/taskId and updates task status.
+
+commit af33b5af3e021f9dbcf14650d76fb7785d4cfb5f
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 18:12:51 +0000
+
+    ux(TaskView): show payout modal first on Done, block back close until paid, then run thumbs-up collapse animation
+
+commit 6334a819e29354d617d305d727359ca1ef2ff319
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 18:08:24 +0000
+
+    feat(webapp): play coin.mp3 when executor payout succeeds
+
+commit 4f8c973cc765537abd3747bc3ede0773d74326c6
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 18:04:49 +0000
+
+    fix(bounty): robust TON/RUB rate resolver with cache and Coingecko fallback; use it in release-request to avoid 503 rate_unavailable
+
+commit 1c4861a48e28b04b0343ff40b16a228d56d92425
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 17:55:42 +0000
+
+    feat(webapp): force payout modal in TaskView when Done with unpaid bounty for assignee
+
+commit 09bbe91c758345c2ef8a04aa0bbe5f0058c2ce75
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 17:50:52 +0000
+
+    fix(server): do not mark bounty as PAID on Done; allow executor payout modal to appear and trigger escrow release
+
+commit b9a2aa5e5a24d272035d1c26423159e4e59d70ca
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 17:39:12 +0000
+
+    feat(bounty): pretask payment via TonConnect, refund on (x); executor forced payout modal until paid; switch provider to Toncenter; clamp TON precision; improve UI labels and remove extra lines
+
+commit a719446ab1b7c25f518b0c1e15b8268a5fed1ba6 (origin/Фитча, Фитча)
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 12:36:35 +0000
+
+    Escrow: implement TON refunds via TonAPI send; sign with WalletContractV4 from mnemonic; build external message; get seqno via runGetMethod
+
+commit 8217130213675c37a3efc611dfaf5e4e56e94d3c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 11:34:17 +0000
+
+    Icons: use 💰 for pledged and 💫 for paid across TaskCard/TaskView/StarBadge
+
+commit aae1470ad65670cfe7881d8beeb96ce2f1cad5b7
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 11:29:11 +0000
+
+    Bounty: add PATCH /tasks/:id/bounty to persist RUB amount and status; frontend sets bounty on task creation; ensure FAB hidden when panel open
+
+commit 5016cf14aa8c2eafbbd555df380e2ea34412f2e8
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 11:10:27 +0000
+
+    CreateTask: unlock panel and clear draft after sending; keep group FAB hidden via existing event
+
+commit 6d1171b129b320a2446139a4d0d6709c394f9fc5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 10:55:18 +0000
+
+    UX: TON→RUB conversion in picker; auto-pay on apply; lock create panel when bounty set; hide close; draft persists across reloads; backend /bounty/rates
+
+commit f27b8e01e1202440c51b9f4c443a0bac9f635d77
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 10:12:08 +0000
+
+    CreateTask: request TON payment after task creation (pass taskId to fund-request); remove legacy fakeDeposit
+
+commit 8a3e6770e4cc8301b9cc57278133aa589294b0b4
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 10:03:49 +0000
+
+    Bounty: switch to native TON payments (no USDT jetton dependency); UI labels to TON; keep fee 1%
+
+commit 858875e779835337b35363b6a8deffc84393113a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 09:44:43 +0000
+
+    Bounty: resolve USDT jetton wallet via runGetMethod(get_wallet_address) on master; avoid TonAPI listings; robust stack parsing
+
+commit 8be0c8971b8922d6afaa5b506618105e1c45ed31
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 09:20:43 +0000
+
+    TonConnect: fix network mapping (chain -239 => mainnet); rebuild
+
+commit 976c6baab69d6ccaf79e39dd55e8bd5650b92aeb
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 08:57:16 +0000
+
+    Bounty: use TonAPI /v2/jettons/{jetton}/wallets?owner=… to resolve USDT wallet; keep fallbacks; better logging
+
+commit efb6cc7e5d5306d24e023853f0331232a0344b24
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 08:01:12 +0000
+
+    Wallet: proper disconnect; Bounty: TonAPI-based fund-request with USDT jetton payload; Settings: replace Stars with USDT wallet connect
+
+commit ae238a08e399d0002c8e93331bc88829c38aa03e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 07:06:01 +0000
+
+    Home: скрывать 📁/🏷️ FAB при открытии CreateTask
+
+commit 7b921a6d705dceaddb71b058d20ada47e337b85d
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-12 07:05:32 +0000
+
+    UI: скрывать FAB 📁/🏷️ при открытии CreateTask; возвращать при закрытии
+
+commit feb27fd1c50fa33ccfbb62c34ef67487932cfd54
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 19:12:03 +0000
+
+    feat(ton): add wallet routes (connect-start/verify/status/disconnect), user TON fields; add manifest; TonWalletConnect component; surface in bounty UI (MVP)
+
+commit fb51fdf01d53498e5a54b6058d36545518f8c535
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 18:38:18 +0000
+
+    fix(webhook): keep sourceChatId as group chat for reply threading (use createdByChatId to show creator)
+
+commit eee8bece15600b7c4c7b159e221ab231fc921376
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 18:24:29 +0000
+
+    feat(complete): send status updates to TG group (or DM fallback to creator) on move to Approval/Done
+
+commit 2654d7582cb91c5dcb951bd27060eb8938887902
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 15:25:20 +0000
+
+    feat(webhook): in groups delete user's original message after posting bot message to keep chat clean
+
+commit b7c7ca003bdde78f4c76fff59fcb8bd820bd04d2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 15:21:42 +0000
+
+    feat(tasks): store createdByChatId on task; prefer it as creator in feed/getTask; set from webhook and app; keep group post for TG projects
+
+commit ccca5f577cc6e666555495acd38a71c47a90be23
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 15:15:40 +0000
+
+    feat(tasks): when creating task in TG project, post message to group with deep-link; fix feed creator to prefer sourceChatId only if it's a known user
+
+commit e347f4c61b3414317758193ee1a2aa98385ed021
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 15:11:09 +0000
+
+    feat(webhook): upsert User profiles for chat administrators to enable @username assignment; keep groupMember admin sync
+
+commit 60b4f51b3b28ce48348d03f31841585e86a40146
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 14:57:20 +0000
+
+    feat(feed/webhook): show creator from sourceChatId; service message text = task text without prefix
+
+commit 60f0046ced6e854be3bf7528f6759ac1ac2fff01
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 14:35:08 +0000
+
+    chore(webhook): remove legacy /g_* command handlers; keep only mention-based task creation
+
+commit bfba987126bd31e89354f63e48968d9f020617eb
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 14:28:36 +0000
+
+    fix(webhook): mention detection fallback via raw text includes to handle missing entities
+
+commit 019c16ce5f89c2242de6be1c61f2e409e262bacd
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 14:23:49 +0000
+
+    feat(webhook): create tasks only when bot is mentioned; create in TG group project; assign trailing @mention as assignee; keep service message with deep link
+
+commit c213d09fa27a49b56c3069df53a230cb0cc30ac1
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 13:28:53 +0000
+
+    feat(webapp): mark TG projects in GroupList with ➡️📁 icon and #42aaff title
+
+commit da2ad67c9ce229dd6a88f4b430976b5434fa0f21
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 13:19:38 +0000
+
+    feat(tg-groups): add isTelegramGroup/tgChatId; sync via webhook; show TG projects as ➡️📁 with #42aaff in CreateTaskFab, FeedScopeTabs, Home cards, TaskView; forbid rename of TG groups; show TG groups as 'own' for admins
+
+commit 4d49c31b4b4b250be4c6fcdd21bfdbcff949b418
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 12:33:21 +0000
+
+    fix(webapp): after upload auto-complete according to accept rules; update local media immediately; render /files links as image with onError fallback to link
+
+commit ac2e48b371e14f2e63a2ca9cda92f87aca76a99f
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 12:26:03 +0000
+
+    fix(webapp): for DOC_AND_APPROVAL treat any attachment as satisfying requirement; update prompt text to 'прикрепите файл'
+
+commit e1c38ae47e9ccd9b7883b3a82a56e0fc770ec201
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 12:22:25 +0000
+
+    fix(complete): DOC_AND_APPROVAL accepts any attachment (photo or document) before moving to Approval
+
+commit 646e71273c0606d480945906bb3b023df98b34dc
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 12:17:41 +0000
+
+    fix(complete): avoid loop — if task already in Approval, next complete moves to Done (ignores requiresApproval)
+
+commit 1bc37a4d46eedb4f19846d395a8b8d71ce31e415
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 12:09:49 +0000
+
+    fix(complete): when accept condition requires approval, move task to Approval instead of Done; keep bounty payout only for Done
+
+commit 07733acb8f9a920192ecf14772ad0ecdad102dcb
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:57:59 +0000
+
+    feat(accept): add PHOTO_AND_APPROVAL and DOC_AND_APPROVAL; enforce on server; update TaskView and CreateTaskFab UI + logic
+
+commit 5e4f433e5f87007687bbe5568f9de1f9920dd027
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:31:52 +0000
+
+    feat(webapp): allow removing draft reminders in CreateTaskFab via (x) chips
+
+commit 1581463f8591506379d6f8b01f016207e51b8b6f
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:27:11 +0000
+
+    feat(webapp): CreateTaskFab — add ⏰ reminder setup during creation with modal; create reminders after task is created
+
+commit fe1c1d76b3d75970323f251fa861ecec81dd8f82
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:17:41 +0000
+
+    feat(webapp): add reminders modal, ⏰ button in TaskView, list with delete/strike; show nearest reminder on Home cards
+
+commit 7c811c91c361a0e56383cb780cf9fae2855e354d
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:13:16 +0000
+
+    feat(feed+webapp): include nextReminderAt in /tasks/feed; add webapp reminders API module
+
+commit f59033fdee0a6e5586df0bb68c251f131ba5587d
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:10:42 +0000
+
+    feat(scheduler): support TaskReminder plan/fire; schedule on create; cancel on delete
+
+commit 567d651dffb9fd9cad45f9a804aeed4df5456afb
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:08:05 +0000
+
+    feat(api): add task reminders routes (list/create/delete) and mount into server
+
+commit f9bea4069b32b38e14ff5b02c87684b18e66f2ae
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:02:23 +0000
+
+    chore(prisma): remove duplicate TaskWatcher migration to fix shadow DB error
+
+commit 64a9460e20585339ece5c0510ad270d96909454a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-11 11:00:18 +0000
+
+    feat(reminders): add TaskReminder model and ReminderTarget enum
+
+commit 90ed1558e1fd24014899db0746ca683dc53876ec
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 15:18:04 +0000
+
+    fix(api/watchers): remove TS non-null operator, ensure group exists for invite
+
+commit 279cc8238326aa30b935644d65d1efb452be4c44
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 15:11:36 +0000
+
+    fix(api): move WATCH invite handling into /invites/accept; remove accidental await block in app.listen
+
+commit c49b5057f44451ac198636c37c34b5460cfd9e48
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 15:08:15 +0000
+
+    fix(api): remove stray eventsRouter.patch block from server.js (handled in routes/events.js)
+
+commit 103da23738feedc496d20c70d96d1b869f01c602
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 15:02:43 +0000
+
+    migrations(sqlite): add TaskWatcher table + indexes
+
+commit 8cd2e31a1e0dcefd8432e93ee650457f6c5e9ba0
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:57:49 +0000
+
+    feat(watchers): task watchers block — subscribe/unsubscribe, list with remove; invite link (watch__ token) and accept flow; DB model + routes
+
+commit aa9ca63be19c06aba1332459b7553f95515d7201
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:45:35 +0000
+
+    chore(feed): show only assignee on card footer (hide creator→assignee chain)
+
+commit e96ce8c277e7e9c4076109f85e9e3b09d20a3f21
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:39:51 +0000
+
+    feat(assign UX): show placeholder '(назначаю …)' until assignee name resolves
+
+commit c699157b8c84f7b451e787efc03c50aa82357839
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:36:35 +0000
+
+    feat(assign UX): optimistic update on assign — instantly show assignee without waiting for poll
+
+commit 6d8627f21f78e9967b740a8003cd37563594effd
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:28:29 +0000
+
+    feat(assign): unassign endpoint + UI — add (×) to remove assignee with confirm; show invite button when none
+
+commit 60459c18680d1457ae566220e8afd1a2741275bc
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:14:03 +0000
+
+    feat(api): support APPROVAL condition in accept-condition; extend Prisma enum and regenerate client
+
+commit 57d4e61ba120be25cc0098c41a36c0f41016273f
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 14:09:04 +0000
+
+    feat(approval): new accept condition APPROVAL 🤝; route Done→Approval; creator approval actions; assignee waits; creation/UI pickers updated
+
+commit 8abf2428555f668f37d22e58fd24faea72eda00b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 13:50:40 +0000
+
+    feat(comments): likes — show count and toggle like/unlike per comment
+
+commit ba1cf413750c736f066924c825b4e6d6f5f863e1
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 13:48:00 +0000
+
+    feat(comments): autofocus input; robust autoscroll after send/focus; scroll on image load
+
+commit c664fa6f30102b38426d4a29a09bda5733f554b3
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 12:21:39 +0000
+
+    feat(stars): add virtual bounty schema and routes (bounty, payout-method, stars summary); frontend picker + badges + settings summary; integrate with task create; no real payments yet
+
+commit 5535a1a53452a3f54e64c414557f7eb01f56438b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 11:01:07 +0000
+
+    ux(create): replace 🔗 with 🧷; make toggle circular, subtle, and placed inside textarea without overlapping border
+
+commit 296bd9777ba20c0f2ec2cccdd7d6fdd4e9346e86
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 10:52:35 +0000
+
+    ux(create): ensure 🔗 toggle is visible and away from send button; focus returns after actions; fix autosave to trigger only on actual text changes (no timer flicker)
+
+commit 7bfb7b2ef8b6cb1e2217c9b32a53e7109d389309
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 10:46:28 +0000
+
+    ux(create): hide attachment buttons by default; add 🔗 toggle inside textarea; replace @ with 📑; refocus input to keep keyboard open
+
+commit c96f662c2bc99eb4afe5503758acbdec8c73932e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 10:35:19 +0000
+
+    ux(create): refocus text input after pickers/attachments to keep keyboard open on mobile; add autosave status and upload indicators + overdue badges
+
+commit 0097f7cc2ceff8b5a093102de93521b4176e1833
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 10:19:59 +0000
+
+    ui: add photo upload loading indicators; autosave status tick; stronger overdue deadline badge in TaskView/Home/Board
+
+commit e6272ac873d02a61feccf02b17be3ff014089608
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 10:05:31 +0000
+
+    feat(task): autosave text, remove Save/Complete buttons; acceptance photo flow split (🖼️/📸) in TaskView/Home/Board; fix CreateTaskFab to apply deadline + acceptCondition in simple mode; drag-to-Done prompts for photo
+
+commit 5ac9d01f7817f98ec2e964bfc10a9de64ffba510
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 09:44:10 +0000
+
+    feat(acceptance): add acceptCondition (NONE|PHOTO) with backend route and enforcement; UI: picker in create/task view, indicator on cards, complete with photo flow, and render photo comments; feed/board propagation
+
+commit 419a45e0690c23d6976c401ff490933fcc6b39d0
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 09:07:17 +0000
+
+    fix(comments): clear input on send and reload list immediately for instant appearance
+
+commit 95ec27d5d55b84f9068a5c4e12c13d3cdbc3da75
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 08:57:09 +0000
+
+    feat(deadline): add Task.deadlineAt, backend deadline route, DeadlinePicker UI, attach/edit from create, home feed, board, and task view
+
+commit 1b57344cc469c67f6c067d139af6e7103d3cb43b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 08:29:28 +0000
+
+    ui(create-task): group and label pills sized to 40% each, with truncation and emojis
+
+commit 01a977f0923b6e835c39339c994737267c00f151
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 08:25:11 +0000
+
+    feat(create-task): add label emoji in selector and attach chosen label on create
+
+commit 09791f1716ad965b20678de32fd2507a4c7cb5e4
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 08:07:31 +0000
+
+    feat(home): auto-refresh feed after creating a task via FAB
+
+commit 6ea586638b70158de2371bf5a3fb603d23bdf27e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-10 07:58:41 +0000
+
+    docs: update info/README.md quick start and useful links
+
+commit f9ccf18c3d3f9623415039d782399fdc7bb61848
+Author: codex <codex@example.local>
+Date:   2025-09-10 07:54:34 +0000
+
+    feat(info): add info/README.md with short project info
+
+commit c60fa7112e8b5bf85320b4eaa803e79ce220de79
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-09 12:33:00 +0000
+
+    Процесс постройение 2
+
+commit 3fb9a38bb28a83da7c6e0b257494fa60f335eaec
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-09 11:20:38 +0000
+
+    Процесс постройение 2
+
+commit 20dd597c1598ec20a5abab85b464813305a75f99
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-09 10:52:28 +0000
+
+    Процесс постройение 2
+
+commit 065a44337bb03962709cc7792b26241c46a919cc
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-09 10:14:49 +0000
+
+    Процесс постройение 2
+
+commit 2cae96e1818f5302b564c0c821527f191fc92d37
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-09 08:45:56 +0000
+
+    Процесс постройение 2
+
+commit d958ff4f9cb6bed9920d97abeb446ec5d9f1441e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-08 15:19:20 +0000
+
+    Процесс постройение
+
+commit 9ba94ed30cc7b84789974cde7c85ef07666fffee
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-08 09:50:28 +0000
+
+    ярлыки  в ленте фильтр
+
+commit 497eec555b5fd9acfb258e196aef0944604c7b31
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-08 08:42:21 +0000
+
+    ярлыки  на карточке
+
+commit 2403560a07c3b41b013e53d2e70e447f42aff880
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-08 08:19:25 +0000
+
+    ярлыки
+
+commit 451728faba25953cce278fbd5a606cbed4cfe30c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-08 06:58:10 +0000
+
+    выбор группы через колесный слайдер
+
+commit 2fe3191a7f7af53802e60cfbad1a4dd943597ce2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 19:50:16 +0000
+
+    нормальный скрол
+
+commit 408361bc10946755fa2774593caefe774675e330
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 15:43:06 +0000
+
+    стиль над колонкой
+
+commit 176e596d2ebf35e749507374eacb033134014070
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 15:35:35 +0000
+
+    В ленте статусы и канбан модалка
+
+commit 664a071df3b52d4fed788f53dfc77b7bdb62a17a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 15:21:27 +0000
+
+    В ленте статусы и канбан
+
+commit 787255db6724ead03dcbaf412b58d5487214a5ef
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 11:47:19 +0000
+
+    В ленте статусы
+
+commit bcb271273530710a39a940bd9bcccf1a5861c652
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 10:18:32 +0000
+
+    Wisper
+
+commit 6bb2d7fcf1dfe43a99e7f11cfca0b6d94c66b6a6
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 08:45:04 +0000
+
+    Голосовая заметка воспроизведение задча
+
+commit c1fdaf2712b9dc740306e3b42d81289e47c90ffb
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 08:35:12 +0000
+
+    Голосовая заметка
+
+commit dce2bf28e6aea8ab29053713ddfe9b49fc5be415
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-05 07:30:33 +0000
+
+    нормальная верстка для отправки
+
+commit e2db3b7a93b5bcd11df66050ef730bb162b0221d
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-04 12:53:26 +0000
+
+    После отправки выбирает тип отправки
+
+commit 87e15e58e077dc79ae79e76db440d6638ec61bf9
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-04 12:14:08 +0000
+
+    Правка события + камера
+
+commit 27dfd7455de995f92e809765315b459d37d2a330
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-04 12:13:32 +0000
+
+    Правка события
+
+commit 85d2059280bfdb5af3f099a123ad17fbaf1ae1c8
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-04 11:58:09 +0000
+
+    Стадии в таске
+
+commit 1fe91de2db601c12d06545360178b65b2bb9b00d
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-04 11:29:08 +0000
+
+    6-ть колонок при создании
+
+commit 8dd16dee7be2f2566f761056884342ad80624e07
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-03 08:54:03 +0000
+
+    сториз настрокка линий
+
+commit 656f3930f4ecce3d4ae4834adfb4417016b4c844
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-03 08:17:42 +0000
+
+    сториз 2
+
+commit 67ada08731eda007215973f517ef120fce0aa55a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-03 06:33:25 +0000
+
+    сториз
+
+commit f7091bad4789ad3dffd123e63654bdbfbf7bccb3
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-02 15:02:33 +0000
+
+    выбор группы
+
+commit 0e470cef0543e990f85fd7ba6a5a2e7ea33b89e2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-02 14:38:53 +0000
+
+    выбор группы
+
+commit eefc84630d942e091089d669fa32cf6763023b2b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-02 14:32:16 +0000
+
+    выбор группы
+
+commit df6c6918a32c1d65b00aee3d8b374e89472ab3ce
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 14:46:20 +0000
+
+    главная страница
+
+commit 4499e2042944cf4a8caf5a3cb737cf25ae4bc6f3
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 14:29:00 +0000
+
+    главная со списком задач
+
+commit 3a19c0d304b23bec53ab3b4a0861131e37d90221
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 13:15:25 +0000
+
+    Сохранение с фото
+
+commit 9c66cbc1bfb6d4e97a4265503282569ccbd4dfe4
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 12:05:47 +0000
+
+    кнопки прикрепить файл
+
+commit 8f788cf382856d2b89fafc9febc1612b07aeb8de
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 10:59:07 +0000
+
+    центрирует в процессах ввод текста
+
+commit c321806a2f84a15c83ccf6ad60fc60ed9af4021c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 10:16:42 +0000
+
+    в процессах норм текст
+
+commit 72bd1261bc7fdd30c89acfb6e5c29248db595b4e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 09:43:56 +0000
+
+    нормально переносит текст в карточке
+
+commit 54f3f333a695e776375134a78d94612dff74be4e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 09:18:32 +0000
+
+    правка
+
+commit 66f14225209204070dbe5e19fbd766b35a2e7108
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 08:38:06 +0000
+
+    лайк когда доне в задаче
+
+commit 069470544d3e22bfa456a215001174508e569a61
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 08:30:45 +0000
+
+    лайк когда доне в задаче
+
+commit b2dddfecb1593af34c8f33577af29bf0df8bc9da
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 07:56:40 +0000
+
+    быстрое создание задачи через +
+
+commit 5ecc3b2d2146a8ad2c1cabf916683816fbac611c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-09-01 06:41:53 +0000
+
+    картинки и файлы в боте и в задаче
+
+commit 07d54f70a12490bf82b987caa302fd66ace02c28
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 15:10:15 +0000
+
+    Копировать по ссылке в меню
+
+commit a6926631e0ad810844d22139e911f3396bd0cfc0
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 06:53:13 +0000
+
+    вверхнее меню по клику
+
+commit c904e35da11f0f662c67c5e2e3b7020d8f7db515
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 06:44:54 +0000
+
+    стабильные связи
+
+commit a50d3c3f1c91d4f57b5bade65986310046acf9ce
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 06:32:22 +0000
+
+    подсвечиваются связи
+
+commit 8ffcfb7d8dbaad4bed05ab2cc81fbf60ef63d775
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 06:06:15 +0000
+
+    связи
+
+commit 372277fef020c2ad8c731be2ae9e4a6a95f4a383
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 05:36:03 +0000
+
+    смена иконок
+
+commit ae6336a0aac7c082236a1c87c4cf0dd14dd85179
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 03:58:28 +0000
+
+    статусы в узлах
+
+commit a3873db126b5e16d8632ea8d59cd558f3d28f6c2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-31 03:42:40 +0000
+
+    Выбор на пк пользователей и условия
+
+commit 469a2baf7138bb5783e05f3a9d103b8d91f75d6e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-30 12:00:03 +0000
+
+    Сохранение отсвенного
+
+commit 61b0956de9530768a92251491d71021b81cb2129
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-30 11:49:29 +0000
+
+    Смена отсвеного
+
+commit 0030453088f9b9b3b777654ffe4e846e66f1f543
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-30 11:43:35 +0000
+
+    Видно отвесвенного
+
+commit 4163a429036f3bd59fd922ea83bf6923fec4e9b8
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-30 10:56:30 +0000
+
+    Видно связи в нодах при сохранении
+
+commit 5c2e575e474c3edc47ae33deba20f6c88cfe32fb
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-29 18:17:00 +0000
+
+    Ноды и сервер
+
+commit 2e6251e4f60861947f4c8b182bf408e1b0539b5b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-29 14:42:43 +0000
+
+    Ноды и сервер
+
+commit 30115459fe6d2bec3b102140a2a2f85bfc678a89
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-28 20:49:56 +0000
+
+    Создания событий в календре первый день
+
+commit 351d13be1096a47d07c0aa5684b8eeddf2bb6cd2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-28 20:20:23 +0000
+
+    Создания событий в календаре без отправки
+
+commit 55352980c8f3d6476232499a09a1f1fae7a740f2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-28 18:52:18 +0000
+
+    Создания событий в календаре
+
+commit 3279413d40342d58e9f6f17f47808bffaf1d1fe1
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 15:29:26 +0000
+
+    каллендарь отдельная страница
+
+commit 5017cf9c257882694443637cd14d914d654269ac
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 14:54:33 +0000
+
+    комментриай к задаче уведомление репли
+
+commit 025ea8f9d0a2eb897f0e8aa96a3b6a3f474b3c11
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 12:24:18 +0000
+
+    комментриай к задаче
+
+commit ac0ea84e7021d688c2e120c4c1b3e064bf86d660
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 11:40:35 +0000
+
+    отвесвенный когда принял задачу
+
+commit be1a74ec1c8b79fbff21c70f0a6aa9ff63f66e15
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 11:26:11 +0000
+
+    поделиться в мессенджер без окошко скопировать
+
+commit 0e257b9e5dba2f5374faee4f56375817c2ca8c8e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 11:17:43 +0000
+
+    поделиться в мессенджер
+
+commit 7798a1198f61c1b6634efc354e112d02fa376bfd
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 11:14:13 +0000
+
+    поделиться с меседжерами
+
+commit 84c152328bce886025fcdd6a4527d78532ee31b8
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-27 08:40:15 +0000
+
+    отправить в задаче
+
+commit e46c45ab877d28e405d28acc1c48eb9cb8d07794
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-26 15:27:50 +0000
+
+    Обезательная подписка на телеграм
+
+commit 1a7a94f6a8ab9c68d85062286a65a9506d382a4c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-26 14:04:06 +0000
+
+    Увемление когда завершил задачу
+
+commit 40d99d7af2e08b97eb359b82b9159fa93f22b0a1
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-26 13:45:46 +0000
+
+    Уведомление когда принял задачу
+
+commit b99a3502cf2309095040e4dd6119e82d6c0ac51b
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-25 17:53:04 +0000
+
+    участники в группе
+
+commit 0077bd8af9ba6bc80f63e792eac770b0475fbe85
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-25 17:10:57 +0000
+
+    Редактировать и удалить группу
+
+commit 4b59f6537d9cf1c7ac02f58940e2a65adec26f8c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-25 14:09:20 +0000
+
+    группа над задачей
+
+commit d4c2eb3f45d986f0d4b2e379befad78d66da7196
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-25 12:47:09 +0000
+
+    поделиться задачей
+
+commit 73d3c929bc79d2b31732e4baaeba960fbd5ca99f
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-25 12:13:55 +0000
+
+    выбирает пользователя и остается в вебап
+
+commit eaa29d47f9fec01e9dd9fa87137086f42c57ae18
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-25 06:43:19 +0000
+
+    группы по пунтам
+
+commit 3659a9576256a3912aff0a455fcf5dc1cbefab8c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-24 19:40:42 +0000
+
+    Владельцы в задаче и зеленая когда готово
+
+commit ca46068cba50d9fb23625fbe36e7cf7131a863a5
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-24 18:10:31 +0000
+
+    задача созадтелю
+
+commit feedb3bedc1e56b6ce81a47112a2480fb491c1cf
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-24 17:01:18 +0000
+
+    сылка на задачу
+
+commit 0da9992a92578efeaa7888cfab49f226767f7e42
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-24 11:40:55 +0000
+
+    кнопка назад в задаче из группы
+
+commit 0d9c5a31667d6ace931c1480ff6b897fe5eadc49
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-23 21:40:29 +0000
+
+    кнопка назад в задаче
+
+commit d0441b01ac624fe0a3737294f2b74377cff4b4d2
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-23 21:00:55 +0000
+
+    выбор группы через /
+
+commit 105d488c1ea0960d7f376f7ec81dbf985ce34bc9
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-23 19:59:57 +0000
+
+    задача в группах
+
+commit 65ab806cf84974a714e036765e0ad4c40e5e6d74
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-23 17:31:55 +0000
+
+    Отдельные группы
+
+commit 645c261676bd6a467b9b4028352e2f7e0aa5a20e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-23 17:06:07 +0000
+
+    меню и пункты
+
+commit fa0900aa14af88d23f2aea581b3d82e2f6b26b6a
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-22 08:51:05 +0000
+
+    горизотальный и вертикальный рабочий скрол
+
+commit 80519dec42113e8288e461c97a6781745b66ab7c
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-22 07:25:08 +0000
+
+    Initial commit: Kanban webapp + API (dnd-kit + авто-скролл, мобильные фиксы)2
+
+commit 8291f3518d3cc9cb8190351d15427b10eaff955e
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-22 07:23:58 +0000
+
+    Initial commit: Kanban webapp + API (dnd-kit + авто-скролл, мобильные фиксы)2
+
+commit 6b4aaed19ec18042f00f976588d22da7618d1e98
+Author: root <root@qubsmrsarj.local>
+Date:   2025-08-22 07:21:37 +0000
+
+    Initial commit: Kanban webapp + API (dnd-kit + авто-скролл, мобильные фиксы)
