@@ -33,72 +33,133 @@ function fromLocalInputValue(v: string): string | null {
 }
 
 export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн', icon = '🚩' }: Props) {
-  const [local, setLocal] = useState<string>('');
+  const isiOS = useMemo(() => {
+    try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
+  }, []);
+
+  // Unified internal state: for iOS separate date+time; for others keep datetime-local string
+  const [localDT, setLocalDT] = useState<string>('');
+  const [dateStr, setDateStr] = useState<string>(''); // YYYY-MM-DD
+  const [timeStr, setTimeStr] = useState<string>(''); // HH:MM
   const [error, setError] = useState<string | null>(null);
+  const [narrow, setNarrow] = useState<boolean>(false);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setLocal(value ? toLocalInputValue(value) : '');
+    const dt = value ? toLocalInputValue(value) : '';
+    setLocalDT(dt);
+    if (dt) {
+      const [d, t] = dt.split('T');
+      setDateStr(d || ''); setTimeStr((t || '').slice(0,5));
+    } else {
+      setDateStr(''); setTimeStr('');
+    }
+    try {
+      const check = () => setNarrow((window.innerWidth || 0) < 380);
+      check();
+      window.addEventListener('resize', check);
+      return () => window.removeEventListener('resize', check);
+    } catch {}
   }, [open, value]);
 
-  const minAttr = useMemo(() => {
+  const nowMinDT = useMemo(() => {
     if (!minNow) return undefined;
-    const d = new Date();
-    d.setSeconds(0, 0);
+    const d = new Date(); d.setSeconds(0, 0);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }, [minNow]);
+  const nowMinDate = useMemo(() => nowMinDT?.split('T')[0], [nowMinDT]);
+
+  const makeISO = (d: string, t: string): string | null => {
+    if (!d || !t) return null;
+    const isoLocal = `${d}T${t}`;
+    const dd = new Date(isoLocal);
+    if (Number.isNaN(dd.getTime())) return null;
+    return dd.toISOString();
+  };
+
+  // Quick presets for iOS sheet
+  const applyPlusMinutes = (min: number) => {
+    const d = new Date(Date.now() + min * 60000); d.setSeconds(0, 0);
+    const pad = (n:number)=>String(n).padStart(2,'0');
+    const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const ts = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    setDateStr(ds); setTimeStr(ts);
+  };
+  const setTodayAt = (h:number,m:number)=>{ const d=new Date();d.setSeconds(0,0);d.setHours(h,m,0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
+  const setTomorrowAt = (h:number,m:number)=>{ const d=new Date();d.setDate(d.getDate()+1);d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
 
   if (!open) return null;
+
+  if (isiOS) {
+    return (
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200 }}>
+        <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <div style={{ fontWeight:700 }}>{icon} {title}</div>
+            <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+          </div>
+
+          {/* Quick actions */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:10 }}>
+            <button onClick={()=>applyPlusMinutes(15)} style={chipBtn}>+15м</button>
+            <button onClick={()=>applyPlusMinutes(60)} style={chipBtn}>+1ч</button>
+            <button onClick={()=>setTodayAt(18,0)} style={chipBtn}>Сегодня 18:00</button>
+            <button onClick={()=>setTomorrowAt(9,0)} style={chipBtn}>Завтра 09:00</button>
+            <button onClick={()=>applyPlusMinutes(24*60*7)} style={chipBtn}>Через неделю</button>
+            <button onClick={()=>{ const d=new Date(); const day=(d.getDay()+6)%7; const add=((7-day)%7)||7; d.setDate(d.getDate()+add); d.setHours(10,0,0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr('10:00'); }} style={chipBtn}>Пн 10:00</button>
+          </div>
+
+          {/* Big iOS-friendly pickers */}
+          <div style={{ display:'grid', gridTemplateColumns: narrow ? '1fr' : '1fr 1fr', gap:8, alignItems:'stretch' }}>
+            <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={iosInput} />
+            <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={iosInput} />
+          </div>
+          {error ? <div style={{ color:'salmon', fontSize:12, marginTop:6 }}>{error}</div> : null}
+
+          <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:12 }}>
+            <button onClick={()=>{ onChange(null); onClose(); }} style={btnSecondary}>Без дедлайна</button>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={onClose} style={btnSecondary}>Отмена</button>
+              <button onClick={()=>{
+                const iso = makeISO(dateStr, timeStr);
+                if (!iso) { setError('Выберите дату и время'); return; }
+                const dt = new Date(iso).getTime(); if (minNow && dt <= Date.now()) { setError('Нельзя в прошлое'); return; }
+                onChange(iso); onClose();
+              }} style={btnPrimary}>Сохранить</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Default (desktop/Android): keep compact datetime-local
   return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-    >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#1b2030', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 12, padding: 12, width: 'min(460px, 92vw)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontWeight: 700 }}>{icon} {title}</div>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer' }}>✕</button>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(460px, 92vw)' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+          <div style={{ fontWeight:700 }}>{icon} {title}</div>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', cursor:'pointer' }}>✕</button>
         </div>
-
-        <div style={{ display: 'grid', gap: 8 }}>
-          <input
-            type="datetime-local"
-            value={local}
-            min={minAttr}
-            onChange={(e) => setLocal(e.target.value)}
-            style={{ background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 10, padding: '8px 10px' }}
-          />
-          {error ? <div style={{ color: 'salmon', fontSize: 12 }}>{error}</div> : null}
+        <div style={{ display:'grid', gap:8 }}>
+          <input type="datetime-local" value={localDT} min={nowMinDT} onChange={(e)=>setLocalDT(e.target.value)} style={{ background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px' }} />
+          {error ? <div style={{ color:'salmon', fontSize:12 }}>{error}</div> : null}
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
-          <button
-            onClick={() => { onChange(null); onClose(); }}
-            style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}
-          >
-            Без дедлайна
-          </button>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}>Отмена</button>
-            <button
-              onClick={() => {
-                const iso = fromLocalInputValue(local);
-                if (!iso) { setError('Неверная дата/время'); return; }
-                const now = Date.now();
-                const dt = new Date(iso).getTime();
-                if (dt <= now) { setError('Нельзя в прошлое'); return; }
-                onChange(iso);
-                onClose();
-              }}
-              style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid transparent', background: '#2563eb', color: '#fff' }}
-            >
-              Сохранить
-            </button>
+        <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:10 }}>
+          <button onClick={()=>{ onChange(null); onClose(); }} style={btnSecondary}>Без дедлайна</button>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={onClose} style={btnSecondary}>Отмена</button>
+            <button onClick={()=>{ const iso=fromLocalInputValue(localDT); if (!iso){ setError('Неверная дата/время'); return; } const dt=new Date(iso).getTime(); if (minNow && dt<=Date.now()) { setError('Нельзя в прошлое'); return; } onChange(iso); onClose(); }} style={btnPrimary}>Сохранить</button>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+const chipBtn: React.CSSProperties = { padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer', textAlign:'center' };
+const iosInput: React.CSSProperties = { width:'100%', maxWidth:'100%', boxSizing:'border-box', minWidth:0, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px', fontSize:16 };
+const btnSecondary: React.CSSProperties = { padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' };
+const btnPrimary: React.CSSProperties = { padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff', cursor:'pointer' };

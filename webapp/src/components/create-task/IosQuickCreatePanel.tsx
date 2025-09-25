@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { createTask, listGroups, transcribeVoice, API_BASE, type Group } from '../../api';
+import { createTask, listGroups, transcribeVoice, API_BASE, setTaskDeadline, setAcceptCondition, type Group } from '../../api';
+import { createTaskReminder } from '../../api/reminders';
+import DeadlinePicker from '../DeadlinePicker';
 import VoiceRecorder from '../VoiceRecorder';
 import useAudioPreview from './hooks/useAudioPreview';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
@@ -28,6 +30,15 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const fileAnyRef = useRef<HTMLInputElement | null>(null);
   const filePhotoRef = useRef<HTMLInputElement | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  // deadline (🚩)
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
+  const [deadlineAt, setDeadlineAt] = useState<string | null>(null);
+  // accept (☝️)
+  const [acceptOpen, setAcceptOpen] = useState(false);
+  const [acceptCondition, setAcceptConditionState] = useState<'NONE' | 'PHOTO' | 'APPROVAL' | 'PHOTO_AND_APPROVAL' | 'DOC_AND_APPROVAL'>('NONE');
+  // reminders (⏰)
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [remindersDraft, setRemindersDraft] = useState<Array<{ target: 'ME' | 'RESPONSIBLE' | 'ALL'; fireAtIso: string }>>([]);
   // group selection (like Android header)
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
@@ -159,6 +170,20 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             setUploadProg(null);
             try { alert(`Не удалось загрузить: ${failed.map(f => f.name || 'файл').join(', ')}`); } catch {}
             return; // do not clear/close
+          }
+          // apply deadline if set
+          if (deadlineAt) {
+            try { await setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {}
+          }
+          // apply accept condition if set
+          if (acceptCondition && acceptCondition !== 'NONE') {
+            try { await setAcceptCondition(newTaskId, chatId, acceptCondition); } catch {}
+          }
+          // apply reminders if any
+          if (remindersDraft.length) {
+            for (const rm of remindersDraft) {
+              try { await createTaskReminder(newTaskId, { createdBy: chatId, target: rm.target, fireAt: rm.fireAtIso }); } catch {}
+            }
           }
         }
         setText('');
@@ -503,13 +528,35 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               <button onMouseDownCapture={firePickAny} onTouchStartCapture={firePickAny} onClick={firePickAny} title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📑</button>
               <button onMouseDownCapture={firePickPhoto} onTouchStartCapture={firePickPhoto} onClick={firePickPhoto} title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🖼️</button>
               <button onClick={openCamera} title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📸</button>
-              <button title="🚩 Ярлык" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🚩</button>
-              <button title="☝️ Упоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>☝️</button>
-              <button title="⏰ Напоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>⏰</button>
+              <button onClick={() => { setDeadlineOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }} title="Установить дедлайн" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🚩</button>
+              <button onClick={() => { setAcceptOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }} title="Условия приёма" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>☝️</button>
+              <button onClick={() => { setRemindersOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }} title="Добавить напоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>⏰</button>
               <button title="🔘 Предзадача" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🔘</button>
             </div>
           </div>
-        )}
+          )}
+          {deadlineAt ? (
+            <div style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:6, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+              <span>🚩 {new Date(deadlineAt).toLocaleString()}</span>
+              <button onClick={() => setDeadlineAt(null)} title="Убрать дедлайн" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+            </div>
+          ) : null}
+          {acceptCondition && acceptCondition !== 'NONE' ? (
+            <div style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:6, marginLeft:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+              <span>☝️ {acceptCondition === 'PHOTO' ? 'нужно фото' : acceptCondition === 'APPROVAL' ? 'нужно согласование' : acceptCondition === 'PHOTO_AND_APPROVAL' ? 'фото + согласование' : acceptCondition === 'DOC_AND_APPROVAL' ? 'документ + согласование' : ''}</span>
+              <button onClick={() => setAcceptConditionState('NONE')} title="Убрать условия" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+            </div>
+          ) : null}
+          {remindersDraft.length > 0 ? (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:6 }}>
+              {remindersDraft.map((r, idx) => (
+                <div key={`rem-${idx}`} style={{ display:'inline-flex', alignItems:'center', gap:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+                  <span>⏰ {new Date(r.fireAtIso).toLocaleString()} ({r.target==='ME'?'мне': r.target==='RESPONSIBLE'?'ответственному':'всем'})</span>
+                  <button onClick={() => setRemindersDraft(prev => prev.filter((_, i) => i !== idx))} title="Убрать напоминание" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         {/* hidden pickers always mounted to avoid iOS unmount race */}
         <input ref={fileAnyRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
         <input ref={filePhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
@@ -537,6 +584,38 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           }}
           dockBottom={Math.max(kbBottom, kbFallback)}
         />
+        {/* Deadline picker */}
+        <DeadlinePicker
+          open={deadlineOpen}
+          value={deadlineAt}
+          onChange={(v) => setDeadlineAt(v)}
+          onClose={() => { setDeadlineOpen(false); try { setTimeout(() => ensureCaretFocus(), 0); } catch {} }}
+        />
+        {/* Accept sheet (iOS style) */}
+        {acceptOpen && (
+          <div onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200 }}>
+            <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
+                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+              </div>
+              {(['NONE','PHOTO','APPROVAL','PHOTO_AND_APPROVAL','DOC_AND_APPROVAL'] as const).map((opt)=> (
+                <label key={opt} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0' }}>
+                  <input type="radio" checked={acceptCondition===opt} onChange={()=>setAcceptConditionState(opt)} />
+                  <span>{opt==='NONE'?'Без условий': opt==='PHOTO'?'Нужно фото 📸': opt==='APPROVAL'?'Нужно согласование 🤝': opt==='PHOTO_AND_APPROVAL'?'Фото + согласование 📸🤝':'Документ + согласование 📎🤝'}</span>
+                </label>
+              ))}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
+                <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
+                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Reminders sheet (iOS style) */}
+        {remindersOpen && (
+          <RemindersSheet onClose={()=>{ setRemindersOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} onPick={(item)=>{ setRemindersDraft(prev=>[...prev, item]); setRemindersOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} />
+        )}
         <CameraCaptureModal
           open={cameraOpen}
           onClose={() => { setCameraOpen(false); ensureCaretFocus(); }}
@@ -547,4 +626,51 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   );
 
   try { return createPortal(overlay, document.body); } catch { return overlay; }
+}
+
+function RemindersSheet({ onClose, onPick }: { onClose: () => void; onPick: (p: { target: 'ME' | 'RESPONSIBLE' | 'ALL'; fireAtIso: string }) => void }) {
+  const [target, setTarget] = useState<'ME'|'RESPONSIBLE'|'ALL'>('ME');
+  const [dateStr, setDateStr] = useState<string>('');
+  const [timeStr, setTimeStr] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const nowMinDate = (() => { const d = new Date(); const pad=(n:number)=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; })();
+  const applyPlusMinutes = (min: number) => { const d=new Date(Date.now()+min*60000); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(d.getHours())}:${pad(d.getMinutes())}`); };
+  const setTodayAt = (h:number,m:number)=>{ const d=new Date(); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
+  const setTomorrowAt = (h:number,m:number)=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
+  const makeISO = (d:string,t:string): string | null => { if (!d||!t) return null; const dd=new Date(`${d}T${t}`); return Number.isNaN(dd.getTime())?null:dd.toISOString(); };
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200 }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+          <div style={{ fontWeight:700 }}>⏰ Напоминание</div>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+        </div>
+        <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:8 }}>
+          {(['ME','RESPONSIBLE','ALL'] as const).map(k => (
+            <label key={k} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
+              <input type="radio" name="r_tgt" checked={target===k} onChange={()=>setTarget(k)} />
+              <span>{k==='ME'?'Мне':k==='RESPONSIBLE'?'Ответственному':'Всем'}</span>
+            </label>
+          ))}
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+          <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={{ width:'100%', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px', fontSize:16 }} />
+          <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={{ width:'100%', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px', fontSize:16 }} />
+        </div>
+        {error ? <div style={{ color:'salmon', fontSize:12, marginTop:6 }}>{error}</div> : null}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginTop:10 }}>
+          <button onClick={()=>applyPlusMinutes(15)} style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>+15м</button>
+          <button onClick={()=>applyPlusMinutes(60)} style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>+1ч</button>
+          <button onClick={()=>setTodayAt(18,0)} style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Сегодня 18:00</button>
+          <button onClick={()=>setTomorrowAt(9,0)} style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Завтра 09:00</button>
+          <button onClick={()=>applyPlusMinutes(24*60*7)} style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Через неделю</button>
+          <span />
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:12 }}>
+          <button onClick={onClose} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
+          <button onClick={()=>{ setError(null); const iso = makeISO(dateStr, timeStr); if (!iso) { setError('Выберите дату и время'); return; } if (new Date(iso).getTime() <= Date.now()) { setError('Нельзя в прошлое'); return; } onPick({ target, fireAtIso: iso }); }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Добавить</button>
+        </div>
+      </div>
+    </div>
+  );
 }

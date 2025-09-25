@@ -1051,16 +1051,30 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                     }}
                     title="Ответственный по задаче"
                   >
-                    <span style={{ opacity: 0.8 }}>Ответственный:</span>
-                    <strong>
-                      {(() => {
-                        const base = task.assigneeName
-                          || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
-                                ? '(назначаю …)'
-                                : String(task.assigneeChatId));
-                        return String(task.assigneeChatId || '') === String(meChatId || '') && myRankIcon ? `${myRankIcon} ${base}` : base;
-                      })()}
-                    </strong>
+                    <span style={{ opacity: 0.8 }}>Делает:</span>
+                    {(() => {
+                      const base = task.assigneeName
+                        || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
+                              ? '(назначаю …)'
+                              : String(task.assigneeChatId));
+                      const withIcon = String(task.assigneeChatId || '') === String(meChatId || '') && myRankIcon ? `${myRankIcon} ${base}` : base;
+                      return (
+                        <span
+                          title={withIcon}
+                          style={{
+                            fontSize: 14,
+                            lineHeight: '16px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: 'inline-block',
+                            maxWidth: 200,
+                          }}
+                        >
+                          {withIcon}
+                        </span>
+                      );
+                    })()}
                     <button
                       onClick={async () => {
                         if (!confirm('Убрать ответственного?')) return;
