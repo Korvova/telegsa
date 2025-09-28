@@ -56,7 +56,9 @@ export default function GroupPicker({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,.45)',
+        background: 'rgba(0,0,0,.8)',
+        backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)',
+        WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

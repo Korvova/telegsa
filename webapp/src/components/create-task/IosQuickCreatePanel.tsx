@@ -380,8 +380,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const overlay = (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
-        // dim the background; avoid iOS backdrop-filter glitches on deep scroll
-        background: 'rgba(0,0,0,.35)',
+        // darker dim; add blur on non‑iOS only
+        background: 'rgba(0,0,0,.8)',
+        backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)',
+        WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any),
         touchAction: 'none',
         overscrollBehavior: 'none'
       }}
@@ -621,28 +623,28 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             </div>
           </div>
           )}
-          {deadlineAt ? (
-            <div style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:6, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
-              <span>🚩 {new Date(deadlineAt).toLocaleString()}</span>
-              <button onClick={() => setDeadlineAt(null)} title="Убрать дедлайн" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
-            </div>
-          ) : null}
-          {acceptCondition && acceptCondition !== 'NONE' ? (
-            <div style={{ display:'inline-flex', alignItems:'center', gap:8, marginTop:6, marginLeft:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
-              <span>☝️ {acceptCondition === 'PHOTO' ? 'нужно фото' : acceptCondition === 'APPROVAL' ? 'нужно согласование' : acceptCondition === 'PHOTO_AND_APPROVAL' ? 'фото + согласование' : acceptCondition === 'DOC_AND_APPROVAL' ? 'документ + согласование' : ''}</span>
-              <button onClick={() => setAcceptConditionState('NONE')} title="Убрать условия" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
-            </div>
-          ) : null}
-          {remindersDraft.length > 0 ? (
+          {(deadlineAt || (acceptCondition && acceptCondition !== 'NONE') || remindersDraft.length > 0) && (
             <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:6 }}>
+              {deadlineAt ? (
+                <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+                  <span>🚩 {new Date(deadlineAt).toLocaleString()}</span>
+                  <button onClick={() => { setDeadlineAt(null); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Убрать дедлайн" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+                </div>
+              ) : null}
+              {acceptCondition && acceptCondition !== 'NONE' ? (
+                <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+                  <span>☝️ {acceptCondition === 'PHOTO' ? 'нужно фото' : acceptCondition === 'APPROVAL' ? 'нужно согласование' : acceptCondition === 'PHOTO_AND_APPROVAL' ? 'фото + согласование' : acceptCondition === 'DOC_AND_APPROVAL' ? 'документ + согласование' : ''}</span>
+                  <button onClick={() => { setAcceptConditionState('NONE'); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Убрать условия" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+                </div>
+              ) : null}
               {remindersDraft.map((r, idx) => (
                 <div key={`rem-${idx}`} style={{ display:'inline-flex', alignItems:'center', gap:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
                   <span>⏰ {new Date(r.fireAtIso).toLocaleString()} ({r.target==='ME'?'мне': r.target==='RESPONSIBLE'?'ответственному':'всем'})</span>
-                  <button onClick={() => setRemindersDraft(prev => prev.filter((_, i) => i !== idx))} title="Убрать напоминание" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+                  <button onClick={() => { setRemindersDraft(prev => prev.filter((_, i) => i !== idx)); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Убрать напоминание" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
                 </div>
               ))}
             </div>
-          ) : null}
+          )}
         {/* hidden pickers always mounted to avoid iOS unmount race */}
         <input ref={fileAnyRef} type="file" multiple style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
         <input ref={filePhotoRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => onPickFiles(e.target.files)} />
@@ -690,11 +692,11 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         />
         {/* Accept sheet (iOS style) */}
         {acceptOpen && (
-          <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, modalDockBottom)}px)` }}>
+          <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, modalDockBottom)}px)`, backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)', WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any) }}>
             <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
-                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+                <button onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
               </div>
               {(['NONE','PHOTO','APPROVAL','PHOTO_AND_APPROVAL','DOC_AND_APPROVAL'] as const).map((opt)=> (
                 <label key={opt} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0' }}>
