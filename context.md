@@ -26,13 +26,14 @@ Files changed
   - Only set `kbFallback` on iOS.
 
 Build
-- Ran `npm run build` in `webapp` after changes to ensure the bundle updates.
+- Ran `npm run build` in `webapp` after changes to ensure the bundle updates. Build succeeded.
 
 Commit & push
-- Commit includes the above changes and this context file.
-- Push attempted to the current Git remote.
+- Branch: `process` (tracking `origin/process`).
+- Commit: iOS quick panel fix + context (hash to start: recorded in repo at push time).
+- Remote: `origin` `git@github.com:Korvova/telegsa.git`.
+- Pushed successfully.
 
 Notes for future changes
 - Keep iOS docking logic consistent across components: prefer keyboard HEIGHT only and cap by current VisualViewport overlap.
 - Avoid applying fallback lift before keyboard is actually open.
-
