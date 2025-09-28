@@ -5,7 +5,7 @@ import { createTaskReminder } from '../../api/reminders';
 import DeadlinePicker from '../DeadlinePicker';
 import VoiceRecorder from '../VoiceRecorder';
 import useAudioPreview from './hooks/useAudioPreview';
-import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
+// import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import useKeyboardDock from '../../hooks/useKeyboardDock';
 import GroupPicker from './GroupPicker';
 import CameraCaptureModal from '../CameraCaptureModal';
@@ -19,9 +19,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const bootRef = useRef<HTMLInputElement | null>(null); // hidden input to keep iOS gesture chain
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  // iOS: rely on focus-gated keyboard detection to avoid false lifts from TWA viewport
-  const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 120, false, false, false, false);
-  const [kbFallback, setKbFallback] = useState(0);
+  // Docking handled by useKeyboardDock; no keyboard insets used here
   const [arming, setArming] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
@@ -55,13 +53,6 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     if (!open) return;
     // temporary fallback lift while viewport syncs (iOS only)
     let tf: any = null;
-    try {
-      const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent || '');
-      if (isiOS) {
-        setKbFallback(340);
-        tf = setTimeout(() => setKbFallback(0), 1600);
-      }
-    } catch {}
     const tryFocus = () => { focusEditableEnd(); };
     tryFocus();
     const t1 = setTimeout(tryFocus, 60);
@@ -640,7 +631,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             try { refocusWithCaretStrong(); } catch {}
             setPickerOpen(false);
           }}
-          dockBottom={Math.max(kbBottom, kbFallback)}
+          // Center the picker regardless of keyboard; input is blurred when opening
+          dockBottom={0}
         />
         {/* Deadline picker */}
         <DeadlinePicker
