@@ -442,9 +442,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.85 }}>Группа</div>
           <button
+            onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+            onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
             onClick={() => {
               setPickerOpen(true);
-              try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}
+              // keep keyboard up and caret inside while opening picker
+              try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {}
             }}
             title="Выбрать группу"
             style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', fontSize: 12, cursor: 'pointer' }}
