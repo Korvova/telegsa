@@ -80,5 +80,10 @@ Commit & push
 Notes for future changes
 - Keep iOS docking logic consistent across components: prefer keyboard HEIGHT only and cap by current VisualViewport overlap.
 - Avoid applying fallback lift before keyboard is actually open.
+
+02 Oct — Center regressions + fix
+- Симптом: окна «Условия/Напоминания» оказывались внизу. Причины: низкий z-index модалок (2200) относительно фонового слоя панели (999999), фон панели перехватывал клики.
+- Исправление: у модалок zIndex=1000005, фон панели делает pointerEvents: none при открытой модалке; добавлены стопы pointer‑событий (mouse/pointer/touch) на контейнерах модалок. Затемнение — 0.8 (+ blur на non‑iOS).
+- Восстановление каретки после закрытия X: для модалок и чипов — серия refocus (0/80/160мс).
 ВАЖНО!
 - На iPhone для гарантированного показа клавиатуры недостаточно вызвать `.focus()` на поле ввода — необходимо также выставить каретку внутрь поля (например, через `setSelectionRange(len, len)`), иначе iOS может проигнорировать подъем клавиатуры.
