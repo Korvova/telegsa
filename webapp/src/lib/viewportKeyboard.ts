@@ -57,6 +57,11 @@ import WebApp from '@twa-dev/sdk';
     const THRESHOLD = 140; // px: consider keyboard only if larger than bars
     const k = (focusActive && raw > THRESHOLD) ? raw : 0;
     setKb(k);
+    try {
+      const open = k > 0;
+      html.classList.toggle('kb-open', open);
+      window.dispatchEvent(new CustomEvent('kb-change', { detail: { open, height: k } }));
+    } catch {}
   };
 
   try {
