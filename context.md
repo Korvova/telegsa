@@ -51,6 +51,20 @@ Next steps (if needed)
 - Опционально рендерить панель без portal (в дереве ленты) и замкнуть события на контейнер ленты.
 - Добавить dev‑метрики (vv.height/offsetTop/raw) для диагностики конкретных моделей iOS.
 
+Final stabilized implementation (Oct 01)
+- Docking logic: переиспользован стабильный алгоритм из `SettingsKeyboardTest.tsx` как хук `useKeyboardDock` — управляет `transform` панели по VisualViewport (без TWA), делает короткое «follow» при открытии клавиатуры и блокирует рывки.
+- Overlay close: панель закрывается только при тапе ВНЕ самой панели; клики по элементам панели не закрывают её. Проверка выполняется по `microRef.contains(target)`.
+- Background lock (минимальный): фиксируем `body.position=fixed` + сохраняем `scrollY`, у `html` `overscroll-behavior-y: contain`. Без изменения `overflow/height`, что убирает «чёрный экран» при глубоком скролле.
+- Blur: отключён на iOS — используем только прозрачное затемнение `rgba(0,0,0,.35)`, чтобы карточки оставались видны на любом смещении.
+- TWA: вклад TWA‑высоты игнорируется для панели, расчёты выполняются только по VisualViewport, чтобы не было ложного лифта до открытия клавиатуры.
+- Caret bootstrap: при открытии многократно ставим каретку в конец textarea до подтверждения открытия клавиатуры.
+- Paperclip/Robot focus: при нажатии на 📎/🤖 клавиатура остаётся открытой, фокус и каретка удерживаются в textarea (обработчики `onMouseDownCapture/onTouchStartCapture` + `ensureCaretFocus()` после клика).
+
+Files (final)
+- webapp/src/hooks/useKeyboardDock.ts — новый хук (экстракт из SettingsKeyboardTest), управляет докингом панели к клавиатуре.
+- webapp/src/components/create-task/IosQuickCreatePanel.tsx — подключение `useKeyboardDock`, минимальный lock фона, оверлей закрывает только «снаружи», фокус при 📎/🤖, игнор TWA для панели.
+- webapp/src/hooks/useKeyboardInsets.ts — добавлен флаг `useTWA` (по умолчанию true), но панель им не пользуется для лифта.
+
 Build
 - Ran `npm run build` in `webapp` after changes to ensure the bundle updates. Build succeeded.
 

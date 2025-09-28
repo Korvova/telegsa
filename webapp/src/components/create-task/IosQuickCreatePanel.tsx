@@ -490,7 +490,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
             {/* paperclip inside input (top-right, before send) */}
             <button
-              onClick={() => setToolsOpen(v => !v)}
+              onMouseDownCapture={ensureCaretFocus}
+              onTouchStartCapture={ensureCaretFocus}
+              onClick={() => { setToolsOpen(v => !v); setTimeout(() => ensureCaretFocus(), 0); }}
               title="Вложения и действия"
               style={{ position: 'absolute', right: 52, top: 8, width: 28, height: 28, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#9ca3af' }}
             >📎</button>
@@ -499,7 +501,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <div style={{ position: 'absolute', left: -6, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <button
-                  onClick={() => setToolsOpen(v => !v)}
+                  onMouseDownCapture={ensureCaretFocus}
+                  onTouchStartCapture={ensureCaretFocus}
+                  onClick={() => { setToolsOpen(v => !v); setTimeout(() => ensureCaretFocus(), 0); }}
                   title="Роботы"
                   style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16 }}
                   aria-label="Роботы"
