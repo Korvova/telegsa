@@ -72,6 +72,23 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     tryFocus();
     const t1 = setTimeout(tryFocus, 60);
     const t2 = setTimeout(tryFocus, 240);
+    // aggressively ensure caret is inside to actually open the iOS keyboard
+    let keepFocus = true;
+    let focusTries = 0;
+    const focusLoop = () => {
+      if (!keepFocus) return;
+      focusTries += 1;
+      try { focusEditableEnd(); } catch {}
+      try {
+        const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+        const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
+        const vvH = vv?.height || innerH;
+        const opened = Math.max(0, innerH - vvH) > 0;
+        if (opened || focusTries > 20) { keepFocus = false; return; }
+      } catch {}
+      setTimeout(focusLoop, 60);
+    };
+    setTimeout(focusLoop, 0);
     // arm overlay for one frame to ignore the opening click
     setArming(true);
     requestAnimationFrame(() => setArming(false));
@@ -134,8 +151,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       top: body.style.top,
       width: body.style.width,
       bodyOverflow: body.style.overflow,
+      bodyOverflowX: body.style.overflowX,
       bodyHeight: body.style.height,
       htmlOverflow: html.style.overflow,
+      htmlOverflowX: html.style.overflowX,
       htmlHeight: html.style.height,
       htmlOverscroll: (html.style as any).overscrollBehaviorY || '',
     } as any;
@@ -146,8 +165,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     body.style.top = `-${scrollY}px`;
     body.style.width = '100%';
     body.style.overflow = 'hidden';
+    body.style.overflowX = 'hidden';
     body.style.height = '100%';
     html.style.overflow = 'hidden';
+    html.style.overflowX = 'hidden';
     html.style.height = '100%';
     html.style.overscrollBehaviorY = 'contain';
     return () => {
@@ -155,8 +176,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       body.style.top = prev.top;
       body.style.width = prev.width;
       body.style.overflow = prev.bodyOverflow;
+      body.style.overflowX = prev.bodyOverflowX;
       body.style.height = prev.bodyHeight;
       html.style.overflow = prev.htmlOverflow;
+      html.style.overflowX = prev.htmlOverflowX;
       html.style.height = prev.htmlHeight;
       html.style.overscrollBehaviorY = prev.htmlOverscroll;
       try { window.scrollTo(0, scrollY); } catch {}
@@ -372,11 +395,11 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
-        // dim + blur the background under the panel
-        background: 'rgba(0,0,0,.45)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)'
+      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
+        // dim the background; avoid iOS backdrop-filter glitches on deep scroll
+        background: 'rgba(0,0,0,.35)',
+        touchAction: 'none',
+        overscrollBehavior: 'none'
       }}
       onClick={() => { if (!arming && !busy) onClose(); }}
       onTouchStart={(e) => {
