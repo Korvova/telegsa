@@ -8,6 +8,7 @@ import useAudioPreview from './hooks/useAudioPreview';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import GroupPicker from './GroupPicker';
 import CameraCaptureModal from '../CameraCaptureModal';
+import WebApp from '@twa-dev/sdk';
 
 // Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
 
@@ -121,16 +122,36 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     const body = document.body as any;
     const html = document.documentElement as any;
     const scrollY = window.scrollY || window.pageYOffset || 0;
-    const prev = { pos: body.style.position, top: body.style.top, width: body.style.width };
+    const prev = {
+      pos: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      bodyOverflow: body.style.overflow,
+      bodyHeight: body.style.height,
+      htmlOverflow: html.style.overflow,
+      htmlHeight: html.style.height,
+      htmlOverscroll: (html.style as any).overscrollBehaviorY || '',
+    } as any;
+    // iOS: lock background and stabilize viewport
+    try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
+    try { (WebApp as any)?.expand?.(); } catch {}
     body.style.position = 'fixed';
     body.style.top = `-${scrollY}px`;
     body.style.width = '100%';
+    body.style.overflow = 'hidden';
+    body.style.height = '100%';
+    html.style.overflow = 'hidden';
+    html.style.height = '100%';
     html.style.overscrollBehaviorY = 'contain';
     return () => {
       body.style.position = prev.pos;
       body.style.top = prev.top;
       body.style.width = prev.width;
-      html.style.overscrollBehaviorY = '';
+      body.style.overflow = prev.bodyOverflow;
+      body.style.height = prev.bodyHeight;
+      html.style.overflow = prev.htmlOverflow;
+      html.style.height = prev.htmlHeight;
+      html.style.overscrollBehaviorY = prev.htmlOverscroll;
       try { window.scrollTo(0, scrollY); } catch {}
     };
   }, [open]);
@@ -344,7 +365,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
+        // dim + blur the background under the panel
+        background: 'rgba(0,0,0,.45)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)'
+      }}
       onClick={() => { if (!arming && !busy) onClose(); }}
       onTouchStart={(e) => {
         try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
