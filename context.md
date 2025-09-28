@@ -18,6 +18,11 @@ Fix
 - Minor: apply the fallback only on iOS; add a small transform transition for smoother motion.
 - Add dimmed + blurred backdrop to overlay; lock html/body overflow+height and call `WebApp.disableVerticalSwipes()` + `WebApp.expand()` while open to prevent background feed jumps/bounce.
 
+29 Sep — Flicker fix
+- Found a regression: early `return` in the open-effect skipped focus + arming on iOS. Restored arming/focus and kept iOS fallback.
+- Removed transform animation; freeze applied lift to the maximum seen during open to prevent bouncing while VisualViewport settles.
+- Close panel immediately on empty-area touchstart/pointerdown/mousedown (not waiting for a click event) for more natural dismiss.
+
 Files changed
 - webapp/src/components/create-task/IosQuickCreatePanel.tsx
   - Compute `vvLift = window.innerHeight - visualViewport.height`.
