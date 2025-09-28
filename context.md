@@ -2,6 +2,9 @@ Telegsar — working context and notes
 
 Date: 2025-09-28
 
+ВАЖНО!
+- На iPhone для гарантированного показа клавиатуры недостаточно вызвать `.focus()` на поле ввода — необходимо также выставить каретку внутрь поля (например, через `setSelectionRange(len, len)`), иначе iOS может проигнорировать подъем клавиатуры.
+
 Topic: iOS quick create panel (IosQuickCreatePanel.tsx) docks above keyboard too high on iPhone when pressing (+) on the main screen.
 
 Symptoms
@@ -31,6 +34,22 @@ Files changed
   - Use `lift` for panel `transform` and pass as `dockBottom` to `GroupPicker`.
   - Only set `kbFallback` on iOS.
   - Add backdrop (rgba + backdrop-filter), lock html/body overflow/height, and use TWA APIs to stabilize viewport.
+
+Structure (App/main/index) — notes
+- Entry: `webapp/src/main.tsx` рендерит `<App />` и импортирует `src/lib/viewportKeyboard.ts` (глобальный апдейтер CSS‑переменной `--kb` на основе VisualViewport + TWA). В iOS‑панели `--kb` не используется; расчёт лифта локальный.
+- Корень: `index.html` с `#root`. Глобальные стили (`src/index.css`) фиксируют `html, body, #root { height: 100% }` и `min-height: 100dvh`; `body` имеет `overflow-x:hidden` и `overscroll-behavior-x: contain`.
+- Панель открывается из `CreateTaskFab` (`App.tsx:1250`), который для iOS рендерит `IosQuickCreatePanel`.
+- Возможный источник «ложного лифта»: TWA viewport бывает меньше `innerHeight` до открытия клавиатуры. Это давало `raw>threshold` и поднимало панель.
+
+30 Sep — Pre‑lift mitigation
+- В `useKeyboardInsets` добавлен флаг `useTWA` (по умолчанию true).
+- Для iOS‑панели `useTWA=false` — расчёт лифта только по VisualViewport; TWA не влияет до реального открытия клавиатуры.
+- Порог поднят до 120px, чтобы исключить системные бары.
+
+Next steps (if needed)
+- Вынести логику из `SettingsKeyboardTest` (hook `useKeyboardDock`) и переиспользовать в панели.
+- Опционально рендерить панель без portal (в дереве ленты) и замкнуть события на контейнер ленты.
+- Добавить dev‑метрики (vv.height/offsetTop/raw) для диагностики конкретных моделей iOS.
 
 Build
 - Ran `npm run build` in `webapp` after changes to ensure the bundle updates. Build succeeded.
