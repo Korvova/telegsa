@@ -16,6 +16,7 @@ Fix
 - Cap the applied lift by the current VisualViewport overlap (same pattern used in `CreateTaskModal`).
 - Ignore the fallback until the keyboard is actually open (i.e., when `vvLift > 0`).
 - Minor: apply the fallback only on iOS; add a small transform transition for smoother motion.
+- Add dimmed + blurred backdrop to overlay; lock html/body overflow+height and call `WebApp.disableVerticalSwipes()` + `WebApp.expand()` while open to prevent background feed jumps/bounce.
 
 Files changed
 - webapp/src/components/create-task/IosQuickCreatePanel.tsx
@@ -24,6 +25,7 @@ Files changed
   - Apply `lift = vvLift > 0 ? min(ideal, vvLift) : max(kbBottom, 0)`.
   - Use `lift` for panel `transform` and pass as `dockBottom` to `GroupPicker`.
   - Only set `kbFallback` on iOS.
+  - Add backdrop (rgba + backdrop-filter), lock html/body overflow/height, and use TWA APIs to stabilize viewport.
 
 Build
 - Ran `npm run build` in `webapp` after changes to ensure the bundle updates. Build succeeded.
