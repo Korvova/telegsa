@@ -1,7 +1,8 @@
 // no React import needed with automatic JSX
 import type { Group } from '../../api';
 import { getGroupLabels, type GroupLabel } from '../../api';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function GroupPicker({
   open,
@@ -50,25 +51,35 @@ export default function GroupPicker({
     })();
     return () => { cancelled = true; };
   }, [groupId]);
-  return (
+  const isiOS = useMemo(() => {
+    try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
+  }, []);
+
+  const content = (
     <div
       onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
         background: 'rgba(0,0,0,.8)',
-        backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)',
-        WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any),
+        backdropFilter: !isiOS ? 'blur(8px)' : undefined,
+        WebkitBackdropFilter: !isiOS ? ('blur(8px)' as any) : undefined,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1000001,
+        zIndex: 1000005,
         // lift content above the iOS keyboard if value provided
         paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom || 0)}px)`,
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e)=>e.stopPropagation()}
+        onPointerDown={(e)=>e.stopPropagation()}
+        onTouchStart={(e)=>e.stopPropagation()}
+        onMouseDownCapture={(e)=>e.stopPropagation()}
+        onPointerDownCapture={(e)=>e.stopPropagation()}
+        onTouchStartCapture={(e)=>e.stopPropagation()}
         style={{
           background: '#1b2030',
           color: '#e8eaed',
@@ -196,4 +207,5 @@ export default function GroupPicker({
       </div>
     </div>
   );
+  try { return createPortal(content, document.body); } catch { return content; }
 }

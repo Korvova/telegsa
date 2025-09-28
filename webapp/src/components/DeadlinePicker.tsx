@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 type Props = {
   open: boolean;
@@ -95,8 +96,8 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
   if (!open) return null;
 
   if (isiOS && !centered) {
-    return (
-      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:2200 }}>
+    const sheet = (
+      <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:1000005 }}>
         <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
             <div style={{ fontWeight:700 }}>{icon} {title}</div>
@@ -135,11 +136,12 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
         </div>
       </div>
     );
+    try { return createPortal(sheet, document.body); } catch { return sheet; }
   }
 
   // Centered modal (default or forced on iOS via centered=true)
-  return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom)}px)`, backdropFilter: !isiOS ? 'blur(8px)' : undefined, WebkitBackdropFilter: !isiOS ? ('blur(8px)' as any) : undefined }}>
+  const centeredModal = (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:1000005, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom)}px)`, backdropFilter: !isiOS ? 'blur(8px)' : undefined, WebkitBackdropFilter: !isiOS ? ('blur(8px)' as any) : undefined }}>
       <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(460px, 92vw)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
           <div style={{ fontWeight:700 }}>{icon} {title}</div>
@@ -178,6 +180,7 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
       </div>
     </div>
   );
+  try { return createPortal(centeredModal, document.body); } catch { return centeredModal; }
 }
 
 const chipBtn: React.CSSProperties = { padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer', textAlign:'center' };
