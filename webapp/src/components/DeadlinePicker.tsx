@@ -8,6 +8,7 @@ type Props = {
   minNow?: boolean; // default true
   title?: string;
   icon?: string; // header icon (default 🚩)
+  centered?: boolean; // if true, show as centered modal even on iOS
 };
 
 function toLocalInputValue(iso: string): string {
@@ -32,7 +33,7 @@ function fromLocalInputValue(v: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн', icon = '🚩' }: Props) {
+export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн', icon = '🚩', centered = false }: Props) {
   const isiOS = useMemo(() => {
     try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
   }, []);
@@ -92,7 +93,7 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
 
   if (!open) return null;
 
-  if (isiOS) {
+  if (isiOS && !centered) {
     return (
       <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200 }}>
         <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
@@ -135,7 +136,7 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
     );
   }
 
-  // Default (desktop/Android): keep compact datetime-local
+  // Centered modal (default or forced on iOS via centered=true)
   return (
     <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(460px, 92vw)' }}>
@@ -143,15 +144,34 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
           <div style={{ fontWeight:700 }}>{icon} {title}</div>
           <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', cursor:'pointer' }}>✕</button>
         </div>
-        <div style={{ display:'grid', gap:8 }}>
-          <input type="datetime-local" value={localDT} min={nowMinDT} onChange={(e)=>setLocalDT(e.target.value)} style={{ background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px' }} />
-          {error ? <div style={{ color:'salmon', fontSize:12 }}>{error}</div> : null}
-        </div>
+        {isiOS ? (
+          <>
+            <div style={{ display:'grid', gridTemplateColumns: '1fr 1fr', gap:8 }}>
+              <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={iosInput} />
+              <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={iosInput} />
+            </div>
+            {error ? <div style={{ color:'salmon', fontSize:12, marginTop:6 }}>{error}</div> : null}
+          </>
+        ) : (
+          <div style={{ display:'grid', gap:8 }}>
+            <input type="datetime-local" value={localDT} min={nowMinDT} onChange={(e)=>setLocalDT(e.target.value)} style={{ background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px' }} />
+            {error ? <div style={{ color:'salmon', fontSize:12 }}>{error}</div> : null}
+          </div>
+        )}
         <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:10 }}>
           <button onClick={()=>{ onChange(null); onClose(); }} style={btnSecondary}>Без дедлайна</button>
           <div style={{ display:'flex', gap:8 }}>
             <button onClick={onClose} style={btnSecondary}>Отмена</button>
-            <button onClick={()=>{ const iso=fromLocalInputValue(localDT); if (!iso){ setError('Неверная дата/время'); return; } const dt=new Date(iso).getTime(); if (minNow && dt<=Date.now()) { setError('Нельзя в прошлое'); return; } onChange(iso); onClose(); }} style={btnPrimary}>Сохранить</button>
+            <button onClick={()=>{
+              if (isiOS) {
+                const iso = makeISO(dateStr, timeStr);
+                if (!iso) { setError('Выберите дату и время'); return; }
+                const dt = new Date(iso).getTime(); if (minNow && dt <= Date.now()) { setError('Нельзя в прошлое'); return; }
+                onChange(iso); onClose();
+              } else {
+                const iso=fromLocalInputValue(localDT); if (!iso){ setError('Неверная дата/время'); return; } const dt=new Date(iso).getTime(); if (minNow && dt<=Date.now()) { setError('Нельзя в прошлое'); return; } onChange(iso); onClose();
+              }
+            }} style={btnPrimary}>Сохранить</button>
           </div>
         </div>
       </div>

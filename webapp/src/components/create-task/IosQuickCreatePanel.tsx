@@ -639,15 +639,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           open={deadlineOpen}
           value={deadlineAt}
           onChange={(v) => setDeadlineAt(v)}
-          onClose={() => { setDeadlineOpen(false); try { setTimeout(() => ensureCaretFocus(), 0); } catch {} }}
+          centered={true}
+          onClose={() => { setDeadlineOpen(false); try { setTimeout(() => refocusWithCaretStrong(), 0); } catch {} }}
         />
         {/* Accept sheet (iOS style) */}
         {acceptOpen && (
-          <div onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200 }}>
-            <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
+          <div onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
-                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
               </div>
               {(['NONE','PHOTO','APPROVAL','PHOTO_AND_APPROVAL','DOC_AND_APPROVAL'] as const).map((opt)=> (
                 <label key={opt} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0' }}>
@@ -656,8 +657,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 </label>
               ))}
               <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
-                <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
-                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
+                <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
+                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
               </div>
             </div>
           </div>
@@ -689,8 +690,8 @@ function RemindersSheet({ onClose, onPick }: { onClose: () => void; onPick: (p: 
   const setTomorrowAt = (h:number,m:number)=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
   const makeISO = (d:string,t:string): string | null => { if (!d||!t) return null; const dd=new Date(`${d}T${t}`); return Number.isNaN(dd.getTime())?null:dd.toISOString(); };
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200 }}>
-      <div onClick={(e)=>e.stopPropagation()} style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
           <div style={{ fontWeight:700 }}>⏰ Напоминание</div>
           <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
