@@ -1263,7 +1263,6 @@ export default function App() {
           {/* Нижняя панель */}
           <BottomNav
             current={tab}
-            hidden={kbOpen || isCreateTaskOpen}
             onChange={(t) => {
               console.log('[NAV] bottom change', t);
               // По клику на «группа» всегда открываем страницу групп
@@ -1491,20 +1490,4 @@ function ColumnView({
     </div>
   );
 }
-  // Global: track keyboard open and quick-create open to hide bottom nav
-  const [kbOpen, setKbOpen] = useState(false);
-  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
-  useEffect(() => {
-    const onKb = (e: Event) => {
-      try { setKbOpen(Boolean((e as CustomEvent<any>)?.detail?.open)); } catch {}
-    };
-    const onCreate = (e: Event) => {
-      try { setIsCreateTaskOpen(Boolean((e as CustomEvent<any>)?.detail)); } catch {}
-    };
-    window.addEventListener('kb-change', onKb as any);
-    window.addEventListener('create-task-open', onCreate as any);
-    return () => {
-      window.removeEventListener('kb-change', onKb as any);
-      window.removeEventListener('create-task-open', onCreate as any);
-    };
-  }, []);
+  // (removed) bottom nav hide via kb-change — back to default behaviour

@@ -6,11 +6,9 @@ export type TabKey = 'home' | 'groups' | 'calendar' | 'notifications' | 'setting
 export default function BottomNav({
   current,
   onChange,
-  hidden = false,
 }: {
   current: TabKey;
   onChange: (t: TabKey) => void;
-  hidden?: boolean;
 }) {
   const items = useMemo(
     () => [
@@ -25,7 +23,6 @@ export default function BottomNav({
 
   return (
     <nav
-      className="app-bottom-nav"
       style={{
         position: 'fixed',
         left: 0,
@@ -35,9 +32,6 @@ export default function BottomNav({
         background: '#0b1220',
         borderTop: '1px solid #1f2937',
         zIndex: 40,
-        transform: hidden ? 'translateY(120%)' : 'translateY(0)',
-        transition: 'transform 120ms ease-out',
-        pointerEvents: hidden ? 'none' : 'auto',
       }}
     >
       <div

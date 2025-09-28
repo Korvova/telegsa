@@ -6,6 +6,7 @@ import DeadlinePicker from '../DeadlinePicker';
 import VoiceRecorder from '../VoiceRecorder';
 import useAudioPreview from './hooks/useAudioPreview';
 import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
+import useKeyboardDock from '../../hooks/useKeyboardDock';
 import GroupPicker from './GroupPicker';
 import CameraCaptureModal from '../CameraCaptureModal';
 import WebApp from '@twa-dev/sdk';
@@ -47,16 +48,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
-  // compute lift like CreateTaskModal: cap by vvLift, ignore fallback until keyboard truly opens
-  const computeCappedLift = () => {
-    const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
-    const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
-    const vvH = vv?.height || innerH;
-    const vvLift = Math.max(0, innerH - vvH);
-    const ideal = Math.max(kbBottom, kbFallback);
-    const lift = vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0);
-    return { lift, vvLift, ideal };
-  };
+  // Use the same docking logic as SettingsKeyboardTest (robust on iOS)
+  useKeyboardDock(microRef as any, { openFollowMs: 600, closeFollowMs: 0, noLift: true });
 
   useEffect(() => {
     if (!open) return;
@@ -440,8 +433,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           bottom: 0,
           pointerEvents: 'auto',
           zIndex: 1000000,
-          // cap lift by current VisualViewport keyboard overlap; ignore fallback until vvLift>0
-          transform: (() => { const { lift } = computeCappedLift(); return `translate3d(0, -${lift}px, 0)`; })(),
+          // transform managed by useKeyboardDock
           transition: 'none',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           willChange: 'transform',
@@ -659,7 +651,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             try { refocusWithCaretStrong(); } catch {}
             setPickerOpen(false);
           }}
-          dockBottom={(() => { const { lift } = computeCappedLift(); return lift; })()}
+          dockBottom={Math.max(kbBottom, kbFallback)}
         />
         {/* Deadline picker */}
         <DeadlinePicker

@@ -138,11 +138,12 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [reminders, setReminders] = useState<TReminder[]>([]);
   const [remBusy, setRemBusy] = useState(false);
+  // панель наблюдателей: свёрнута/развёрнута
+  const [watchersOpen, setWatchersOpen] = useState(false);
   // прогресс в стадии "В работе"
   const [progress, setProgress] = useState<number>(0);
   const progressTimer = useRef<any>(null);
-  const [expensesDraft, setExpensesDraft] = useState<string>('');
-  const [expensesDirty, setExpensesDirty] = useState(false);
+  // расходы перенесены в меню ⋮
 
   // Выплата исполнителю: фиксированная модалка до подтверждения
   const [payoutOpen, setPayoutOpen] = useState(false);
@@ -199,12 +200,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
     try { setProgress(Math.max(0, Math.min(100, Number((task as any).progress ?? 0)))); } catch { setProgress(0); }
   }, [task]);
 
-  // Синхронизировать черновик расходов с задачей, только если не редактируем
-  useEffect(() => {
-    if (!task) return;
-    if (expensesDirty) return;
-    try { setExpensesDraft((task as any)?.expenses != null ? String((task as any).expenses) : ''); } catch { setExpensesDraft(''); }
-  }, [task?.expenses, expensesDirty]);
+  // расходы теперь редактируются через меню ⋮
 
   useEffect(() => {
     if (!isLightboxOpen) return;
@@ -573,13 +569,15 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               taskId={task.id}
               isEvent={task?.type === 'EVENT'}
               onDelete={handleDelete}
+              meChatId={meChatId}
+              initialExpenses={Number((task as any)?.expenses ?? null) as any}
             />
           ) : null}
         </div>
 
         {/* Группа */}
-        <div style={{ margin: '6px 0 10px', fontSize: 13, opacity: .85 }}>
-          Группа{' '}
+        <div style={{ margin: '6px 0 10px', fontSize: 13, opacity: .85, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>Группа</span>
           <button
             onClick={() => setGroupPickerOpen(true)}
             title="Выбрать другую группу"
@@ -595,64 +593,28 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             {groupLabel()}
           </button>
 
-          {/* 🚩 Дедлайн */}
+          {/* Ярлык рядом с группой */}
           <button
-            onClick={() => setDeadlineOpen(true)}
+            onClick={() => setLabelDrawerOpen(true)}
             style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: new Date(String(task?.deadlineAt || '')).getTime() < Date.now() ? '#fecaca' : '#e8eaed',
-              cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
-            }}
-            aria-label="Установить дедлайн"
-            title="Установить дедлайн"
-          >
-            <span>🚩</span>
-            <span style={{ fontSize: 12, opacity: 0.9 }}>
-              {task?.deadlineAt ? new Date(String(task.deadlineAt)).toLocaleString() : 'Без дедлайна'}
-            </span>
-          </button>
-          {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
-            <span
-              style={{
-                marginLeft: 8,
-                fontSize: 12,
-                background: '#7f1d1d',
-                color: '#fee2e2',
-                border: '1px solid #dc2626',
-                borderRadius: 999,
-                padding: '2px 8px',
-              }}
-            >
-              ⚠️ Просрочен
-            </span>
-          )}
-
-          {/* ⏰ Напоминание */}
-          <button
-            onClick={() => setRemindersOpen(true)}
-            style={{
-              marginLeft: 8,
-              padding: '10px 14px',
-              borderRadius: 12,
+              gap: 6,
+              padding: '2px 10px',
+              borderRadius: 999,
               border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
+              background: '#12202a',
+              color: '#d7ffd7',
+              fontSize: 12,
+              lineHeight: '16px',
+              cursor: 'pointer'
             }}
-            aria-label="Создать напоминание"
-            title="Создать напоминание"
+            title="Выбрать ярлык"
           >
-            <span>⏰</span>
-            <span style={{ fontSize: 12, opacity: 0.9 }}>Добавить</span>
+            <span>🏷️</span>
+            <span style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {taskLabels.length > 0 ? taskLabels[0].title : 'ярлык'}
+            </span>
           </button>
         </div>
 
@@ -663,7 +625,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             rows={6}
             style={{
               width: '95%',
-              background: '#121722',
+              background: '#1b2030',
               color: '#e8eaed',
               border: '1px solid #2a3346',
               borderRadius: 12,
@@ -678,45 +640,9 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           {/* Убрано: точки и списки связей процесса в TaskView */}
         </div>
 
-        {/* Затраты */}
-        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label htmlFor="task-expenses" style={{ fontSize: 13, opacity: 0.85 }}>Затраты (₽):</label>
-          <input
-            id="task-expenses"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            value={expensesDraft}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (/^\d*$/.test(v)) { setExpensesDraft(v); setExpensesDirty(true); }
-            }}
-            onFocus={() => setExpensesDirty(true)}
-            onBlur={async () => {
-              try {
-                const n = expensesDraft.trim() === '' ? null : Math.max(0, Math.round(Number(expensesDraft)));
-                const api = await import('./api');
-                const r = await api.setTaskExpenses(taskId, meChatId, n);
-                if ((r as any)?.ok && (r as any).task) {
-                  const saved = (r as any).task.expenses ?? null;
-                  setTask((prev) => (prev ? { ...prev, expenses: saved } as any : prev));
-                  setExpensesDraft(saved != null ? String(saved) : '');
-                }
-              } catch {}
-              finally { setExpensesDirty(false); }
-            }}
-            style={{
-              width: 140,
-              background: '#121722',
-              color: '#e8eaed',
-              border: '1px solid #2a3346',
-              borderRadius: 8,
-              padding: '6px 10px',
-              fontSize: 14,
-            }}
-            placeholder=""
-          />
-        </div>
+        {/* ярлык под textarea убран — теперь наверху рядом с группой */}
+
+        {/* Затраты перенесены в меню "⋮" */}
 
         {/* Список напоминаний */}
         {reminders.length > 0 && (
@@ -767,7 +693,6 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               {String((task as any).bountyStatus)==='PAID' ? '💫' : '💰'} ({(task as any).bountyStars})
             </span>
           ) : null}
-          <span>ID: {task.id}</span>
         </div>
 
         {String(phase) !== 'Approval' && (
@@ -963,50 +888,9 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'nowrap', overflowX: 'auto' }}>
 
-          <button
-            onClick={() => setLabelDrawerOpen(true)}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-            aria-label="Выбрать ярлык для задачи"
-            title="Выбрать ярлык"
-          >
-            <span>🏷️</span>
-
-            {taskLabels.length ? (
-              <span
-                style={{
-                  padding: '2px 8px',
-                  border: '1px solid #2a3346',
-                  borderRadius: 999,
-                  background: '#12202a',
-                  color: '#d7ffd7',
-                  fontSize: 12,
-                  lineHeight: '16px',
-                  maxWidth: 160,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-                title={taskLabels.map(l => l.title).join(', ')}
-              >
-                {taskLabels[0].title}
-                {taskLabels.length > 1 ? ` +${taskLabels.length - 1}` : ''}
-              </span>
-            ) : (
-              <span style={{ opacity: .7, fontSize: 12 }}>Без ярлыка</span>
-            )}
-          </button>
+          {/* ярлыки перенесены под textarea */}
 
           {/* ☝️ Условия приёма (меняет только постановщик) */}
           <button
@@ -1023,24 +907,81 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             title="Условия приёма"
           >
             <span>☝️</span>
-            <span style={{ fontSize: 12, opacity: 0.9 }}>
-              {(() => {
-                const cond = String((task as any)?.acceptCondition || 'NONE');
-                if (cond === 'PHOTO') return 'Нужно фото 📸';
-                if (cond === 'APPROVAL') return 'Нужно согласование 🤝';
-                if (cond === 'PHOTO_AND_APPROVAL') return 'Фото + согласование 📸🤝';
-                if (cond === 'DOC_AND_APPROVAL') return 'Документ + согласование 📎🤝';
-                return 'Без условий';
-              })()}
-            </span>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>условия</span>
+            {(() => {
+              const cond = String((task as any)?.acceptCondition || 'NONE');
+              const label = cond === 'PHOTO' ? 'фото' : cond === 'APPROVAL' ? 'согласование' : cond === 'PHOTO_AND_APPROVAL' ? 'фото+соглас.' : cond === 'DOC_AND_APPROVAL' ? 'док+соглас.' : '';
+              return label ? (<span style={{ fontSize: 12, opacity: 0.8 }}> · {label}</span>) : null;
+            })()}
           </button>
 
-          {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
-              {task?.type !== 'EVENT' && (
-                task.assigneeChatId ? (
-                  <div
-                    style={{
-                      padding: '10px 14px',
+          {/* 🚩 дедлайн */}
+          <button
+            onClick={() => setDeadlineOpen(true)}
+            style={{
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: '#202840',
+              color: '#e8eaed',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+            aria-label="Установить дедлайн"
+            title="Установить дедлайн"
+          >
+            <span>🚩</span>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>
+              {task?.deadlineAt ? new Date(String(task.deadlineAt)).toLocaleString() : 'дедлайн'}
+            </span>
+          </button>
+          {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
+            <span
+              style={{
+                fontSize: 12,
+                background: '#7f1d1d',
+                color: '#fee2e2',
+                border: '1px solid #dc2626',
+                borderRadius: 999,
+                padding: '2px 8px',
+              }}
+            >
+              ⚠️ Просрочен
+            </span>
+          )}
+
+          {/* ⏰ напомнить */}
+          <button
+            onClick={() => setRemindersOpen(true)}
+            style={{
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: '1px solid #2a3346',
+              background: '#202840',
+              color: '#e8eaed',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+            aria-label="Создать напоминание"
+            title="Создать напоминание"
+          >
+            <span>⏰</span>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>напомнить</span>
+          </button>
+
+        </div>
+
+        {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          {task?.type !== 'EVENT' && (
+            task.assigneeChatId ? (
+              <div
+                style={{
+                  padding: '10px 14px',
                       borderRadius: 12,
                       border: '1px solid #2a3346',
                       background: '#15251a',
@@ -1048,79 +989,79 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                       display: 'inline-flex',
                       gap: 8,
                       alignItems: 'center',
-                    }}
-                    title="Ответственный по задаче"
-                  >
-                    <span style={{ opacity: 0.8 }}>Делает:</span>
-                    {(() => {
-                      const base = task.assigneeName
-                        || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
-                              ? '(назначаю …)'
-                              : String(task.assigneeChatId));
-                      const withIcon = String(task.assigneeChatId || '') === String(meChatId || '') && myRankIcon ? `${myRankIcon} ${base}` : base;
-                      return (
-                        <span
-                          title={withIcon}
-                          style={{
-                            fontSize: 14,
-                            lineHeight: '16px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: 'inline-block',
-                            maxWidth: 200,
-                          }}
-                        >
-                          {withIcon}
-                        </span>
-                      );
-                    })()}
-                    <button
-                      onClick={async () => {
-                        if (!confirm('Убрать ответственного?')) return;
-                        try {
-                          const api = await import('./api/assign');
-                          const r = await api.unassign(taskId, meChatId);
-                      if ((r as any)?.ok) {
-                        setTask((prev) => (prev ? { ...prev, assigneeChatId: null, assigneeName: null } : prev));
-                        setAssigningAssigneeChatId(null);
-                        setRefreshTick((t) => t + 1);
-                      }
-                    } catch {}
                   }}
-                  title="Убрать ответственного"
-                  style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid #375249', background: '#254235', color: '#d7ffd7', cursor: 'pointer' }}
+                  title="Ответственный по задаче"
                 >
-                  ×
-                </button>
-              </div>
-            ) : (
-              <ResponsibleActions
-                taskId={taskId}
-                taskTitle={text}
-                groupId={groupId || undefined}
-                meChatId={meChatId}
-                currentAssigneeChatId={task?.assigneeChatId ?? null}
-                members={members.map((m) => ({
-                  chatId: String(m.chatId),
-                  firstName: m.name || undefined,
-                }))}
-                canAssign={true}
-                onAssigned={(newAssigneeChatId) => {
-                  // Оптимистично обновляем локально, не ждём поллинга
-                  setTask((prev) => {
-                    if (!prev) return prev;
-                    const found = members.find((m) => String(m.chatId) === String(newAssigneeChatId));
-                    const name = (found as any)?.name || prev.assigneeName || null;
-                    return { ...prev, assigneeChatId: String(newAssigneeChatId), assigneeName: name } as any;
-                  });
-                  setAssigningAssigneeChatId(String(newAssigneeChatId));
-                  try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
-                  setRefreshTick((t) => t + 1);
+                  <span style={{ opacity: 0.8 }}>Делает:</span>
+                  {(() => {
+                    const base = task.assigneeName
+                      || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
+                            ? '(назначаю …)'
+                            : String(task.assigneeChatId));
+                    const withIcon = String(task.assigneeChatId || '') === String(meChatId || '') && myRankIcon ? `${myRankIcon} ${base}` : base;
+                    return (
+                      <span
+                        title={withIcon}
+                        style={{
+                          fontSize: 14,
+                          lineHeight: '16px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: 'inline-block',
+                          maxWidth: 200,
+                        }}
+                      >
+                        {withIcon}
+                      </span>
+                    );
+                  })()}
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Убрать ответственного?')) return;
+                      try {
+                        const api = await import('./api/assign');
+                        const r = await api.unassign(taskId, meChatId);
+                    if ((r as any)?.ok) {
+                      setTask((prev) => (prev ? { ...prev, assigneeChatId: null, assigneeName: null } : prev));
+                      setAssigningAssigneeChatId(null);
+                      setRefreshTick((t) => t + 1);
+                    }
+                  } catch {}
                 }}
-              />
-            )
-          )}
+                title="Убрать ответственного"
+                style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid #375249', background: '#254235', color: '#d7ffd7', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <ResponsibleActions
+              taskId={taskId}
+              taskTitle={text}
+              groupId={groupId || undefined}
+              meChatId={meChatId}
+              currentAssigneeChatId={task?.assigneeChatId ?? null}
+              members={members.map((m) => ({
+                chatId: String(m.chatId),
+                firstName: m.name || undefined,
+              }))}
+              canAssign={true}
+              onAssigned={(newAssigneeChatId) => {
+                // Оптимистично обновляем локально, не ждём поллинга
+                setTask((prev) => {
+                  if (!prev) return prev;
+                  const found = members.find((m) => String(m.chatId) === String(newAssigneeChatId));
+                  const name = (found as any)?.name || prev.assigneeName || null;
+                  return { ...prev, assigneeChatId: String(newAssigneeChatId), assigneeName: name } as any;
+                });
+                setAssigningAssigneeChatId(String(newAssigneeChatId));
+                try { WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+                setRefreshTick((t) => t + 1);
+              }}
+            />
+          )
+        )}
         </div>
 
         {media.length > 0 && (
@@ -1217,10 +1158,32 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           />
         )}
 
-      {/* Наблюдатели */}
-      <WatchersBlock taskId={taskId} meChatId={meChatId} />
-      {/* Комментарии */}
-      <CommentsThread taskId={taskId} meChatId={meChatId} />
+      {/* Наблюдатели (сворачиваемая панель) */}
+      <div style={{ marginTop: 12 }}>
+        <button
+          onClick={() => setWatchersOpen((v) => !v)}
+          title={watchersOpen ? 'Свернуть' : 'Развернуть'}
+          style={{
+            background: '#1b2030',
+            color: '#e8eaed',
+            border: '1px solid #2a3346',
+            borderRadius: 10,
+            padding: '8px 12px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span>👁️ Наблюдатели</span>
+          <span style={{ opacity: 0.85 }}>{watchersOpen ? '▲' : '▼'}</span>
+        </button>
+        {watchersOpen && (
+          <div style={{ marginTop: 8 }}>
+            <WatchersBlock taskId={taskId} meChatId={meChatId} />
+          </div>
+        )}
+      </div>
       {/* Пикер условий приёма */}
       {acceptPickerOpen && (
         <div
@@ -1713,6 +1676,11 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
 
 
 
+
+      {/* Комментарии — вынесены ниже карточки как отдельный блок */}
+      <div style={{ marginTop: 12 }}>
+        <CommentsThread taskId={taskId} meChatId={meChatId} />
+      </div>
 
       {labelDrawerOpen && (
         <TaskLabelDrawer

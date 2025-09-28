@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { fetchBoard, moveTask, reopenTask } from '../api';
 
@@ -32,6 +32,7 @@ export default function StageScroller(props: Props) {
 
   const [colMap, setColMap] = useState<Record<string, string>>({}); // name -> columnId
   const [busy, setBusy] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   // загружаем маппинг колонок текущей доски
   useEffect(() => {
@@ -57,6 +58,17 @@ export default function StageScroller(props: Props) {
 
   const active: StageKey | undefined =
     (ORDER as string[]).includes(String(currentPhase)) ? (currentPhase as StageKey) : undefined;
+
+  // Сдвинуть ленту немного вправо, чтобы слева было «срезано» ~30px
+  useEffect(() => {
+    try {
+      const el = containerRef.current;
+      if (el) {
+        el.scrollLeft = 30;
+      }
+    } catch {}
+    // однократно после инициализации/обновления доступных стадий
+  }, [Object.keys(colMap).length]);
 
   const handlePick = async (next: StageKey) => {
     if (busy) return;
@@ -96,6 +108,7 @@ export default function StageScroller(props: Props) {
 
   return (
     <div
+      ref={containerRef}
       style={{
         margin: '8px 0 6px',
         // контейнер
