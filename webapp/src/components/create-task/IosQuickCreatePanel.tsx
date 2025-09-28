@@ -134,6 +134,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     return () => window.removeEventListener('create-task-focus', onReq as any);
   }, []);
 
+  // Keep keyboard up when toggling tools (📎/🤖) — both on open and on close
+  useEffect(() => {
+    if (!open) return;
+    try { setTimeout(() => ensureCaretFocus(), 0); } catch {}
+  }, [toolsOpen, open]);
+
   // minimal background stabilization while panel is visible on iOS (no hard height/overflow changes)
   useEffect(() => {
     if (!open) return;

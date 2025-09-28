@@ -59,6 +59,7 @@ Final stabilized implementation (Oct 01)
 - TWA: вклад TWA‑высоты игнорируется для панели, расчёты выполняются только по VisualViewport, чтобы не было ложного лифта до открытия клавиатуры.
 - Caret bootstrap: при открытии многократно ставим каретку в конец textarea до подтверждения открытия клавиатуры.
 - Paperclip/Robot focus: при нажатии на 📎/🤖 клавиатура остаётся открытой, фокус и каретка удерживаются в textarea (обработчики `onMouseDownCapture/onTouchStartCapture` + `ensureCaretFocus()` после клика).
+- Только для 📎/🤖: дополнительно поддерживаем фокус при любом переключении панели инструментов (`toolsOpen`) через `useEffect([toolsOpen])` — клавиатура остаётся открытой и при открытии, и при закрытии инструментов.
 
 Files (final)
 - webapp/src/hooks/useKeyboardDock.ts — новый хук (экстракт из SettingsKeyboardTest), управляет докингом панели к клавиатуре.
