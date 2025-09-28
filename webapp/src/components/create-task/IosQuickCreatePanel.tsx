@@ -48,9 +48,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   useEffect(() => {
     if (!open) return;
-    // temporary fallback lift while viewport syncs
-    setKbFallback(340);
-    const tf = setTimeout(() => setKbFallback(0), 1600);
+    // temporary fallback lift while viewport syncs (iOS only)
+    try {
+      const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent || '');
+      if (isiOS) {
+        setKbFallback(340);
+        const tf = setTimeout(() => setKbFallback(0), 1600);
+        // clear in cleanup
+        return () => clearTimeout(tf);
+      }
+    } catch {}
     const tryFocus = () => {
       focusEditableEnd();
     };
@@ -60,7 +67,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     // arm overlay for one frame to ignore the opening click
     setArming(true);
     requestAnimationFrame(() => setArming(false));
-    return () => { clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); setArming(true); };
+    return () => { clearTimeout(t1); clearTimeout(t2); setArming(true); };
   }, [open]);
 
   // load groups when panel opens
@@ -364,8 +371,16 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           bottom: 0,
           pointerEvents: 'auto',
           zIndex: 1000000,
-          transform: `translate3d(0, -${Math.max(kbBottom, kbFallback)}px, 0)`,
-          transition: 'none',
+          // cap lift by current VisualViewport keyboard overlap to avoid pre-lifting above keyboard on iOS
+          transform: (() => {
+            const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+            const vvH = vv?.height || (typeof window !== 'undefined' ? window.innerHeight : 0);
+            const vvLift = Math.max(0, (typeof window !== 'undefined' ? window.innerHeight : 0) - vvH);
+            const ideal = Math.max(kbBottom, kbFallback);
+            const lift = vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0); // ignore fallback until keyboard actually opens
+            return `translate3d(0, -${lift}px, 0)`;
+          })(),
+          transition: 'transform 80ms ease-out',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           willChange: 'transform',
           backfaceVisibility: 'hidden' as any,
@@ -582,7 +597,13 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             try { refocusWithCaretStrong(); } catch {}
             setPickerOpen(false);
           }}
-          dockBottom={Math.max(kbBottom, kbFallback)}
+          dockBottom={(() => {
+            const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+            const vvH = vv?.height || (typeof window !== 'undefined' ? window.innerHeight : 0);
+            const vvLift = Math.max(0, (typeof window !== 'undefined' ? window.innerHeight : 0) - vvH);
+            const ideal = Math.max(kbBottom, kbFallback);
+            return vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0);
+          })()}
         />
         {/* Deadline picker */}
         <DeadlinePicker
