@@ -47,27 +47,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
 
-  // track current keyboard overlap height (VisualViewport) to center modals above keyboard
-  const [kbLift, setKbLift] = useState(0);
-  useEffect(() => {
-    if (!open) return;
-    const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
-    const recalc = () => {
+  // (no continuous kb tracking; compute on demand)
+  // lock keyboard height at moment of opening modal to center above keyboard
+  const [modalDockBottom, setModalDockBottom] = useState(0);
+  const computeKbLiftNow = () => {
+    try {
+      const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
       const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
       const vvH = vv?.height || innerH;
       const raw = Math.max(0, innerH - vvH);
-      setKbLift(raw > 120 ? raw : 0);
-    };
-    recalc();
-    vv?.addEventListener('resize', recalc);
-    vv?.addEventListener('scroll', recalc);
-    window.addEventListener('orientationchange', recalc);
-    return () => {
-      vv?.removeEventListener('resize', recalc);
-      vv?.removeEventListener('scroll', recalc);
-      window.removeEventListener('orientationchange', recalc);
-    };
-  }, [open]);
+      return raw > 120 ? raw : 0;
+    } catch { return 0; }
+  };
+  // (no effect: we lock value on modal open and reset shortly after)
   // Use the same docking logic as SettingsKeyboardTest (robust on iOS)
   useKeyboardDock(microRef as any, { openFollowMs: 600, closeFollowMs: 0, noLift: true });
 
@@ -442,12 +434,14 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ fontSize: 12, opacity: 0.85 }}>Группа</div>
           <button
-            onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-            onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+            onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+            onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
             onClick={() => {
               setPickerOpen(true);
-              // keep keyboard up and caret inside while opening picker
-              try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {}
+              // blur while modal is open
+              try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}
+              // after keyboard hides, center fully
+              setTimeout(() => setModalDockBottom(0), 300);
             }}
             title="Выбрать группу"
             style={{ padding: '4px 8px', borderRadius: 999, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', fontSize: 12, cursor: 'pointer' }}
@@ -603,23 +597,23 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               <button onMouseDownCapture={firePickPhoto} onTouchStartCapture={firePickPhoto} onClick={firePickPhoto} title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🖼️</button>
               <button onClick={openCamera} title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📸</button>
               <button
-                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-                onClick={() => { setDeadlineOpen(true); requestAnimationFrame(()=>refocusWithCaretStrong()); setTimeout(()=>refocusWithCaretStrong(),80); }}
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onClick={() => { setDeadlineOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}; setTimeout(()=>setModalDockBottom(0), 300); }}
                 title="Установить дедлайн"
                 style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
               >🚩</button>
               <button
-                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-                onClick={() => { setAcceptOpen(true); requestAnimationFrame(()=>refocusWithCaretStrong()); setTimeout(()=>refocusWithCaretStrong(),80); }}
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onClick={() => { setAcceptOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}; setTimeout(()=>setModalDockBottom(0), 300); }}
                 title="Условия приёма"
                 style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
               >☝️</button>
               <button
-                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
-                onClick={() => { setRemindersOpen(true); requestAnimationFrame(()=>refocusWithCaretStrong()); setTimeout(()=>refocusWithCaretStrong(),80); }}
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onClick={() => { setRemindersOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}; setTimeout(()=>setModalDockBottom(0), 300); }}
                 title="Добавить напоминание"
                 style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
               >⏰</button>
@@ -682,8 +676,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             } catch {}
             setPickerOpen(false);
           }}
-          // Lift above keyboard while staying visually centered
-          dockBottom={kbLift}
+          // Center above keyboard at open; recenter fully after keyboard hides
+          dockBottom={modalDockBottom}
         />
         {/* Deadline picker */}
         <DeadlinePicker
@@ -691,12 +685,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           value={deadlineAt}
           onChange={(v) => setDeadlineAt(v)}
           centered={true}
-          dockBottom={kbLift}
+          dockBottom={modalDockBottom}
           onClose={() => { setDeadlineOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
         />
         {/* Accept sheet (iOS style) */}
         {acceptOpen && (
-          <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, kbLift)}px)` }}>
+          <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, modalDockBottom)}px)` }}>
             <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
@@ -718,7 +712,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         {/* Reminders sheet (iOS style) */}
         {remindersOpen && (
           <RemindersSheet
-            dockBottom={kbLift}
+            dockBottom={modalDockBottom}
             onClose={()=>{ setRemindersOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
             onPick={(item)=>{ setRemindersDraft(prev=>[...prev, item]); setRemindersOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
           />
