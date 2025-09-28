@@ -137,7 +137,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   // Keep keyboard up when toggling tools (📎/🤖) — both on open and on close
   useEffect(() => {
     if (!open) return;
-    try { setTimeout(() => ensureCaretFocus(), 0); } catch {}
+    const t0 = setTimeout(() => refocusWithCaretStrong(), 0);
+    const t1 = setTimeout(() => refocusWithCaretStrong(), 80);
+    const t2 = setTimeout(() => refocusWithCaretStrong(), 160);
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); };
   }, [toolsOpen, open]);
 
   // minimal background stabilization while panel is visible on iOS (no hard height/overflow changes)
@@ -496,9 +499,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
             {/* paperclip inside input (top-right, before send) */}
             <button
-              onMouseDownCapture={ensureCaretFocus}
-              onTouchStartCapture={ensureCaretFocus}
-              onClick={() => { setToolsOpen(v => !v); setTimeout(() => ensureCaretFocus(), 0); }}
+              onMouseDownCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {}; ensureCaretFocus(); }}
+              onTouchStartCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {}; ensureCaretFocus(); }}
+              onClick={() => { setToolsOpen(v => !v); requestAnimationFrame(() => refocusWithCaretStrong()); setTimeout(() => refocusWithCaretStrong(), 80); }}
               title="Вложения и действия"
               style={{ position: 'absolute', right: 52, top: 8, width: 28, height: 28, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#9ca3af' }}
             >📎</button>
@@ -507,9 +510,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <div style={{ position: 'absolute', left: -6, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <button
-                  onMouseDownCapture={ensureCaretFocus}
-                  onTouchStartCapture={ensureCaretFocus}
-                  onClick={() => { setToolsOpen(v => !v); setTimeout(() => ensureCaretFocus(), 0); }}
+                  onMouseDownCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {}; ensureCaretFocus(); }}
+                  onTouchStartCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {}; ensureCaretFocus(); }}
+                  onClick={() => { setToolsOpen(v => !v); requestAnimationFrame(() => refocusWithCaretStrong()); setTimeout(() => refocusWithCaretStrong(), 80); }}
                   title="Роботы"
                   style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16 }}
                   aria-label="Роботы"

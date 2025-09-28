@@ -60,6 +60,7 @@ Final stabilized implementation (Oct 01)
 - Caret bootstrap: при открытии многократно ставим каретку в конец textarea до подтверждения открытия клавиатуры.
 - Paperclip/Robot focus: при нажатии на 📎/🤖 клавиатура остаётся открытой, фокус и каретка удерживаются в textarea (обработчики `onMouseDownCapture/onTouchStartCapture` + `ensureCaretFocus()` после клика).
 - Только для 📎/🤖: дополнительно поддерживаем фокус при любом переключении панели инструментов (`toolsOpen`) через `useEffect([toolsOpen])` — клавиатура остаётся открытой и при открытии, и при закрытии инструментов.
+- На iOS важно не только `focus`, но и наличие каретки: при обработке 📎/🤖 на `mousedown/touchstart` вызываем `preventDefault()` чтобы кнопка не уводила фокус, а затем несколько раз подряд восстанавливаем каретку (`refocusWithCaretStrong`) — сразу, через `requestAnimationFrame`, и через 80–160 мс, чтобы перекрыть перерисовку.
 
 Files (final)
 - webapp/src/hooks/useKeyboardDock.ts — новый хук (экстракт из SettingsKeyboardTest), управляет докингом панели к клавиатуре.
