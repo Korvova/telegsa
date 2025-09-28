@@ -44,3 +44,5 @@ Commit & push
 Notes for future changes
 - Keep iOS docking logic consistent across components: prefer keyboard HEIGHT only and cap by current VisualViewport overlap.
 - Avoid applying fallback lift before keyboard is actually open.
+ВАЖНО!
+- На iPhone для гарантированного показа клавиатуры недостаточно вызвать `.focus()` на поле ввода — необходимо также выставить каретку внутрь поля (например, через `setSelectionRange(len, len)`), иначе iOS может проигнорировать подъем клавиатуры.

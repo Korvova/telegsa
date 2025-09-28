@@ -46,20 +46,15 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
-  // freeze max seen lift while keyboard is opening to avoid bounce/flicker
-  const liftMaxRef = useRef(0);
-  useEffect(() => { if (!open) liftMaxRef.current = 0; }, [open]);
-
+  // compute lift like CreateTaskModal: cap by vvLift, ignore fallback until keyboard truly opens
   const computeCappedLift = () => {
     const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
     const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
     const vvH = vv?.height || innerH;
     const vvLift = Math.max(0, innerH - vvH);
     const ideal = Math.max(kbBottom, kbFallback);
-    const next = vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0);
-    if (open) liftMaxRef.current = Math.max(liftMaxRef.current, next);
-    const frozen = liftMaxRef.current > 0 ? liftMaxRef.current : next;
-    return { lift: frozen, vvLift, ideal };
+    const lift = vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0);
+    return { lift, vvLift, ideal };
   };
 
   useEffect(() => {
@@ -377,7 +372,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: arming ? 'none' : 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
+      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, contain: 'layout paint size' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
         // dim + blur the background under the panel
         background: 'rgba(0,0,0,.45)',
         backdropFilter: 'blur(8px)',
@@ -421,7 +416,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           bottom: 0,
           pointerEvents: 'auto',
           zIndex: 1000000,
-          // cap lift by current VisualViewport keyboard overlap and freeze to max during open
+          // cap lift by current VisualViewport keyboard overlap; ignore fallback until vvLift>0
           transform: (() => { const { lift } = computeCappedLift(); return `translate3d(0, -${lift}px, 0)`; })(),
           transition: 'none',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
