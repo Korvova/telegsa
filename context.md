@@ -94,3 +94,10 @@ Notes for future changes
   - Accept/Reminders: стоп pointer‑событий на контейнере, усиленный z-index, фон панели делает pointerEvents: none при открытой модалке.
   - Затемнение 0.8; blur только на non‑iOS (на iOS отключён).
   - После закрытия — always refocus (0/80/160мс).
+
+2025-09-28 — iOS: модальные окна по центру (стабильно)
+- Исправлено центрирование «☝️ Условия приёма», «⏰ Напоминание», «📸 Камера»: теперь рендерятся через portal в `document.body`, учитывают `dockBottom` и блокируют всплытие pointer‑событий, как «Выбор группы» и «🚩 Дедлайн».
+- Оверлей панели не закрывает панель, пока открыта любая модалка.
+- Укреплён хендлинг событий в `DeadlinePicker` (mousedown/pointerdown/touchstart + capture).
+- `CameraCaptureModal` поддерживает `dockBottom` и такой же стоп событий.
+- Сборка: `webapp` — `npm run build` успешно.

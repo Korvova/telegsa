@@ -379,7 +379,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) ? 'none' : 'auto', isolation: 'isolate' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
+      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
         // darker dim; add blur on non‑iOS only
         background: 'rgba(0,0,0,.8)',
         backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)',
@@ -387,26 +387,40 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         touchAction: 'none',
         overscrollBehavior: 'none'
       }}
-      onClick={() => { if (!arming && !busy) onClose(); }}
+      onClick={() => {
+        // Do not close panel while any sub-modal/sheet is open
+        if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+        if (!arming && !busy) onClose();
+      }}
       onTouchStart={(e) => {
         try {
           const t = e.target as Node | null;
           const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
-          if (!withinPanel) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+          if (!withinPanel) {
+            // ignore while a sub-modal is open
+            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+            e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose();
+          }
         } catch {}
       }}
       onPointerDown={(e) => {
         try {
           const t = e.target as Node | null;
           const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
-          if (!withinPanel) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+          if (!withinPanel) {
+            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+            e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose();
+          }
         } catch {}
       }}
       onMouseDown={(e) => {
         try {
           const t = e.target as Node | null;
           const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
-          if (!withinPanel) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+          if (!withinPanel) {
+            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+            e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose();
+          }
         } catch {}
       }}
       onTouchMove={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
@@ -597,7 +611,13 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
               <button onMouseDownCapture={firePickAny} onTouchStartCapture={firePickAny} onClick={firePickAny} title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📑</button>
               <button onMouseDownCapture={firePickPhoto} onTouchStartCapture={firePickPhoto} onClick={firePickPhoto} title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🖼️</button>
-              <button onClick={openCamera} title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📸</button>
+              <button
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+                onClick={() => { openCamera(); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}; setTimeout(()=>setModalDockBottom(0), 300); }}
+                title="📸 Камера"
+                style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
+              >📸</button>
               <button
                 onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
                 onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
@@ -692,24 +712,28 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         />
         {/* Accept sheet (iOS style) */}
         {acceptOpen && (
-          <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:1000005, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, modalDockBottom)}px)`, backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)', WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any) }}>
-            <div onClick={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} onTouchStart={(e)=>e.stopPropagation()} onMouseDownCapture={(e)=>e.stopPropagation()} onPointerDownCapture={(e)=>e.stopPropagation()} onTouchStartCapture={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
-                <button onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+          // Render accept sheet in a portal for consistent centering on iOS
+          createPortal(
+            <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:1000005, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, modalDockBottom)}px)`, backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)', WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any) }}>
+              <div onClick={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} onTouchStart={(e)=>e.stopPropagation()} onMouseDownCapture={(e)=>e.stopPropagation()} onPointerDownCapture={(e)=>e.stopPropagation()} onTouchStartCapture={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
+                  <button onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
+                </div>
+                {(['NONE','PHOTO','APPROVAL','PHOTO_AND_APPROVAL','DOC_AND_APPROVAL'] as const).map((opt)=> (
+                  <label key={opt} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0' }}>
+                    <input type="radio" checked={acceptCondition===opt} onChange={()=>setAcceptConditionState(opt)} />
+                    <span>{opt==='NONE'?'Без условий': opt==='PHOTO'?'Нужно фото 📸': opt==='APPROVAL'?'Нужно согласование 🤝': opt==='PHOTO_AND_APPROVAL'?'Фото + согласование 📸🤝':'Документ + согласование 📎🤝'}</span>
+                  </label>
+                ))}
+                <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
+                  <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
+                  <button onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
+                </div>
               </div>
-              {(['NONE','PHOTO','APPROVAL','PHOTO_AND_APPROVAL','DOC_AND_APPROVAL'] as const).map((opt)=> (
-                <label key={opt} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0' }}>
-                  <input type="radio" checked={acceptCondition===opt} onChange={()=>setAcceptConditionState(opt)} />
-                  <span>{opt==='NONE'?'Без условий': opt==='PHOTO'?'Нужно фото 📸': opt==='APPROVAL'?'Нужно согласование 🤝': opt==='PHOTO_AND_APPROVAL'?'Фото + согласование 📸🤝':'Документ + согласование 📎🤝'}</span>
-                </label>
-              ))}
-              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
-                <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
-                <button onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
-              </div>
-            </div>
-          </div>
+            </div>,
+            document.body
+          )
         )}
         {/* Reminders sheet (iOS style) */}
         {remindersOpen && (
@@ -721,6 +745,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         )}
         <CameraCaptureModal
           open={cameraOpen}
+          dockBottom={modalDockBottom}
           onClose={() => { setCameraOpen(false); ensureCaretFocus(); }}
           onCapture={(file) => { setPendingFiles(prev => [...prev, file]); ensureCaretFocus(); }}
         />
@@ -741,7 +766,7 @@ function RemindersSheet({ onClose, onPick, dockBottom = 0 }: { onClose: () => vo
   const setTodayAt = (h:number,m:number)=>{ const d=new Date(); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
   const setTomorrowAt = (h:number,m:number)=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
   const makeISO = (d:string,t:string): string | null => { if (!d||!t) return null; const dd=new Date(`${d}T${t}`); return Number.isNaN(dd.getTime())?null:dd.toISOString(); };
-  return (
+  const sheet = (
     <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', zIndex:1000005, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom)}px)`, backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)', WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any) }}>
       <div onClick={(e)=>e.stopPropagation()} onMouseDown={(e)=>e.stopPropagation()} onPointerDown={(e)=>e.stopPropagation()} onTouchStart={(e)=>e.stopPropagation()} onMouseDownCapture={(e)=>e.stopPropagation()} onPointerDownCapture={(e)=>e.stopPropagation()} onTouchStartCapture={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
@@ -776,4 +801,5 @@ function RemindersSheet({ onClose, onPick, dockBottom = 0 }: { onClose: () => vo
       </div>
     </div>
   );
+  try { return createPortal(sheet, document.body); } catch { return sheet; }
 }

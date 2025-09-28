@@ -4,9 +4,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onCapture: (file: File) => void;
+  dockBottom?: number;
 };
 
-export default function CameraCaptureModal({ open, onClose, onCapture }: Props) {
+export default function CameraCaptureModal({ open, onClose, onCapture, dockBottom = 0 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [busy, setBusy] = useState(false);
@@ -106,8 +107,17 @@ export default function CameraCaptureModal({ open, onClose, onCapture }: Props) 
 
   if (!open) return null;
   return (
-    <div style={overlay} onClick={onClose}>
-      <div style={modal} onClick={e => e.stopPropagation()}>
+    <div style={{...overlay, paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom)}px)`}} onClick={onClose}>
+      <div
+        style={modal}
+        onClick={e => e.stopPropagation()}
+        onMouseDown={e => e.stopPropagation()}
+        onPointerDown={e => e.stopPropagation()}
+        onTouchStart={e => e.stopPropagation()}
+        onMouseDownCapture={e => e.stopPropagation()}
+        onPointerDownCapture={e => e.stopPropagation()}
+        onTouchStartCapture={e => e.stopPropagation()}
+      >
         <div style={{ fontWeight: 700, marginBottom: 8 }}>Камера</div>
         {error ? <div style={errBox}>{error}</div> : null}
         <video
