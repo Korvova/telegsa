@@ -46,6 +46,28 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+
+  // track current keyboard overlap height (VisualViewport) to center modals above keyboard
+  const [kbLift, setKbLift] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+    const recalc = () => {
+      const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
+      const vvH = vv?.height || innerH;
+      const raw = Math.max(0, innerH - vvH);
+      setKbLift(raw > 120 ? raw : 0);
+    };
+    recalc();
+    vv?.addEventListener('resize', recalc);
+    vv?.addEventListener('scroll', recalc);
+    window.addEventListener('orientationchange', recalc);
+    return () => {
+      vv?.removeEventListener('resize', recalc);
+      vv?.removeEventListener('scroll', recalc);
+      window.removeEventListener('orientationchange', recalc);
+    };
+  }, [open]);
   // Use the same docking logic as SettingsKeyboardTest (robust on iOS)
   useKeyboardDock(microRef as any, { openFollowMs: 600, closeFollowMs: 0, noLift: true });
 
@@ -577,9 +599,27 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               <button onMouseDownCapture={firePickAny} onTouchStartCapture={firePickAny} onClick={firePickAny} title="📑 Документ" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📑</button>
               <button onMouseDownCapture={firePickPhoto} onTouchStartCapture={firePickPhoto} onClick={firePickPhoto} title="🖼️ Галерея" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🖼️</button>
               <button onClick={openCamera} title="📸 Камера" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>📸</button>
-              <button onClick={() => { setDeadlineOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }} title="Установить дедлайн" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>🚩</button>
-              <button onClick={() => { setAcceptOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }} title="Условия приёма" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>☝️</button>
-              <button onClick={() => { setRemindersOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }} title="Добавить напоминание" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}>⏰</button>
+              <button
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+                onClick={() => { setDeadlineOpen(true); requestAnimationFrame(()=>refocusWithCaretStrong()); setTimeout(()=>refocusWithCaretStrong(),80); }}
+                title="Установить дедлайн"
+                style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
+              >🚩</button>
+              <button
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+                onClick={() => { setAcceptOpen(true); requestAnimationFrame(()=>refocusWithCaretStrong()); setTimeout(()=>refocusWithCaretStrong(),80); }}
+                title="Условия приёма"
+                style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
+              >☝️</button>
+              <button
+                onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+                onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; ensureCaretFocus(); }}
+                onClick={() => { setRemindersOpen(true); requestAnimationFrame(()=>refocusWithCaretStrong()); setTimeout(()=>refocusWithCaretStrong(),80); }}
+                title="Добавить напоминание"
+                style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
+              >⏰</button>
               <button title="🔘 Предзадача" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🔘</button>
             </div>
           </div>
@@ -623,16 +663,24 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           setSelectedLabelId={(id) => setSelectedLabelId(id)}
           onClose={() => {
             // try to restore caret immediately and with retries
-            try { refocusWithCaretStrong(); } catch {}
+            try {
+              refocusWithCaretStrong();
+              setTimeout(()=>refocusWithCaretStrong(),80);
+              setTimeout(()=>refocusWithCaretStrong(),160);
+            } catch {}
             setPickerOpen(false);
           }}
           onApply={() => {
             // try to restore caret immediately and with retries
-            try { refocusWithCaretStrong(); } catch {}
+            try {
+              refocusWithCaretStrong();
+              setTimeout(()=>refocusWithCaretStrong(),80);
+              setTimeout(()=>refocusWithCaretStrong(),160);
+            } catch {}
             setPickerOpen(false);
           }}
-          // Center the picker regardless of keyboard; input is blurred when opening
-          dockBottom={0}
+          // Lift above keyboard while staying visually centered
+          dockBottom={kbLift}
         />
         {/* Deadline picker */}
         <DeadlinePicker
@@ -640,11 +688,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           value={deadlineAt}
           onChange={(v) => setDeadlineAt(v)}
           centered={true}
-          onClose={() => { setDeadlineOpen(false); try { setTimeout(() => refocusWithCaretStrong(), 0); } catch {} }}
+          dockBottom={kbLift}
+          onClose={() => { setDeadlineOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
         />
         {/* Accept sheet (iOS style) */}
         {acceptOpen && (
-          <div onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, kbLift)}px)` }}>
             <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
                 <div style={{ fontWeight:700 }}>☝️ Условия приёма</div>
@@ -657,15 +706,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 </label>
               ))}
               <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
-                <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
-                <button onClick={()=>{ setAcceptOpen(false); try { setTimeout(()=>refocusWithCaretStrong(),0); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
+                <button onClick={()=>{ setAcceptConditionState('NONE'); setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Без условий</button>
+                <button onClick={()=>{ setAcceptOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }} style={{ padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff' }}>Готово</button>
               </div>
             </div>
           </div>
         )}
         {/* Reminders sheet (iOS style) */}
         {remindersOpen && (
-          <RemindersSheet onClose={()=>{ setRemindersOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} onPick={(item)=>{ setRemindersDraft(prev=>[...prev, item]); setRemindersOpen(false); try { setTimeout(()=>ensureCaretFocus(),0); } catch {} }} />
+          <RemindersSheet
+            dockBottom={kbLift}
+            onClose={()=>{ setRemindersOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+            onPick={(item)=>{ setRemindersDraft(prev=>[...prev, item]); setRemindersOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+          />
         )}
         <CameraCaptureModal
           open={cameraOpen}
@@ -679,7 +732,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   try { return createPortal(overlay, document.body); } catch { return overlay; }
 }
 
-function RemindersSheet({ onClose, onPick }: { onClose: () => void; onPick: (p: { target: 'ME' | 'RESPONSIBLE' | 'ALL'; fireAtIso: string }) => void }) {
+function RemindersSheet({ onClose, onPick, dockBottom = 0 }: { onClose: () => void; onPick: (p: { target: 'ME' | 'RESPONSIBLE' | 'ALL'; fireAtIso: string }) => void; dockBottom?: number }) {
   const [target, setTarget] = useState<'ME'|'RESPONSIBLE'|'ALL'>('ME');
   const [dateStr, setDateStr] = useState<string>('');
   const [timeStr, setTimeStr] = useState<string>('');
@@ -690,7 +743,7 @@ function RemindersSheet({ onClose, onPick }: { onClose: () => void; onPick: (p: 
   const setTomorrowAt = (h:number,m:number)=>{ const d=new Date(); d.setDate(d.getDate()+1); d.setSeconds(0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr(`${pad(h)}:${pad(m)}`); };
   const makeISO = (d:string,t:string): string | null => { if (!d||!t) return null; const dd=new Date(`${d}T${t}`); return Number.isNaN(dd.getTime())?null:dd.toISOString(); };
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center' }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2200, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom)}px)` }}>
       <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(520px, 94vw)' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
           <div style={{ fontWeight:700 }}>⏰ Напоминание</div>

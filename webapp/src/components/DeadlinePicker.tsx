@@ -9,6 +9,7 @@ type Props = {
   title?: string;
   icon?: string; // header icon (default 🚩)
   centered?: boolean; // if true, show as centered modal even on iOS
+  dockBottom?: number; // extra bottom padding (e.g., keyboard height)
 };
 
 function toLocalInputValue(iso: string): string {
@@ -33,7 +34,7 @@ function fromLocalInputValue(v: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн', icon = '🚩', centered = false }: Props) {
+export default function DeadlinePicker({ open, value, onChange, onClose, minNow = true, title = 'Дедлайн', icon = '🚩', centered = false, dockBottom = 0 }: Props) {
   const isiOS = useMemo(() => {
     try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
   }, []);
@@ -138,7 +139,7 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
 
   // Centered modal (default or forced on iOS via centered=true)
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center' }}>
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, dockBottom)}px)` }}>
       <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(460px, 92vw)' }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
           <div style={{ fontWeight:700 }}>{icon} {title}</div>
