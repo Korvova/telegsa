@@ -134,48 +134,24 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     return () => window.removeEventListener('create-task-focus', onReq as any);
   }, []);
 
-  // robust body lock while panel is visible on iOS to avoid bounce/offset issues
+  // minimal background stabilization while panel is visible on iOS (no hard height/overflow changes)
   useEffect(() => {
     if (!open) return;
     const body = document.body as any;
     const html = document.documentElement as any;
     const scrollY = window.scrollY || window.pageYOffset || 0;
-    const prev = {
-      pos: body.style.position,
-      top: body.style.top,
-      width: body.style.width,
-      bodyOverflow: body.style.overflow,
-      bodyOverflowX: body.style.overflowX,
-      bodyHeight: body.style.height,
-      htmlOverflow: html.style.overflow,
-      htmlOverflowX: html.style.overflowX,
-      htmlHeight: html.style.height,
-      htmlOverscroll: (html.style as any).overscrollBehaviorY || '',
-    } as any;
-    // iOS: lock background and stabilize viewport
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overscroll: html.style.overscrollBehaviorY || '' } as any;
     try { (WebApp as any)?.disableVerticalSwipes?.(); } catch {}
     try { (WebApp as any)?.expand?.(); } catch {}
     body.style.position = 'fixed';
     body.style.top = `-${scrollY}px`;
     body.style.width = '100%';
-    body.style.overflow = 'hidden';
-    body.style.overflowX = 'hidden';
-    body.style.height = '100%';
-    html.style.overflow = 'hidden';
-    html.style.overflowX = 'hidden';
-    html.style.height = '100%';
     html.style.overscrollBehaviorY = 'contain';
     return () => {
-      body.style.position = prev.pos;
+      body.style.position = prev.position;
       body.style.top = prev.top;
       body.style.width = prev.width;
-      body.style.overflow = prev.bodyOverflow;
-      body.style.overflowX = prev.bodyOverflowX;
-      body.style.height = prev.bodyHeight;
-      html.style.overflow = prev.htmlOverflow;
-      html.style.overflowX = prev.htmlOverflowX;
-      html.style.height = prev.htmlHeight;
-      html.style.overscrollBehaviorY = prev.htmlOverscroll;
+      html.style.overscrollBehaviorY = prev.overscroll;
       try { window.scrollTo(0, scrollY); } catch {}
     };
   }, [open]);
@@ -398,23 +374,23 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       onClick={() => { if (!arming && !busy) onClose(); }}
       onTouchStart={(e) => {
         try {
-          const t = e.target as Element | null;
-          const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]');
-          if (!isEditable) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+          const t = e.target as Node | null;
+          const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
+          if (!withinPanel) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
         } catch {}
       }}
       onPointerDown={(e) => {
         try {
-          const t = e.target as Element | null;
-          const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]');
-          if (!isEditable) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+          const t = e.target as Node | null;
+          const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
+          if (!withinPanel) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
         } catch {}
       }}
       onMouseDown={(e) => {
         try {
-          const t = e.target as Element | null;
-          const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]');
-          if (!isEditable) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+          const t = e.target as Node | null;
+          const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
+          if (!withinPanel) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
         } catch {}
       }}
       onTouchMove={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
