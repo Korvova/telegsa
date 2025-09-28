@@ -19,7 +19,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   // iOS: rely on focus-gated keyboard detection to avoid false lifts from TWA viewport
-  const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 120, false, false, false);
+  const { bottom: kbBottom } = useKeyboardInsets(open, microRef as any, 120, false, false, false, false);
   const [kbFallback, setKbFallback] = useState(0);
   const [arming, setArming] = useState(true);
   const [toolsOpen, setToolsOpen] = useState(false);

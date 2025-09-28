@@ -18,6 +18,7 @@ export function useKeyboardInsets(
   strict = false,
   includeOffset = false,
   stable = false,
+  useTWA = true,
 ) {
   const isiOS = useMemo(() => {
     try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; }
@@ -47,10 +48,12 @@ export function useKeyboardInsets(
       const kHeightWithOffset = Math.max(0, window.innerHeight - (vvH + vvTop));
       const k1 = includeOffset ? kHeightWithOffset : kHeightOnly;
       let k2 = 0;
-      try {
-        const waH = (WebApp as any)?.viewportHeight || (WebApp as any)?.viewportStableHeight || 0;
-        if (waH) k2 = Math.max(0, window.innerHeight - Number(waH));
-      } catch {}
+      if (useTWA) {
+        try {
+          const waH = (WebApp as any)?.viewportHeight || (WebApp as any)?.viewportStableHeight || 0;
+          if (waH) k2 = Math.max(0, window.innerHeight - Number(waH));
+        } catch {}
+      }
       const raw = Math.max(k1, k2);
       let next = strict ? raw : ((focusActive && raw > threshold) ? raw : 0);
       // Stable mode: while keyboard is open, never go below the maximum seen value
@@ -85,7 +88,7 @@ export function useKeyboardInsets(
       document.removeEventListener('focusout', onFocus, { capture: true } as any);
       try { (WebApp as any)?.offEvent?.('viewportChanged', onResize); } catch {}
     };
-  }, [enabled, scope, threshold, isiOS, strict, includeOffset, stable, stableBottom]);
+  }, [enabled, scope, threshold, isiOS, strict, includeOffset, stable, stableBottom, useTWA]);
 
   return { bottom };
 }
