@@ -46,29 +46,41 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  // freeze max seen lift while keyboard is opening to avoid bounce/flicker
+  const liftMaxRef = useRef(0);
+  useEffect(() => { if (!open) liftMaxRef.current = 0; }, [open]);
+
+  const computeCappedLift = () => {
+    const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+    const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
+    const vvH = vv?.height || innerH;
+    const vvLift = Math.max(0, innerH - vvH);
+    const ideal = Math.max(kbBottom, kbFallback);
+    const next = vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0);
+    if (open) liftMaxRef.current = Math.max(liftMaxRef.current, next);
+    const frozen = liftMaxRef.current > 0 ? liftMaxRef.current : next;
+    return { lift: frozen, vvLift, ideal };
+  };
 
   useEffect(() => {
     if (!open) return;
     // temporary fallback lift while viewport syncs (iOS only)
+    let tf: any = null;
     try {
       const isiOS = /iPad|iPhone|iPod/i.test(navigator.userAgent || '');
       if (isiOS) {
         setKbFallback(340);
-        const tf = setTimeout(() => setKbFallback(0), 1600);
-        // clear in cleanup
-        return () => clearTimeout(tf);
+        tf = setTimeout(() => setKbFallback(0), 1600);
       }
     } catch {}
-    const tryFocus = () => {
-      focusEditableEnd();
-    };
+    const tryFocus = () => { focusEditableEnd(); };
     tryFocus();
     const t1 = setTimeout(tryFocus, 60);
     const t2 = setTimeout(tryFocus, 240);
     // arm overlay for one frame to ignore the opening click
     setArming(true);
     requestAnimationFrame(() => setArming(false));
-    return () => { clearTimeout(t1); clearTimeout(t2); setArming(true); };
+    return () => { if (tf) clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); setArming(true); };
   }, [open]);
 
   // load groups when panel opens
@@ -373,13 +385,25 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       }}
       onClick={() => { if (!arming && !busy) onClose(); }}
       onTouchStart={(e) => {
-        try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
+        try {
+          const t = e.target as Element | null;
+          const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]');
+          if (!isEditable) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+        } catch {}
       }}
       onPointerDown={(e) => {
-        try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
+        try {
+          const t = e.target as Element | null;
+          const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]');
+          if (!isEditable) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+        } catch {}
       }}
       onMouseDown={(e) => {
-        try { const t = e.target as Element | null; const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]'); if (!isEditable) { e.preventDefault(); e.stopPropagation(); } } catch {}
+        try {
+          const t = e.target as Element | null;
+          const isEditable = !!t && !!t.closest('input,textarea,select,[contenteditable="true"]');
+          if (!isEditable) { e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose(); }
+        } catch {}
       }}
       onTouchMove={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
       onWheel={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {} }}
@@ -397,16 +421,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           bottom: 0,
           pointerEvents: 'auto',
           zIndex: 1000000,
-          // cap lift by current VisualViewport keyboard overlap to avoid pre-lifting above keyboard on iOS
-          transform: (() => {
-            const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
-            const vvH = vv?.height || (typeof window !== 'undefined' ? window.innerHeight : 0);
-            const vvLift = Math.max(0, (typeof window !== 'undefined' ? window.innerHeight : 0) - vvH);
-            const ideal = Math.max(kbBottom, kbFallback);
-            const lift = vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0); // ignore fallback until keyboard actually opens
-            return `translate3d(0, -${lift}px, 0)`;
-          })(),
-          transition: 'transform 80ms ease-out',
+          // cap lift by current VisualViewport keyboard overlap and freeze to max during open
+          transform: (() => { const { lift } = computeCappedLift(); return `translate3d(0, -${lift}px, 0)`; })(),
+          transition: 'none',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
           willChange: 'transform',
           backfaceVisibility: 'hidden' as any,
@@ -623,13 +640,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             try { refocusWithCaretStrong(); } catch {}
             setPickerOpen(false);
           }}
-          dockBottom={(() => {
-            const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
-            const vvH = vv?.height || (typeof window !== 'undefined' ? window.innerHeight : 0);
-            const vvLift = Math.max(0, (typeof window !== 'undefined' ? window.innerHeight : 0) - vvH);
-            const ideal = Math.max(kbBottom, kbFallback);
-            return vvLift > 0 ? Math.min(ideal, vvLift) : Math.max(kbBottom, 0);
-          })()}
+          dockBottom={(() => { const { lift } = computeCappedLift(); return lift; })()}
         />
         {/* Deadline picker */}
         <DeadlinePicker
