@@ -9,9 +9,12 @@ type Props = {
   isEvent?: boolean;         // 👈 чтобы подписать "Удалить событие"
   meChatId?: string;         // 👈 для изменения затрат
   initialExpenses?: number | null; // 👈 текущее значение затрат
+  onOpenAccept?: () => void;     // 👈 открыть условия
+  onOpenDeadline?: () => void;   // 👈 открыть дедлайн
+  onOpenReminders?: () => void;  // 👈 открыть напоминания
 };
 
-export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, meChatId = '', initialExpenses = null }: Props) {
+export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, meChatId = '', initialExpenses = null, onOpenAccept, onOpenDeadline, onOpenReminders }: Props) {
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -19,7 +22,13 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
   const [expBusy, setExpBusy] = useState(false);
 
   useEffect(() => {
-    try { setExpDraft(initialExpenses != null ? String(initialExpenses) : ''); } catch { setExpDraft(''); }
+    try {
+      // Показываем плейсхолдер вместо «0»
+      const v = (initialExpenses != null && Number(initialExpenses) !== 0)
+        ? String(initialExpenses)
+        : '';
+      setExpDraft(v);
+    } catch { setExpDraft(''); }
   }, [initialExpenses]);
 
   async function makeLink() {
@@ -88,8 +97,8 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
 
           <div style={{ height: 8 }} />
 
-          {/* Затраты (₽) */}
-          <div style={{ position: 'relative' }}>
+          {/* Затраты (₽) — уже не на всю ширину, чтобы не упираться в края */}
+          <div style={{ position: 'relative', width: '90%', minWidth: 140 }}>
             <input
               type="number"
               inputMode="numeric"
@@ -118,11 +127,37 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
                   setExpBusy(false);
                 }
               }}
-              placeholder="Затраты"
+              placeholder="затраты"
               disabled={expBusy}
-              style={{ width: '100%', padding: '8px 30px 8px 8px', borderRadius: 8, border: '1px solid #2a3346', background: '#131a2a', color: '#e8eaed', fontSize: 12 }}
+              style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: '8px 30px 8px 8px', borderRadius: 8, border: '1px solid #2a3346', background: '#131a2a', color: '#e8eaed', fontSize: 12 }}
             />
             <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 12, opacity: 0.75, pointerEvents: 'none' }}>(₽)</span>
+          </div>
+
+          <div style={{ height: 8 }} />
+
+          {/* Действия: условия / дедлайн / напоминание */}
+          <div style={{ display:'grid', gap: 6 }}>
+            <button
+              onClick={() => { setOpen(false); onOpenAccept?.(); }}
+              style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 8, cursor: 'pointer' }}
+            >
+              ☝️ Условия приёма
+            </button>
+            <button
+              onClick={() => { setOpen(false); onOpenDeadline?.(); }}
+              style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 8, cursor: 'pointer' }}
+              title="Установить дедлайн"
+            >
+              🚩 Дедлайн
+            </button>
+            <button
+              onClick={() => { setOpen(false); onOpenReminders?.(); }}
+              style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 8, cursor: 'pointer' }}
+              title="Создать напоминание"
+            >
+              ⏰ Напомнить
+            </button>
           </div>
 
           <div style={{ height: 8 }} />

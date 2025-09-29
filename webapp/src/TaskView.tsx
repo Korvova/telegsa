@@ -32,6 +32,7 @@ import StageScroller, { type StageKey } from './components/StageScroller';
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
 import WatchersBlock from './components/WatchersBlock';
+import { listWatchers as apiListWatchers, subscribe as apiWatchersSubscribe, unsubscribe as apiWatchersUnsubscribe } from './api/watchers';
 import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 import TaskLabelDrawer from './components/TaskLabelDrawer';
@@ -140,6 +141,47 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const [remBusy, setRemBusy] = useState(false);
   // панель наблюдателей: свёрнута/развёрнута
   const [watchersOpen, setWatchersOpen] = useState(false);
+  const [watchersCount, setWatchersCount] = useState(0);
+  const [meWatching, setMeWatching] = useState(false);
+  const [watchersBusy, setWatchersBusy] = useState(false);
+
+  // первичная загрузка статуса наблюдения и количества
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await apiListWatchers(taskId);
+        if (!alive || !r?.ok) return;
+        const arr = r.watchers || [];
+        setWatchersCount(arr.length);
+        setMeWatching(arr.some((w: any) => String(w.chatId) === String(meChatId)));
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [taskId, meChatId]);
+
+  async function toggleWatchSelf() {
+    if (watchersBusy) return;
+    setWatchersBusy(true);
+    try {
+      if (meWatching) {
+        await apiWatchersUnsubscribe(taskId, String(meChatId), String(meChatId));
+        setMeWatching(false);
+        setWatchersCount((n) => Math.max(0, n - 1));
+      } else {
+        await apiWatchersSubscribe(taskId, String(meChatId));
+        setMeWatching(true);
+        setWatchersCount((n) => n + 1);
+      }
+      try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+      else alert('Не удалось изменить подписку наблюдателя');
+    } finally {
+      setWatchersBusy(false);
+    }
+  }
   // прогресс в стадии "В работе"
   const [progress, setProgress] = useState<number>(0);
   const progressTimer = useRef<any>(null);
@@ -571,6 +613,9 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               onDelete={handleDelete}
               meChatId={meChatId}
               initialExpenses={Number((task as any)?.expenses ?? null) as any}
+              onOpenAccept={() => setAcceptPickerOpen(true)}
+              onOpenDeadline={() => setDeadlineOpen(true)}
+              onOpenReminders={() => setRemindersOpen(true)}
             />
           ) : null}
         </div>
@@ -888,56 +933,10 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'nowrap', overflowX: 'auto' }}>
-
-          {/* ярлыки перенесены под textarea */}
-
-          {/* ☝️ Условия приёма (меняет только постановщик) */}
-          <button
-            onClick={() => setAcceptPickerOpen(true)}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-              display: 'inline-flex', alignItems:'center', gap: 8,
-            }}
-            title="Условия приёма"
-          >
-            <span>☝️</span>
-            <span style={{ fontSize: 12, opacity: 0.9 }}>условия</span>
-            {(() => {
-              const cond = String((task as any)?.acceptCondition || 'NONE');
-              const label = cond === 'PHOTO' ? 'фото' : cond === 'APPROVAL' ? 'согласование' : cond === 'PHOTO_AND_APPROVAL' ? 'фото+соглас.' : cond === 'DOC_AND_APPROVAL' ? 'док+соглас.' : '';
-              return label ? (<span style={{ fontSize: 12, opacity: 0.8 }}> · {label}</span>) : null;
-            })()}
-          </button>
-
-          {/* 🚩 дедлайн */}
-          <button
-            onClick={() => setDeadlineOpen(true)}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-            aria-label="Установить дедлайн"
-            title="Установить дедлайн"
-          >
-            <span>🚩</span>
-            <span style={{ fontSize: 12, opacity: 0.9 }}>
-              {task?.deadlineAt ? new Date(String(task.deadlineAt)).toLocaleString() : 'дедлайн'}
-            </span>
-          </button>
-          {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
+        {/* Кнопки условий/дедлайна/напоминаний вынесены в меню ⋮ */}
+        {/* Сохраняем бейдж просрочки, если есть */}
+        {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
+          <div style={{ marginTop: 8 }}>
             <span
               style={{
                 fontSize: 12,
@@ -950,30 +949,8 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             >
               ⚠️ Просрочен
             </span>
-          )}
-
-          {/* ⏰ напомнить */}
-          <button
-            onClick={() => setRemindersOpen(true)}
-            style={{
-              padding: '10px 12px',
-              borderRadius: 12,
-              border: '1px solid #2a3346',
-              background: '#202840',
-              color: '#e8eaed',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-            aria-label="Создать напоминание"
-            title="Создать напоминание"
-          >
-            <span>⏰</span>
-            <span style={{ fontSize: 12, opacity: 0.9 }}>напомнить</span>
-          </button>
-
-        </div>
+          </div>
+        )}
 
         {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -982,14 +959,14 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               <div
                 style={{
                   padding: '10px 14px',
-                      borderRadius: 12,
-                      border: '1px solid #2a3346',
-                      background: '#15251a',
-                      color: '#d7ffd7',
-                      display: 'inline-flex',
-                      gap: 8,
-                      alignItems: 'center',
-                  }}
+                  borderRadius: 12,
+                  border: '1px solid #2a3346',
+                  background: '#202840',
+                  color: '#e8eaed',
+                  display: 'inline-flex',
+                  gap: 8,
+                  alignItems: 'center',
+                }}
                   title="Ответственный по задаче"
                 >
                   <span style={{ opacity: 0.8 }}>Делает:</span>
@@ -1030,7 +1007,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                   } catch {}
                 }}
                 title="Убрать ответственного"
-                style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid #375249', background: '#254235', color: '#d7ffd7', cursor: 'pointer' }}
+                style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', cursor: 'pointer' }}
               >
                 ×
               </button>
@@ -1158,8 +1135,26 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           />
         )}
 
-      {/* Наблюдатели (сворачиваемая панель) */}
-      <div style={{ marginTop: 12 }}>
+      {/* Наблюдатели: компактный заголовок справа + выпадающий список */}
+      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-start', gap: 6, flexWrap: 'nowrap', alignItems: 'center' }}>
+        <button
+          onClick={toggleWatchSelf}
+          disabled={watchersBusy}
+          style={{
+            padding: '6px 10px',
+            borderRadius: 10,
+            border: '1px solid #2a3346',
+            background: '#202840',
+            color: '#e8eaed',
+            cursor: 'pointer',
+            fontSize: 13,
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {meWatching ? 'Отписаться' : 'Подписаться'}
+        </button>
+
         <button
           onClick={() => setWatchersOpen((v) => !v)}
           title={watchersOpen ? 'Свернуть' : 'Развернуть'}
@@ -1168,22 +1163,32 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             color: '#e8eaed',
             border: '1px solid #2a3346',
             borderRadius: 10,
-            padding: '8px 12px',
+            padding: '6px 10px',
             cursor: 'pointer',
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
+            fontSize: 13,
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
           }}
         >
-          <span>👁️ Наблюдатели</span>
+          <span>👁️ Наблюдают ({watchersCount})</span>
           <span style={{ opacity: 0.85 }}>{watchersOpen ? '▲' : '▼'}</span>
         </button>
-        {watchersOpen && (
-          <div style={{ marginTop: 8 }}>
-            <WatchersBlock taskId={taskId} meChatId={meChatId} />
-          </div>
-        )}
       </div>
+
+      {watchersOpen && (
+        <div style={{ marginTop: 8 }}>
+          <WatchersBlock
+            taskId={taskId}
+            meChatId={meChatId}
+            mode="listOnly"
+            onCountChange={(n) => setWatchersCount(n)}
+            onMeWatchingChange={(w) => setMeWatching(w)}
+          />
+        </div>
+      )}
       {/* Пикер условий приёма */}
       {acceptPickerOpen && (
         <div

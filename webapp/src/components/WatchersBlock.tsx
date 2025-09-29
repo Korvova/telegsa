@@ -1,37 +1,44 @@
 import { useEffect, useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
-import { createWatcherInvite, listWatchers, subscribe, unsubscribe } from '../api/watchers';
+import { createWatcherInvite, listWatchers, unsubscribe } from '../api/watchers';
 
-export default function WatchersBlock({ taskId, meChatId }: { taskId: string; meChatId: string }) {
+type Mode = 'panel' | 'listOnly';
+
+export default function WatchersBlock({
+  taskId,
+  meChatId,
+  mode = 'panel',
+  onCountChange,
+  onMeWatchingChange,
+}: {
+  taskId: string;
+  meChatId: string;
+  mode?: Mode;
+  onCountChange?: (n: number) => void;
+  onMeWatchingChange?: (watching: boolean) => void;
+}) {
   const [items, setItems] = useState<{ chatId: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
 
   const meWatching = useMemo(() => items.some(w => String(w.chatId) === String(meChatId)), [items, meChatId]);
 
   const load = async () => {
-    try { const r = await listWatchers(taskId); if (r.ok) setItems(r.watchers || []); } catch {}
-  };
-
-  useEffect(() => { load(); const t = setInterval(load, 6000); return () => clearInterval(t); }, [taskId]);
-
-  const toggleMe = async () => {
-    if (busy) return;
-    setBusy(true);
     try {
-      if (meWatching) {
-        await unsubscribe(taskId, meChatId, meChatId);
-        setItems(prev => prev.filter(w => String(w.chatId) !== String(meChatId)));
-      } else {
-        await subscribe(taskId, meChatId);
-        setItems(prev => [...prev, { chatId: String(meChatId), name: WebApp?.initDataUnsafe?.user?.first_name || 'Я' }]);
-      }
-      WebApp?.HapticFeedback?.impactOccurred?.('light');
-    } catch (e: any) {
-      const msg = String(e?.message || '');
-      if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
-      else alert('Не удалось изменить подписку наблюдателя');
-    } finally { setBusy(false); }
+      const r = await listWatchers(taskId);
+      if (r.ok) setItems(r.watchers || []);
+    } catch {}
   };
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 6000);
+    return () => clearInterval(t);
+  }, [taskId]);
+
+  useEffect(() => {
+    try { onCountChange?.(items.length); } catch {}
+    try { onMeWatchingChange?.(meWatching); } catch {}
+  }, [items, meWatching, onCountChange, onMeWatchingChange]);
 
   const addWatcher = async () => {
     if (busy) return;
@@ -45,7 +52,6 @@ export default function WatchersBlock({ taskId, meChatId }: { taskId: string; me
       if (WebApp?.openTelegramLink) WebApp.openTelegramLink(url); else window.open?.(url, '_blank');
       WebApp?.HapticFeedback?.notificationOccurred?.('success');
     } catch {
-      // фолбэк — копируем ссылку
       try { await navigator.clipboard.writeText(`Подпишись наблюдателем на задачу: ${location.href}`); } catch {}
     } finally { setBusy(false); }
   };
@@ -62,11 +68,14 @@ export default function WatchersBlock({ taskId, meChatId }: { taskId: string; me
     }
   };
 
-  return (
-    <div style={wrap}>
-      <div style={title}>Наблюдатели</div>
+  const Body = () => (
+    <>
+      {/* Кнопка сверху списка */}
+      <div style={{ display:'flex', marginBottom:8 }}>
+        <button disabled={busy} onClick={addWatcher} style={btn}>Добавить наблюдателя</button>
+      </div>
       {items.length ? (
-        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
           {items.map(w => (
             <span key={w.chatId} style={chip}>
               👁️ {w.name}
@@ -75,13 +84,24 @@ export default function WatchersBlock({ taskId, meChatId }: { taskId: string; me
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 12, opacity: .7, marginBottom: 8 }}>Пока нет наблюдателей.</div>
+        <div style={{ fontSize: 12, opacity: .7 }}>Пока нет наблюдателей.</div>
       )}
+    </>
+  );
 
-      <div style={{ display:'flex', gap:8 }}>
-        <button disabled={busy} onClick={toggleMe} style={btn}>{meWatching ? 'Отписаться' : 'Подписаться'}</button>
-        <button disabled={busy} onClick={addWatcher} style={btn}>Добавить наблюдателя</button>
+  if (mode === 'listOnly') {
+    return (
+      <div style={{...wrap, paddingTop: 8}}>
+        <Body />
       </div>
+    );
+  }
+
+  // Запасной режим «панель» (почти как было)
+  return (
+    <div style={wrap}>
+      <div style={title}>Наблюдатели</div>
+      <Body />
     </div>
   );
 }
