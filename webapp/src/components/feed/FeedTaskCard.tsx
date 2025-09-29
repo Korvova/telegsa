@@ -38,48 +38,63 @@ export default function FeedTaskCard({
   onEditDeadline,
   onClickBadge,
 }: FeedTaskCardProps) {
-  const shortId = id.slice(0, 6);
   const needsPhoto = acceptCondition === 'PHOTO';
   const needsApproval = acceptCondition === 'APPROVAL';
   const hasBounty = !!(bounty && typeof bounty.stars === 'number' && bounty.stars > 0);
   const isOverdue = !!(deadline?.overdue);
 
   return (
-    <div>
-      {/* верхняя строка: награда + короткий id */}
-      <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
-        {hasBounty ? (
+    <div style={{ position: 'relative' }}>
+      {/* верхняя строка: только награда (ID скрыт) */}
+      {hasBounty ? (
+        <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
           <StarBadge amount={bounty!.stars} status={bounty!.status} />
-        ) : null}
-        <span>#{shortId}</span>
-      </div>
-
-      {/* основной текст и бейдж статуса */}
-      <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
-        <div style={{ fontSize: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-          {isEvent ? '📅 ' : ''}
-          {fromProcess ? '🔀 ' : ''}
-          {text}
         </div>
-        {badge && (
-          <span
-            title={badge.text}
-            onClick={(e) => { if (onClickBadge) { e.preventDefault(); e.stopPropagation(); onClickBadge(); } }}
+      ) : null}
+
+      {/* основной текст (внутренний блок с тенями) */}
+      <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
+        <div style={{ flex: 1 }}>
+          <div
             style={{
-              background: badge.bg,
-              color: badge.fg,
-              border: `1px solid ${badge.brd}`,
-              padding: '2px 8px',
-              borderRadius: 999,
-              fontSize: 12,
-              whiteSpace: 'nowrap',
-              cursor: onClickBadge ? 'pointer' : 'default',
+              fontSize: 16,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              background: 'inherit',
+              border: 'none',
+              borderRadius: 12,
+              padding: '8px 10px',
+              boxShadow: 'inset 0 0 0 9999px rgba(0,0,0,0.03), inset 1px 1px 2px rgba(16,24,40,0.08), inset -1px -1px 2px rgba(255,255,255,0.16)'
             }}
           >
-            {badge.text}
-          </span>
-        )}
+            {isEvent ? '📅 ' : ''}
+            {fromProcess ? '🔀 ' : ''}
+            {text}
+          </div>
+        </div>
       </div>
+      {badge && (
+        <span
+          title={badge.text}
+          onClick={(e) => { if (onClickBadge) { e.preventDefault(); e.stopPropagation(); onClickBadge(); } }}
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: -3,
+            background: badge.bg,
+            color: badge.fg,
+            border: `1px solid ${badge.brd}`,
+            padding: '2px 8px',
+            borderRadius: 999,
+            fontSize: 12,
+            whiteSpace: 'nowrap',
+            cursor: onClickBadge ? 'pointer' : 'default',
+            zIndex: 1,
+          }}
+        >
+          {badge.text}
+        </span>
+      )}
 
       {dateLine && (
         <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
@@ -125,33 +140,31 @@ export default function FeedTaskCard({
         </div>
       )}
 
-      {/* группа */}
-      {group && (
-        <div
-          style={{
-            display: 'inline-block',
-            background: group.public ? 'transparent' : (group.chipBg || '#1b2234'),
-            color: group.public ? '#16a34a' : '#fff',
-            padding: '3px 8px',
-            borderRadius: 8,
-            fontSize: 12,
-            marginBottom: 6,
-            border: group.public ? '1px solid #16a34a' : undefined,
-          }}
-        >
-          {(group.public ? '🌍 ' : (group.telegram ? '➡️ ' : ''))}{group.title}
-        </div>
-      )}
+      {/* группа + ярлыки в одной строке */}
+      {(group || (labels && labels.length > 0)) && (
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:6 }}>
+          {group && (
+            <div
+              style={{
+                display: 'inline-block',
+                background: group.public ? 'transparent' : (group.chipBg || '#1b2234'),
+                color: group.public ? '#16a34a' : '#fff',
+                padding: '3px 8px',
+                borderRadius: 8,
+                fontSize: 12,
+                border: group.public ? '1px solid #16a34a' : undefined,
+              }}
+            >
+              {(group.public ? '🌍 ' : (group.telegram ? '➡️ ' : ''))}{group.title}
+            </div>
+          )}
 
-      {/* ярлыки */}
-      {labels && labels.length > 0 && (
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:4, marginBottom:6 }}>
-          {labels.slice(0, 3).map((title, i) => (
+          {labels && labels.slice(0, 3).map((title, i) => (
             <span key={`${id}_lab_${i}`} style={{ display:'inline-block', padding:'2px 8px', borderRadius:999, border:'1px solid #dbeafe', background:'#eff6ff', color:'#1e40af', fontSize:12, lineHeight:'16px', whiteSpace:'nowrap' }}>
               🏷️ {title}
             </span>
           ))}
-          {labels.length > 3 && (
+          {labels && labels.length > 3 && (
             <span style={{ fontSize: 12, opacity: 0.7 }}>+{labels.length - 3}</span>
           )}
         </div>

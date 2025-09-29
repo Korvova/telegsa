@@ -1821,6 +1821,7 @@ export default function HomePage({
                             borderBottomLeftRadius: hasComments ? 0 : 16,
                             borderBottomRightRadius: hasComments ? 0 : 16,
                             padding: 12,
+                            paddingTop: 22,
                             cursor: 'pointer',
                             boxShadow: activeRing,
                             width: 'calc(100% - 32px)',
@@ -1891,38 +1892,55 @@ export default function HomePage({
                             }}
                           />
                           {/* Edge pre-task badge теперь рендерится вне кнопки (выше) */}
-                          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
-                            {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
+                          {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
+                            <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
                               <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
-                            ) : null}
-                            <span>#{t.id.slice(0, 6)}</span>
-                          </div>
+                            </div>
+                          ) : null}
 
                           <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
-<div style={{ fontSize: 16, whiteSpace: 'pre-wrap', wordBreak: 'break-word', flex: 1 }}>
-  {isEvent ? '📅 ' : ''}
-  {(t as any).fromProcess ? '🔀 ' : ''}   {/* ← добавили */}
-  {(t as any).text}
-</div>
-                            {badge && (
-                              <span
-                                title={badge.text}
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
+                            <div style={{ flex: 1 }}>
+                              <div
                                 style={{
-                                  background: badge.bg,
-                                  color: badge.fg,
-                                  border: `1px solid ${badge.brd}`,
-                                  padding: '2px 8px',
-                                  borderRadius: 999,
-                                  fontSize: 12,
-                                  whiteSpace: 'nowrap',
-                                  cursor: 'pointer',
+                                  fontSize: 16,
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                  background: cardBg,
+                                  border: 'none',
+                                  borderRadius: 12,
+                                  padding: '8px 10px',
+                                  boxShadow: 'inset 0 0 0 9999px rgba(0,0,0,0.03), inset 1px 1px 2px rgba(16,24,40,0.08), inset -1px -1px 2px rgba(255,255,255,0.16)'
                                 }}
                               >
-                                {badge.text}
-                              </span>
-                            )}
+                                {isEvent ? '📅 ' : ''}
+                                {(t as any).fromProcess ? '🔀 ' : ''}   {/* ← добавили */}
+                                {(t as any).text}
+                              </div>
+                            </div>
+                            {/* статус перенесён наверх карточки */}
                           </div>
+                          {badge && (
+                            <span
+                              title={badge.text}
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
+                              style={{
+                                position: 'absolute',
+                                right: 14,
+                                top: 1,
+                                background: badge.bg,
+                                color: badge.fg,
+                                border: `1px solid ${badge.brd}`,
+                                padding: '2px 10px',
+                                borderRadius: 999,
+                                fontSize: 12,
+                                whiteSpace: 'nowrap',
+                                cursor: 'pointer',
+                                zIndex: 90,
+                              }}
+                            >
+                              {badge.text}
+                            </span>
+                          )}
 
                     {/* Прогресс-лента для "В работе" */}
                     {currentPhase === 'Doing' && (
@@ -1961,44 +1979,35 @@ export default function HomePage({
                             </span>
                           )}
 
-                          <div
-                            style={{
-                              display: 'inline-block',
-                              background: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? 'transparent' : groupChipBg),
-                              color: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '#86efac' : '#fff'),
-                              padding: '3px 8px',
-                              borderRadius: 8,
-                              fontSize: 12,
-                              marginBottom: 6,
-                              border: (((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '1px solid #16a34a' : undefined),
-                            }}
-                          >
-                            {((((t as any).isPublicGroup || (t as any).groupId && groupPublicById[String((t as any).groupId)]) ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : '')))}{(t as any).groupTitle}
-                          </div>
-
-                          {/* ярлыки карточки */}
+                          {/* Группа и ярлыки в одной строке */}
                           {(() => {
+                            const isPublic = !!(((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])));
+                            const hasGroup = Boolean((t as any).groupTitle);
                             const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
                             const titles = (t as any).labelTitles as string[] | undefined;
                             const labels: { id: string; title: string }[] = Array.isArray(raw)
                               ? raw.map((l, i) => ({ id: l.id || `${t.id}_f${i}`, title: l.title }))
                               : Array.isArray(titles)
                               ? titles.map((title, i) => ({ id: `${t.id}_ft${i}`, title }))
-                              : (labelsByTask[t.id] || []).map((l, i) => ({
-                                  id: l.id || `${t.id}_c${i}`,
-                                  title: l.title,
-                                }));
-                            if (!labels.length) return null;
+                              : (labelsByTask[t.id] || []).map((l, i) => ({ id: l.id || `${t.id}_c${i}`, title: l.title }));
+                            if (!hasGroup && !labels.length) return null;
                             return (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  gap: 6,
-                                  flexWrap: 'wrap',
-                                  marginTop: 4,
-                                  marginBottom: 6,
-                                }}
-                              >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                                {hasGroup && (
+                                  <div
+                                    style={{
+                                      display: 'inline-block',
+                                      background: isPublic ? 'transparent' : groupChipBg,
+                                      color: isPublic ? '#16a34a' : '#fff',
+                                      padding: '3px 8px',
+                                      borderRadius: 8,
+                                      fontSize: 12,
+                                      border: isPublic ? '1px solid #16a34a' : undefined,
+                                    }}
+                                  >
+                                    {(isPublic ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{(t as any).groupTitle}
+                                  </div>
+                                )}
                                 {labels.slice(0, 3).map((l) => (
                                   <span
                                     key={l.id}
@@ -2019,9 +2028,7 @@ export default function HomePage({
                                   </span>
                                 ))}
                                 {labels.length > 3 && (
-                                  <span style={{ fontSize: 12, opacity: 0.7 }}>
-                                    +{labels.length - 3}
-                                  </span>
+                                  <span style={{ fontSize: 12, opacity: 0.7 }}>+{labels.length - 3}</span>
                                 )}
                               </div>
                             );
@@ -2037,9 +2044,7 @@ export default function HomePage({
                               </span>
                               {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
                             </div>
-                            <div style={{ opacity: 0.75 }}>
-                              {(() => { try { const d=new Date((t as any).createdAt); const nn=(n:number)=>String(n).padStart(2,'0'); return `${nn(d.getDate())}.${nn(d.getMonth()+1)}.${d.getFullYear()}, ${nn(d.getHours())}:${nn(d.getMinutes())}:${nn(d.getSeconds())}`;} catch { return new Date((t as any).createdAt).toLocaleString(); } })()}
-                            </div>
+                            {/* дата создания скрыта */}
                           </div>
 
                           {/* Полоска «комментарии (N) →» будет приклеена снизу (absolute) */}
