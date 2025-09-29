@@ -10,12 +10,18 @@ export default function WatchersBlock({
   mode = 'panel',
   onCountChange,
   onMeWatchingChange,
+  bg,
+  border,
+  color,
 }: {
   taskId: string;
   meChatId: string;
   mode?: Mode;
   onCountChange?: (n: number) => void;
   onMeWatchingChange?: (watching: boolean) => void;
+  bg?: string;
+  border?: string;
+  color?: string;
 }) {
   const [items, setItems] = useState<{ chatId: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -91,7 +97,13 @@ export default function WatchersBlock({
 
   if (mode === 'listOnly') {
     return (
-      <div style={{...wrap, paddingTop: 8}}>
+      <div style={{
+        ...wrap,
+        paddingTop: 8,
+        background: bg ?? wrap.background,
+        border: border ?? (wrap as any).border,
+        color: color ?? undefined,
+      }}>
         <Body />
       </div>
     );
@@ -99,7 +111,12 @@ export default function WatchersBlock({
 
   // Запасной режим «панель» (почти как было)
   return (
-    <div style={wrap}>
+    <div style={{
+      ...wrap,
+      background: bg ?? wrap.background,
+      border: border ?? (wrap as any).border,
+      color: color ?? undefined,
+    }}>
       <div style={title}>Наблюдатели</div>
       <Body />
     </div>
@@ -108,12 +125,12 @@ export default function WatchersBlock({
 
 const wrap: React.CSSProperties = {
   marginTop: 16,
-  background: '#1b2030',
-  border: '1px solid #2a3346',
+  background: 'transparent',
+  border: '1px solid transparent',
   borderRadius: 16,
   padding: 12,
 };
 const title: React.CSSProperties = { fontSize: 16, fontWeight: 700, marginBottom: 8 };
-const btn: React.CSSProperties = { padding: '8px 12px', borderRadius: 10, border: '1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' };
-const chip: React.CSSProperties = { display:'inline-flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:999, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' };
-const chipX: React.CSSProperties = { marginLeft: 6, padding:'0 6px', border:'1px solid #2a3346', borderRadius: 999, background:'#3a1f1f', color:'#ffd7d7', cursor:'pointer' };
+const btn: React.CSSProperties = { padding: '8px 12px', borderRadius: 10, border: '1px solid #3a435a', background:'transparent', color:'inherit', cursor:'pointer' };
+const chip: React.CSSProperties = { display:'inline-flex', alignItems:'center', gap:6, padding:'4px 8px', borderRadius:999, border:'1px solid #3a435a', background:'transparent', color:'inherit' };
+const chipX: React.CSSProperties = { marginLeft: 6, padding:'0 6px', border:'1px solid #6b3030', borderRadius: 999, background:'transparent', color:'inherit', cursor:'pointer' };

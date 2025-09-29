@@ -28,7 +28,8 @@ import {
 } from './api';
 import DeadlinePicker from './components/DeadlinePicker';
 
-import StageScroller, { type StageKey } from './components/StageScroller';
+import { type StageKey } from './components/StageScroller';
+import StageCarousel from './components/StageCarousel';
 import ResponsibleActions from './components/ResponsibleActions';
 import CommentsThread from './components/CommentsThread';
 import WatchersBlock from './components/WatchersBlock';
@@ -191,6 +192,51 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const [payoutOpen, setPayoutOpen] = useState(false);
   const payoutOpenRef = useRef(false);
   useEffect(() => { payoutOpenRef.current = payoutOpen; }, [payoutOpen]);
+
+  // Тема карточки по стадии
+  function styleForPhase(ph: string): { background: string; border: string; boxShadow?: string; color?: string } {
+    switch (ph) {
+      case 'Inbox':
+        return {
+          background: 'linear-gradient(135deg, #f5f7fb, #eef2f7)',
+          border: '1px solid #d8dee9',
+          boxShadow: '0 6px 20px rgba(15,23,42,.06), inset 0 0 1px rgba(0,0,0,.04)',
+          color: '#0f172a'
+        };
+      case 'Doing':
+        return {
+          background: 'linear-gradient(135deg, #2c3f5b, #5a7ea8)',
+          border: '1px solid #3e5a85',
+          boxShadow: '0 8px 24px rgba(91,126,169,.24), inset 0 0 18px rgba(255,255,255,.05)'
+        };
+      case 'Done':
+        return {
+          background: 'linear-gradient(135deg, #1d3b2a, #2a7a4a)',
+          border: '1px solid #2b5f44',
+          boxShadow: '0 8px 24px rgba(16,185,129,.22), inset 0 0 18px rgba(255,255,255,.05)'
+        };
+      case 'Cancel':
+        return {
+          background: 'linear-gradient(135deg, #3a1f1f, #7a2a2a)',
+          border: '1px solid #5a2b2b',
+          boxShadow: '0 8px 24px rgba(244,63,94,.20), inset 0 0 18px rgba(255,255,255,.04)'
+        };
+      case 'Approval':
+        return {
+          background: 'linear-gradient(135deg, #3a2a10, #a6791a)',
+          border: '1px solid #6a4a20',
+          boxShadow: '0 8px 24px rgba(250,204,21,.18), inset 0 0 18px rgba(255,255,255,.04)'
+        };
+      case 'Wait':
+        return {
+          background: 'radial-gradient(circle at 20% 0%, rgba(255,255,255,0.08), transparent 42%), radial-gradient(circle at 85% 20%, rgba(255,255,255,0.06), transparent 45%), linear-gradient(135deg, #0e2230, #2a6aa4)',
+          border: '1px solid #274864',
+          boxShadow: '0 10px 28px rgba(56,189,248,.22), inset 0 0 22px rgba(220,245,255,.06)'
+        };
+      default:
+        return { background: '#1b2030', border: '1px solid #2a3346' };
+    }
+  }
 
   // Следим за условиями показа модалки: Done + есть вознаграждение + не выплачено + я = ответственный
   useEffect(() => {
@@ -571,8 +617,16 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
       <div
         ref={cardRef}
         style={{
-          background: isDone ? '#15251a' : '#1b2030',
-          border: `1px solid ${isDone ? '#2c4a34' : '#2a3346'}`,
+          ...(function(){
+            const ph = String(phase || (isDone ? 'Done' : '')) as any;
+            const s = styleForPhase(ph);
+            return {
+              background: s.background,
+              border: s.border,
+              boxShadow: s.boxShadow,
+              color: s.color,
+            };
+          })(),
           borderRadius: 16,
           padding: 16,
 
@@ -670,9 +724,9 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             rows={6}
             style={{
               width: '95%',
-              background: '#1b2030',
-              color: '#e8eaed',
-              border: '1px solid #2a3346',
+              background: 'transparent',
+              color: 'inherit',
+              border: '1px solid #3a435a',
               borderRadius: 12,
               padding: 10,
               resize: 'vertical',
@@ -741,7 +795,25 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
         </div>
 
         {String(phase) !== 'Approval' && (
-        <StageScroller
+        <>
+        {/* Текущий статус (с иконкой), чтобы всегда было видно в каком состоянии задача */}
+        <div style={{ margin: '6px 0 4px', fontSize: 12 }}>
+          <span style={{ opacity: 0.8 }}>Статус:</span>{' '}
+          <span style={{ color: 'inherit' }}>
+            {(() => {
+              const ph = String(phase || '');
+              if (ph === 'Inbox') return '🌱 Новое';
+              if (ph === 'Doing') return '🔨 В работе';
+              if (ph === 'Done') return '✔ Завершено';
+              if (ph === 'Cancel') return '❌ Отмена';
+              if (ph === 'Approval') return '👉👈 Согласов';
+              if (ph === 'Wait') return '🥶 Ждёт';
+              return ph || '—';
+            })()}
+          </span>
+        </div>
+
+        <StageCarousel
           taskId={task.id}
           type={task.type ?? 'TASK'}
           currentPhase={(phase as StageKey) || 'Inbox'}
@@ -800,7 +872,9 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               }
             })();
           }}
-        />)}
+        />
+        </>
+        )}
 
         {/* Прогресс (только в стадии "В работе") */}
         {String(phase) === 'Doing' && (
@@ -958,14 +1032,15 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             task.assigneeChatId ? (
               <div
                 style={{
-                  padding: '10px 14px',
+                  padding: 0,
                   borderRadius: 12,
-                  border: '1px solid #2a3346',
-                  background: '#202840',
-                  color: '#e8eaed',
+                  border: '1px solid transparent',
+                  background: 'transparent',
+                  color: 'inherit',
                   display: 'inline-flex',
                   gap: 8,
                   alignItems: 'center',
+                  fontSize: 12,
                 }}
                   title="Ответственный по задаче"
                 >
@@ -980,7 +1055,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                       <span
                         title={withIcon}
                         style={{
-                          fontSize: 14,
+                          fontSize: 12,
                           lineHeight: '16px',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
@@ -1007,7 +1082,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                   } catch {}
                 }}
                 title="Убрать ответственного"
-                style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed', cursor: 'pointer' }}
+                style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 8, border: '1px solid transparent', background: 'transparent', color: '#e8eaed', cursor: 'pointer', fontSize: 12 }}
               >
                 ×
               </button>
@@ -1136,57 +1211,66 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
         )}
 
       {/* Наблюдатели: компактный заголовок справа + выпадающий список */}
-      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-start', gap: 6, flexWrap: 'nowrap', alignItems: 'center' }}>
+      <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
+        <button
+          onClick={() => setWatchersOpen((v) => !v)}
+          title={watchersOpen ? 'Свернуть' : 'Развернуть'}
+          style={{
+            background: 'transparent',
+            color: 'inherit',
+            border: '1px solid transparent',
+            borderRadius: 10,
+            padding: '6px 10px 6px 0',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            lineHeight: '16px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span>Следят: ({watchersCount})</span>
+          <span style={{ opacity: 0.85 }}>{watchersOpen ? '▲' : '▼'}</span>
+        </button>
+
         <button
           onClick={toggleWatchSelf}
           disabled={watchersBusy}
           style={{
             padding: '6px 10px',
             borderRadius: 10,
-            border: '1px solid #2a3346',
-            background: '#202840',
-            color: '#e8eaed',
+            border: '1px solid #3a435a',
+            background: 'transparent',
+            color: 'inherit',
             cursor: 'pointer',
-            fontSize: 13,
+            fontSize: 12,
             lineHeight: '16px',
             whiteSpace: 'nowrap',
           }}
         >
           {meWatching ? 'Отписаться' : 'Подписаться'}
         </button>
-
-        <button
-          onClick={() => setWatchersOpen((v) => !v)}
-          title={watchersOpen ? 'Свернуть' : 'Развернуть'}
-          style={{
-            background: '#1b2030',
-            color: '#e8eaed',
-            border: '1px solid #2a3346',
-            borderRadius: 10,
-            padding: '6px 10px',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 13,
-            lineHeight: '16px',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span>👁️ Наблюдают ({watchersCount})</span>
-          <span style={{ opacity: 0.85 }}>{watchersOpen ? '▲' : '▼'}</span>
-        </button>
       </div>
 
       {watchersOpen && (
         <div style={{ marginTop: 8 }}>
-          <WatchersBlock
-            taskId={taskId}
-            meChatId={meChatId}
-            mode="listOnly"
-            onCountChange={(n) => setWatchersCount(n)}
-            onMeWatchingChange={(w) => setMeWatching(w)}
-          />
+          {(() => {
+            const ph = String(phase || (isDone ? 'Done' : ''));
+            const th = styleForPhase(ph);
+            return (
+              <WatchersBlock
+                taskId={taskId}
+                meChatId={meChatId}
+                mode="listOnly"
+                onCountChange={(n) => setWatchersCount(n)}
+                onMeWatchingChange={(w) => setMeWatching(w)}
+                bg={th.background}
+                border={th.border}
+                color={th.color}
+              />
+            );
+          })()}
         </div>
       )}
       {/* Пикер условий приёма */}
@@ -1684,7 +1768,19 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
 
       {/* Комментарии — вынесены ниже карточки как отдельный блок */}
       <div style={{ marginTop: 12 }}>
-        <CommentsThread taskId={taskId} meChatId={meChatId} />
+        {(() => {
+          const ph = String(phase || (isDone ? 'Done' : ''));
+          const th = styleForPhase(ph);
+          return (
+            <CommentsThread
+              taskId={taskId}
+              meChatId={meChatId}
+              bg={th.background}
+              border={th.border}
+              color={th.color}
+            />
+          );
+        })()}
       </div>
 
       {labelDrawerOpen && (

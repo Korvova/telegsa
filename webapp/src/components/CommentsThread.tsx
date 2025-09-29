@@ -6,9 +6,15 @@ import { addComment, deleteComment, listComments, type TaskComment, getCommentLi
 export default function CommentsThread({
   taskId,
   meChatId,
+  bg,
+  border,
+  color,
 }: {
   taskId: string;
   meChatId: string;
+  bg?: string;
+  border?: string;
+  color?: string;
 }) {
   const [items, setItems] = useState<TaskComment[]>([]);
   const [text, setText] = useState('');
@@ -150,14 +156,23 @@ export default function CommentsThread({
   const [badImg, setBadImg] = useState<Record<string, boolean>>({});
 
   return (
-    <div ref={wrapRef} style={{ ...wrap, paddingBottom: `calc(72px + ${kbBottom}px + env(safe-area-inset-bottom, 0px))` }}>
+    <div
+      ref={wrapRef}
+      style={{
+        ...wrap,
+        background: bg ?? wrap.background,
+        border: border ?? wrap.border as any,
+        color: color ?? undefined,
+        paddingBottom: `calc(72px + ${kbBottom}px + env(safe-area-inset-bottom, 0px))`,
+      }}
+    >
       <div style={title}>Комментарии</div>
 
       <div ref={boxRef} style={listBox}>
         {items.map(c => {
           const mine = String(c.authorChatId) === String(meChatId);
           return (
-            <div key={c.id} style={{ ...itemRow, background: mine ? '#182030' : '#141b26' }}>
+            <div key={c.id} style={{ ...itemRow, background: mine ? 'rgba(0,0,0,.08)' : 'rgba(0,0,0,.06)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={avatar}>{(c.authorName || c.authorChatId).slice(0,1).toUpperCase()}</div>
                 <div>
@@ -215,7 +230,7 @@ export default function CommentsThread({
         ...(isiOS
           ? { position: 'fixed', left: 16, right: 16, bottom: 'env(safe-area-inset-bottom, 0px)', transform: `translateY(-${kbBottom}px)`, zIndex: 2200 }
           : { position: 'sticky', bottom: 0 }),
-        background: '#1b2030', paddingBottom: 6, borderTop: '1px solid #2a3346',
+        background: 'transparent', paddingBottom: 6,
       }}>
         <input
           ref={inputRef}
@@ -234,8 +249,8 @@ export default function CommentsThread({
 
 const wrap: React.CSSProperties = {
   marginTop: 16,
-  background: '#1b2030',
-  border: '1px solid #2a3346',
+  background: 'transparent',
+  border: '1px solid transparent',
   borderRadius: 16,
   padding: 12,
 };
@@ -257,14 +272,14 @@ const listBox: React.CSSProperties = {
 };
 
 const itemRow: React.CSSProperties = {
-  border: '1px solid #2a3346',
+  border: '1px solid rgba(0,0,0,.12)',
   borderRadius: 12,
   padding: 10,
 };
 
 const avatar: React.CSSProperties = {
   width: 28, height: 28, borderRadius: 14,
-  background: '#223a6b', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'rgba(0,0,0,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontSize: 12, fontWeight: 700,
 };
 
@@ -273,31 +288,31 @@ const input: React.CSSProperties = {
   flex: 1,
   padding: '10px 12px',
   borderRadius: 12,
-  background: '#121722',
-  color: '#e8eaed',
-  border: '1px solid #2a3346',
+  background: 'transparent',
+  color: 'inherit',
+  border: '1px solid #3a435a',
 };
 const sendBtn: React.CSSProperties = {
   padding: '10px 14px',
   borderRadius: 12,
-  background: '#202840',
-  color: '#e8eaed',
-  border: '1px solid #2a3346',
+  background: 'transparent',
+  color: 'inherit',
+  border: '1px solid #3a435a',
   cursor: 'pointer',
 };
 const delBtn: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 10,
-  background: '#2a1a1a',
-  color: '#ffd7d7',
-  border: '1px solid #442626',
+  background: 'transparent',
+  color: 'inherit',
+  border: '1px solid #6b3030',
   cursor: 'pointer',
 };
 const likeBtn: React.CSSProperties = {
   padding: '6px 10px',
   borderRadius: 10,
-  background: '#22283a',
-  color: '#e8eaed',
-  border: '1px solid #2a3346',
+  background: 'transparent',
+  color: 'inherit',
+  border: '1px solid #3a435a',
   cursor: 'pointer',
 };
