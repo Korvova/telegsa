@@ -35,7 +35,7 @@ export default function SettingsQuota({ chatId }: { chatId: string }) {
   };
 
   return (
-    <div style={{ border:'1px solid #2a3346', borderRadius:12, padding:12, background:'#1b2030' }}>
+    <div style={{ border:'1px solid #D1D5DB', borderRadius:12, padding:12, background:'linear-gradient(180deg, #e5e7eb, #cbd5e1)', color:'#374151' }}>
       <div style={{ fontWeight:700, marginBottom:6 }}>Лимит на создание</div>
       {loading ? <div style={{ opacity:.8 }}>Загрузка…</div> : null}
       {error ? <div style={{ color:'#ffb4b4' }}>{error}</div> : null}
@@ -104,7 +104,7 @@ export default function SettingsQuota({ chatId }: { chatId: string }) {
                       alert('Не удалось пополнить лимит');
                     }
                   }}
-                  style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', textAlign:'left' }}
+                  style={{ padding:'10px 12px', borderRadius:12, border:'1px solid #D1D5DB', background:'#f3f4f6', color:'#374151', textAlign:'left' }}
                 >
                   +{p.pack} задач · {p.stars} ⭐️
                 </button>

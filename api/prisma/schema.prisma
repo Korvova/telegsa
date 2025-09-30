@@ -155,6 +155,9 @@ model Task {
   // Затраты по задаче (в рублях)
   expenses Int?
 
+  // Сложность задачи (1..10). 0 = не задано
+  complexity Int @default(0)
+
   // Process graph (denormalized neighbors for fast graph build)
   processLeftKeys   Json?
   processRightKeys  Json?

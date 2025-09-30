@@ -77,9 +77,9 @@ export default function SettingsRank({ chatId }: { chatId: string }) {
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 12,
-        background: '#202840',
-        color: '#e8eaed',
-        border: '1px solid #2a3346',
+        background: 'linear-gradient(180deg, #e5e7eb, #cbd5e1)',
+        color: '#374151',
+        border: '1px solid #D1D5DB',
         borderRadius: 12,
         padding: '10px 12px',
       }}
@@ -95,9 +95,9 @@ export default function SettingsRank({ chatId }: { chatId: string }) {
         onClick={() => setOpen(true)}
         disabled={busy}
         style={{
-          background: '#0f172a',
-          color: '#93c5fd',
-          border: '1px solid #1e293b',
+          background: '#f3f4f6',
+          color: '#374151',
+          border: '1px solid #D1D5DB',
           borderRadius: 10,
           padding: '8px 10px',
           cursor: 'pointer',
@@ -136,4 +136,3 @@ export default function SettingsRank({ chatId }: { chatId: string }) {
     </div>
   );
 }
-

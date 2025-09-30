@@ -39,8 +39,12 @@ export default function StageCarousel({ taskId, /*type = 'TASK',*/ currentPhase,
   const active: StageKey | undefined = (ORDER as string[]).includes(String(currentPhase)) ? (currentPhase as StageKey) : undefined;
 
   function computeInitialIndex(): number {
-    // Если задача завершена — по умолчанию предлагаем вернуть «В РАБОТУ»
+    // Предлагаем наиболее уместное быстрое действие
+    // 1) Если задача завершена — по умолчанию «В РАБОТУ»
     if (active === 'Done' && stages.includes('Doing')) return stages.indexOf('Doing');
+    // 2) Если задача в «Новое» / «Отмена» / «Ждёт» — также предлагаем «В РАБОТУ»
+    if ((active === 'Inbox' || active === 'Cancel' || active === 'Wait') && stages.includes('Doing')) return stages.indexOf('Doing');
+    // 3) Иначе, если доступно «Завершить» — показываем его
     if (stages.includes('Done')) return stages.indexOf('Done');
     if (active) return Math.max(0, stages.indexOf(active));
     return 0;

@@ -36,6 +36,7 @@ import WatchersBlock from './components/WatchersBlock';
 import { listWatchers as apiListWatchers, subscribe as apiWatchersSubscribe, unsubscribe as apiWatchersUnsubscribe } from './api/watchers';
 import EventPanel from './components/EventPanel';
 import ShareNewTaskMenu from './components/ShareNewTaskMenu';
+import RankName from './components/RankName';
 import TaskLabelDrawer from './components/TaskLabelDrawer';
 import RemindersModal from './components/RemindersModal';
 import { listTaskReminders, createTaskReminder, deleteTaskReminder, type TaskReminder as TReminder } from './api/reminders';
@@ -646,16 +647,16 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             {(() => {
               const creator = (task as any)?.creatorName;
               const creatorId = String((task as any)?.createdByChatId || (task as any)?.sourceChatId || (task as any)?.chatId || '');
-              const nameWithIcon = creator && String(creatorId) === String(meChatId) && myRankIcon
-                ? `${myRankIcon} ${creator}`
-                : creator;
+              const nameWithIcon = creator
+                ? (<RankName chatId={creatorId} name={creator} meChatId={meChatId} myRankIcon={myRankIcon} />)
+                : null;
               if (task?.type === 'EVENT') {
                 return creator
                   ? <>Событие от: <span style={{ color: '#374151', opacity: 1 }}>{nameWithIcon}</span></>
                   : 'Событие';
               }
               return creator
-                ? <>Задача от: <span style={{ color: '#374151', opacity: 1 }}>{nameWithIcon}</span></>
+                ? <>Поручил: <span style={{ color: '#374151', opacity: 1 }}>{nameWithIcon}</span></>
                 : 'Задача';
             })()}
           </div>
@@ -676,13 +677,12 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
 
         {/* Группа */}
         <div style={{ margin: '6px 0 10px', fontSize: 13, opacity: .85, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span>Группа</span>
           <button
             onClick={() => setGroupPickerOpen(true)}
             title="Выбрать другую группу"
             style={{
               background: 'transparent',
-             border: groupIsPublic ? '1px solid #2a4a2a' : '1px solid #2a3346',
+             border: '1px solid #D1D5DB',
               borderRadius: 8,
               padding: '2px 8px',
               color: groupIsPublic ? '#86efac' : '#374151',
@@ -701,7 +701,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               gap: 6,
               padding: '2px 10px',
               borderRadius: 999,
-              border: '1px solid #2a3346',
+              border: '1px solid #D1D5DB',
               background: 'transparent',
               color: '#374151',
               fontSize: 12,
@@ -1047,10 +1047,13 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                       || (assigningAssigneeChatId && String(task.assigneeChatId) === String(assigningAssigneeChatId)
                             ? '(назначаю …)'
                             : String(task.assigneeChatId));
-                    const withIcon = String(task.assigneeChatId || '') === String(meChatId || '') && myRankIcon ? `${myRankIcon} ${base}` : base;
+                    const node = (
+                      <RankName chatId={task.assigneeChatId as any} name={String(base || '')} meChatId={meChatId} myRankIcon={myRankIcon} />
+                    );
+                    const title = `${base}`;
                     return (
                       <span
-                        title={withIcon}
+                        title={title}
                         style={{
                           fontSize: 12,
                           lineHeight: '16px',
@@ -1061,7 +1064,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                           maxWidth: 200,
                         }}
                       >
-                        {withIcon}
+                        {node}
                       </span>
                     );
                   })()}
@@ -1248,7 +1251,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             whiteSpace: 'nowrap',
           }}
         >
-          {meWatching ? 'Не следить' : 'Следить'}
+          {meWatching ? 'Не следить' : 'Cледить'}
         </button>
       </div>
 

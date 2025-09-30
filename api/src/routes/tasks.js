@@ -806,6 +806,7 @@ const items = tasks.map(t => {
     commentsCount: commentsCountByTask.get(t.id) || 0,
     bountyStars: t.bountyStars,
     bountyStatus: t.bountyStatus,
+    complexity: t.complexity,
     acceptCondition: t.acceptCondition,
     status,
     groupId,

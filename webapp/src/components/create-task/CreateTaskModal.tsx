@@ -32,6 +32,7 @@ import {
   moveTask,
   setTaskDeadline,
   setAcceptCondition,
+  setTaskBounty,
   updateTask,
   removeTaskLabel,
   transcribeVoice,
@@ -171,6 +172,7 @@ export default function CreateTaskModal({
   const [robotOpen, setRobotOpen] = useState(false);
   const [weatherOpen, setWeatherOpen] = useState(false);
   const [quotaOpen, setQuotaOpen] = useState(false);
+  const [complexity, setComplexity] = useState<number | null>(null);
 
   // edit mode
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
@@ -492,9 +494,15 @@ export default function CreateTaskModal({
     const val = text.trim(); if (!val) return null;
     setBusy(true);
     try {
-      const r = await createTask(chatId, val, groupId ?? undefined);
+      const r = await createTask(chatId, val, groupId ?? undefined, complexity ?? undefined);
       if (!r?.ok || !r?.task?.id) throw new Error('create_failed');
       const newTaskId = r.task.id;
+      // link bounty draft to created task (store RUB and mark PLEDGED)
+      try {
+        if (_bountyLocked && typeof bountyRub === 'number' && bountyRub > 0) {
+          await setTaskBounty(newTaskId, chatId, bountyRub);
+        }
+      } catch {}
       if (groupId && selectedLabelId) { try { await attachTaskLabels(newTaskId, chatId, [selectedLabelId]); } catch {} }
       if (deadlineAt) { try { await setTaskDeadline(newTaskId, chatId, deadlineAt); } catch {} }
       if (pendingFiles.length) { for (const f of pendingFiles) { try { await uploadTaskMedia(newTaskId, chatId, f); } catch {} } }
@@ -826,17 +834,32 @@ export default function CreateTaskModal({
             </div>
           </div>
 
+          {/* bounty info under textarea (inside sheet) */}
+          {(_bountyLocked || bountyAmount>0) && (
+            <div style={{ marginTop:8, fontSize:12, opacity:0.95 }}>
+              💵 Вознаграждение: {typeof bountyRub==='number' ? `(${bountyRub} ₽) `:''}≈ {bountyAmount.toFixed(9).replace(/0+$/,'').replace(/\.$/,'')} TON
+              {_bountyLocked && (
+                <>
+                  <button onClick={async ()=>{ try{ if(!confirm('Вернуть средства? Комиссия не возвращается.')) return; await refund(bountyAmount); setBountyLocked(false); setBountyAmount(0); setBountyRub(null); alert('Возврат запрошен.'); } catch(e:any){ alert(e?.message||'refund_failed'); } }} style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>×</button>
+                  <button onClick={async ()=>{ if (confirm('Сбросить предзадачу без возврата?')) { setBountyLocked(false); setBountyAmount(0); setBountyRub(null); try { await clearDraft(); } catch {} } }} style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#3a1020', color:'#fca5a5' }}>Разблокировать</button>
+                </>
+              )}
+            </div>
+          )}
+
           {/* scheduled info under textarea */}
+          {typeof complexity === 'number' && complexity > 0 ? (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9 }}>
+              Сложность задачи: {complexity} <button onClick={() => setComplexity(null)} style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
+            </div>
+          ) : null}
           {scheduledBanner}
 
           {/* tools panel (basic) */}
           {toolsOpen && (
             <AttachBar
-              chatId={chatId}
-              groupId={groupId}
-              preCfg={preCfg}
-              onApplyPreCfg={(cfg)=>{ setPreCfg(cfg); focusText(); }}
-              hidePreLinks={isPreEdit}
+              complexity={complexity}
+              onPickComplexity={(n)=>{ setComplexity(n); focusText(); }}
               onPickFiles={onPickFiles}
               onOpenCamera={openCamera}
               onOpenDeadline={()=>setDeadlineOpen(true)}
@@ -979,6 +1002,8 @@ export default function CreateTaskModal({
         {/* Hidden TonConnect initializer while modal is open */}
         {open && (<div style={{ display: 'none' }}><TonWalletConnect chatId={chatId} /></div>)}
 
+        
+
         <GroupPicker
           open={pickerOpen}
           groupTab={groupTab}
@@ -1009,19 +1034,7 @@ export default function CreateTaskModal({
             } finally { setBusy(false); setDeleteOpen(false); }
           }}
         />
-      </div>
-      {/* bounty locked info */}
-      {(_bountyLocked || bountyAmount>0) && (
-        <div style={{ marginTop:8, fontSize:12, opacity:0.95 }}>
-          🥮 Вознаграждение: {typeof bountyRub==='number' ? `(${bountyRub} ₽) `:''}≈ {bountyAmount.toFixed(9).replace(/0+$/,'').replace(/\.$/,'')} TON
-          {_bountyLocked && (
-            <>
-              <button onClick={async ()=>{ try{ if(!confirm('Вернуть средства? Комиссия не возвращается.')) return; await refund(bountyAmount); setBountyLocked(false); setBountyAmount(0); setBountyRub(null); alert('Возврат запрошен.'); } catch(e:any){ alert(e?.message||'refund_failed'); } }} style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>×</button>
-              <button onClick={async ()=>{ if (confirm('Сбросить предзадачу без возврата?')) { setBountyLocked(false); setBountyAmount(0); setBountyRub(null); try { await clearDraft(); } catch {} } }} style={{ marginLeft:8, padding:'0 8px', borderRadius:999, border:'1px solid #2a3346', background:'#3a1020', color:'#fca5a5' }}>Разблокировать</button>
-            </>
-          )}
-        </div>
-      )}
+    </div>
     </div>
   );
 

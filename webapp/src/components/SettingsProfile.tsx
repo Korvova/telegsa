@@ -15,9 +15,9 @@ export default function SettingsProfile({ chatId }: { chatId: string }) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        background: '#202840',
-        color: '#e8eaed',
-        border: '1px solid #2a3346',
+        background: 'linear-gradient(180deg, #e5e7eb, #cbd5e1)',
+        color: '#374151',
+        border: '1px solid #D1D5DB',
         borderRadius: 12,
         padding: '10px 12px',
       }}
@@ -25,9 +25,8 @@ export default function SettingsProfile({ chatId }: { chatId: string }) {
       <span style={{ fontSize: 18 }}>👤</span>
       <div style={{ lineHeight: 1.2 }}>
         <div style={{ fontWeight: 600, marginBottom: 2 }}>{fio || '—'}</div>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>ID: {id}</div>
+        <div style={{ fontSize: 12, opacity: 0.8, color: '#4b5563' }}>ID: {id}</div>
       </div>
     </div>
   );
 }
-

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKeyboardInsets } from '../hooks/useKeyboardInsets';
 import WebApp from '@twa-dev/sdk';
 import { addComment, deleteComment, listComments, type TaskComment, getCommentLikes, likeComment, unlikeComment } from '../api';
+import RankName from './RankName';
+import { useMyRankIcon } from '../hooks/useMyRankIcon';
 
 export default function CommentsThread({
   taskId,
@@ -23,6 +25,7 @@ export default function CommentsThread({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [likes, setLikes] = useState<Record<string, { count: number; me: boolean }>>({});
   const [likeBusy, setLikeBusy] = useState<Record<string, boolean>>({});
+  const myRankIcon = useMyRankIcon(meChatId);
 
   const isiOS = useMemo(() => { try { return /iPad|iPhone|iPod/i.test(navigator.userAgent || ''); } catch { return false; } }, []);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -174,9 +177,10 @@ export default function CommentsThread({
           return (
             <div key={c.id} style={{ ...itemRow, background: mine ? 'rgba(0,0,0,.08)' : 'rgba(0,0,0,.06)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={avatar}>{(c.authorName || c.authorChatId).slice(0,1).toUpperCase()}</div>
                 <div>
-                  <div style={{ fontSize: 13, opacity: .8 }}>{c.authorName || c.authorChatId}</div>
+                  <div style={{ fontSize: 13, opacity: .8 }}>
+                    <RankName chatId={c.authorChatId} name={c.authorName || c.authorChatId} meChatId={meChatId} myRankIcon={myRankIcon || null} />
+                  </div>
                   <div style={{ fontSize: 12, opacity: .6 }}>{new Date(c.createdAt).toLocaleString()}</div>
                 </div>
               </div>
@@ -277,11 +281,7 @@ const itemRow: React.CSSProperties = {
   padding: 10,
 };
 
-const avatar: React.CSSProperties = {
-  width: 28, height: 28, borderRadius: 14,
-  background: 'rgba(0,0,0,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: 12, fontWeight: 700,
-};
+// removed avatar circle with initial letter
 
 const inputRow: React.CSSProperties = { display: 'flex', gap: 8 };
 const input: React.CSSProperties = {

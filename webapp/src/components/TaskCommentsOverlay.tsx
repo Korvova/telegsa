@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { addComment, listComments, type TaskComment } from '../api';
+import RankName from './RankName';
+import { useMyRankIcon } from '../hooks/useMyRankIcon';
 
 type Props = {
   open: boolean;
@@ -13,6 +15,7 @@ type Props = {
 
 export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, meChatId, animateFromAnchorId }: Props) {
   const [items, setItems] = useState<TaskComment[]>([]);
+  const myRankIcon = useMyRankIcon(meChatId);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -135,11 +138,10 @@ export default function TaskCommentsOverlay({ open, onClose, taskId, taskText, m
           return (
             <div key={c.id} style={{ border: '1px solid #2a3346', background: mine ? '#182030' : '#141b26', color: '#e8eaed', borderRadius: 12, padding: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 14, background: '#223a6b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>
-                  {(c.authorName || c.authorChatId).slice(0, 1).toUpperCase()}
-                </div>
                 <div>
-                  <div style={{ fontSize: 13, opacity: 0.85 }}>{c.authorName || c.authorChatId}</div>
+                  <div style={{ fontSize: 13, opacity: 0.85 }}>
+                    <RankName chatId={c.authorChatId} name={c.authorName || c.authorChatId} meChatId={meChatId} myRankIcon={myRankIcon || null} />
+                  </div>
                   <div style={{ fontSize: 12, opacity: 0.6 }}>{new Date(c.createdAt).toLocaleString()}</div>
                 </div>
               </div>

@@ -2523,7 +2523,7 @@ app.post('/tasks/:id/share-prepared', async (req, res) => {
 /* ---------- Создание задачи (личная/групповая) ---------- */
 app.post('/tasks', async (req, res) => {
   try {
-    const { chatId, text, groupId: rawGroupId } = req.body || {};
+    const { chatId, text, groupId: rawGroupId, complexity: complexityRaw } = req.body || {};
     if (!chatId || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ ok: false, error: 'chatId и text обязательны' });
     }
@@ -2586,8 +2586,9 @@ app.post('/tasks', async (req, res) => {
     });
     const nextOrder = (last?.order ?? -1) + 1;
 
+    const complexity = (typeof complexityRaw === 'number' && complexityRaw >= 1 && complexityRaw <= 10) ? Math.floor(complexityRaw) : 0;
     const task = await prisma.task.create({
-      data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id, createdByChatId: caller },
+      data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id, createdByChatId: caller, complexity },
     });
 
     try {

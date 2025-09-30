@@ -142,9 +142,9 @@ export function setTaskExpenses(id: string, chatId: string, expenses: number | n
     .json<{ ok: boolean; task: Task }>();
 }
 
-export function createTask(chatId: string, text: string, groupId?: string) {
+export function createTask(chatId: string, text: string, groupId?: string, complexity?: number) {
   return ky
-    .post(`${API_BASE}/tasks`, { json: { chatId, text, groupId: normGroup(groupId) } })
+    .post(`${API_BASE}/tasks`, { json: { chatId, text, groupId: normGroup(groupId), complexity: (typeof complexity==='number' ? complexity : undefined) } })
     .json<{ ok: boolean; task: Task }>();
 }
 

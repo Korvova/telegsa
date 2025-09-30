@@ -1,5 +1,5 @@
 // src/CalendarView.tsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import type { SlotInfo, Event as RBCEvent, View } from 'react-big-calendar';
 import moment from 'moment';
@@ -32,6 +32,8 @@ export default function CalendarView({
   const [range, setRange] = useState<{ start: Date; end: Date } | null>(null);
 
   const [view, setView] = useState<View>('day');
+  const [date, setDate] = useState<Date>(new Date());
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const messages = useMemo(() => ({
     date: 'Дата', time: 'Время', event: 'Событие', allDay: 'Весь день',
@@ -97,10 +99,40 @@ const mapped: CalEvent[] = events.map((e) => ({
   allDay: false,
 }));
 
+  // Центрирование линии текущего времени (или середины дня) в Day/Week
+  const centerSelectedLine = () => {
+    try {
+      if (view !== 'day' && view !== 'week') return;
+      const root = rootRef.current as HTMLElement | null;
+      if (!root) return;
+      const container = root.querySelector('.rbc-time-content') as HTMLElement | null;
+      if (!container) return;
+      // Найти текущий индикатор времени, если показывается (только для сегодняшнего дня)
+      const indicator = container.querySelector('.rbc-current-time-indicator') as HTMLElement | null;
+      const targetTop = (() => {
+        if (indicator) {
+          const cRect = container.getBoundingClientRect();
+          const iRect = indicator.getBoundingClientRect();
+          return (iRect.top - cRect.top) + container.scrollTop;
+        }
+        // иначе центрируем середину скролла (около 12:00)
+        return (container.scrollHeight - container.clientHeight) / 2;
+      })();
+      const next = Math.max(0, targetTop - container.clientHeight / 2);
+      container.scrollTo({ top: next, behavior: 'smooth' });
+    } catch {}
+  };
 
+  // Центрировать при изменении вида/даты/событий
+  useEffect(() => {
+    const t = setTimeout(centerSelectedLine, 50);
+    return () => clearTimeout(t);
+  }, [view, date, events.length]);
 
+  
+  
   return (
-    <div style={{ height: 600 }}>
+    <div ref={rootRef} style={{ height: 600 }}>
 <Calendar
   localizer={localizer}
   selectable
@@ -116,6 +148,8 @@ const mapped: CalEvent[] = events.map((e) => ({
   view={view}
   onView={(v) => setView(v)}
   defaultView="day"
+  date={date}
+  onNavigate={(d) => setDate(d)}
 />
 
       <EventCreateModal

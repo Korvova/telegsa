@@ -1196,9 +1196,9 @@ export default function App() {
                   alignItems: 'center',
                   gap: 10,
                   textAlign: 'left',
-                  background: '#202840',
-                  color: '#e8eaed',
-                  border: '1px solid #2a3346',
+                  background: 'linear-gradient(180deg, #e5e7eb, #cbd5e1)',
+                  color: '#374151',
+                  border: '1px solid #D1D5DB',
                   borderRadius: 12,
                   padding: '10px 12px',
                   cursor: 'pointer',
@@ -1227,7 +1227,7 @@ export default function App() {
                 onClick={() => setSettingsPage('kbtest')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-                  background: '#202840', color: '#e8eaed', border: '1px solid #2a3346',
+                  background: 'linear-gradient(180deg, #e5e7eb, #cbd5e1)', color: '#374151', border: '1px solid #D1D5DB',
                   borderRadius: 12, padding: '10px 12px', cursor: 'pointer',
                 }}
               >

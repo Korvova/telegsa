@@ -70,7 +70,7 @@ export default function TextComposer({
               onClick={onOpenBounty}
               title="Вознаграждение"
               style={{ position: 'absolute', left: 8, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >🥮</button>
+            >💵</button>
           </div>
         </div>
       )}

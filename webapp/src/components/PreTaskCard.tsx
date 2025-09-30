@@ -24,7 +24,7 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
   const firedBrd = '#bae6fd'; // sky-200
   const firedFg = '#0c4a6e';  // cyan-900-ish
   const firedAccent = '#38bdf8'; // cyan-400
-  const subtleBg = '#0f172a';
+  const subtleBg = 'rgba(152, 153, 157, 0.78)';
   const subtleBrd = emphasis ? '#e5e7eb' : '#2a3346';
   const subtleFg = '#e8eaed';
   const normalBg = '#eef2ff';

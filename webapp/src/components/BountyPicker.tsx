@@ -82,7 +82,7 @@ export default function BountyPicker({ open, initial = 0, initialRub = null, onA
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div onClick={(e)=>e.stopPropagation()} style={{ background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:12, padding:12, width:'min(460px,92vw)' }}>
-        <div style={{ fontWeight:700, marginBottom:8 }}>🥮 Укажите сумму в рублях</div>
+        <div style={{ fontWeight:700, marginBottom:8 }}>💵 Укажите сумму в рублях</div>
         <div style={{ display:'grid', gap:8 }}>
           <label style={{ display:'flex', alignItems:'center', gap:8 }}>
             <input type="radio" checked={rubSelected===100 && !customRub} onChange={()=>setPickRub(100)} /> 100 ₽ {tonRub ? `(≈ ${tonFmt(approxTon(100) || 0)} TON)` : ''}

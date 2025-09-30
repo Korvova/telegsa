@@ -99,13 +99,13 @@ export default function SettingsTheme({ chatId }: { chatId: string }) {
   // computed styles (for swatch only)
 
   return (
-    <div style={{ background:'#121722', border:'1px solid #2a3346', borderRadius:12, padding:12 }}>
+    <div style={{ background:'linear-gradient(180deg, #e5e7eb, #cbd5e1)', border:'1px solid #D1D5DB', borderRadius:12, padding:12, color:'#374151' }}>
       {/* Row with label and swatch only */}
       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
         <div style={{ flex:1, fontWeight:600 }}>Цвет фона</div>
         <button onClick={()=>{ prevRef.current = value; setOpen(true); }} title="Выбрать цвет"
           aria-label="Выбрать цвет фона"
-          style={{ width:32, height:32, borderRadius:8, border:'1px solid #2a3346', background:value, cursor:'pointer' }} />
+          style={{ width:32, height:32, borderRadius:8, border:'1px solid #D1D5DB', background:value, cursor:'pointer' }} />
       </div>
 
       {/* Modal picker */}

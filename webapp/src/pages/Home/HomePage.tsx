@@ -29,6 +29,7 @@ import EdgePreTaskBadge from '../../components/EdgePreTaskBadge';
 import StageQuickBar from '../../components/StageQuickBar';
 import { AchievementsBar, RankBadgeButton, type AchFilterKey } from '../../components/Achievements';
 import { useMyRankIcon } from '../../hooks/useMyRankIcon';
+import RankName from '../../components/RankName';
 import { listGroups as apiListGroups, fetchBoard as apiFetchBoard, type Column as BoardColumn } from '../../api';
 import DeadlinePicker from '../../components/DeadlinePicker';
 import CameraCaptureModal from '../../components/CameraCaptureModal';
@@ -1448,7 +1449,7 @@ export default function HomePage({
                                       <div
                                         role="button"
                                         onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !prev[key] })); try { logChildrenForPre(sid); } catch {}; if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); } }}
-                                        style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                        style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'none', background:'transparent', color:'#065f46', fontSize:12, cursor:'pointer' }}
                                 >
                                   <span
                                     style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
@@ -1473,7 +1474,7 @@ export default function HomePage({
                                       const childKey = `P:${String(cp.id)}`;
                                       const cnt2 = preTasks.filter(x => String((x as any).id) !== String(cp.id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String(cp.id))).length;
                                       const foot2 = cnt2 ? (
-                                        <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>
+        <div role="button" onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }} style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'none', background:'transparent', color:'#065f46', fontSize:12, cursor:'pointer' }}>
                                           <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}>➜</span>
                                           Запустят после ({cnt2}) {openAfter[childKey] ? '⬆' : '⬇'}
                                         </div>
@@ -1825,7 +1826,7 @@ export default function HomePage({
                             borderBottomLeftRadius: hasComments ? 0 : 16,
                             borderBottomRightRadius: hasComments ? 0 : 16,
                             padding: 12,
-                            paddingTop: 22,
+                            paddingTop: 8,
                             cursor: 'pointer',
                             boxShadow: activeRing,
                             width: 'calc(100% - 32px)',
@@ -1896,11 +1897,67 @@ export default function HomePage({
                             }}
                           />
                           {/* Edge pre-task badge теперь рендерится вне кнопки (выше) */}
-                          {typeof (t as any).bountyStars === 'number' && (t as any).bountyStars > 0 ? (
-                            <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display:'flex', alignItems:'center', gap:6 }}>
-                              <StarBadge amount={(t as any).bountyStars} status={(t as any).bountyStatus} />
-                            </div>
-                          ) : null}
+                          {/* Награду переносим в строку с группой (ниже), чтобы всё было в одной линии */}
+
+                          {(() => {
+                            const groupTitle = String((t as any).groupTitle || '');
+                            const isPublic = !!(((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])));
+                            const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+                            const titles = (t as any).labelTitles as string[] | undefined;
+                            const labelsTop: { id: string; title: string }[] = Array.isArray(raw)
+                              ? raw.map((l, i) => ({ id: l.id || `${t.id}_f${i}`, title: l.title }))
+                              : Array.isArray(titles)
+                              ? titles.map((title, i) => ({ id: `${t.id}_ft${i}`, title }))
+                              : (labelsByTask[t.id] || []).map((l, i) => ({ id: l.id || `${t.id}_c${i}`, title: l.title }));
+                            const firstLabel = labelsTop[0];
+                            const hasBounty = Number((t as any).bountyStars || 0) > 0;
+                            if (!hasBounty && !groupTitle && !firstLabel) return null;
+                            return (
+                              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6, flexWrap:'nowrap', marginBottom:6 }}>
+                                <div>
+                                  {hasBounty && (<StarBadge amount={(t as any).bountyStars || 0} status={(t as any).bountyStatus} flat />)}
+                                </div>
+                                <div style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+                                  {groupTitle && (
+                                    <div
+                                      title={groupTitle}
+                                      style={{
+                                        display:'inline-block',
+                                        background:'transparent',
+                                        color: isPublic ? '#16a34a' : '#374151',
+                                        border: 'none',
+                                        padding:'3px 8px',
+                                        borderRadius:8,
+                                        fontSize:12,
+                                        whiteSpace:'nowrap',
+                                      }}
+                                    >
+                                      {(isPublic ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{groupTitle}
+                                    </div>
+                                  )}
+                                  {firstLabel && (
+                                    <span
+                                      key={firstLabel.id}
+                                      title={`Ярлык: ${firstLabel.title}`}
+                                      style={{
+                                        display:'inline-block',
+                                        padding:'2px 8px',
+                                        borderRadius:999,
+                                        border:'none',
+                                        background:'transparent',
+                                        color:'#374151',
+                                        fontSize:12,
+                                        lineHeight:'16px',
+                                        whiteSpace:'nowrap',
+                                      }}
+                                    >
+                                      🏷️ {firstLabel.title}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           <div style={{ display: 'flex', alignItems: 'start', gap: 8, marginBottom: 6 }}>
                             <div style={{ flex: 1 }}>
@@ -1923,62 +1980,8 @@ export default function HomePage({
                             </div>
                             {/* статус перенесён наверх карточки */}
                           </div>
-                          {(() => {
-                            const groupTitle = String((t as any).groupTitle || '');
-                            const isPublic = !!(((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])));
-                            // первая метка для верхней строки
-                            const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
-                            const titles = (t as any).labelTitles as string[] | undefined;
-                            const labelsTop: { id: string; title: string }[] = Array.isArray(raw)
-                              ? raw.map((l, i) => ({ id: l.id || `${t.id}_f${i}`, title: l.title }))
-                              : Array.isArray(titles)
-                              ? titles.map((title, i) => ({ id: `${t.id}_ft${i}`, title }))
-                              : (labelsByTask[t.id] || []).map((l, i) => ({ id: l.id || `${t.id}_c${i}`, title: l.title }));
-                            const firstLabel = labelsTop[0];
-                            if (!groupTitle && !firstLabel) return null;
-                            return (
-                              <div
-                                style={{ position:'absolute', right:14, top:1, zIndex:90, display:'inline-flex', alignItems:'center', gap:6, flexWrap:'nowrap' }}
-                              >
-                                {groupTitle && (
-                                  <div
-                                    title={groupTitle}
-                                    style={{
-                                      display:'inline-block',
-                                      background:'transparent',
-                                      color: isPublic ? '#16a34a' : '#374151',
-                                      border: 'none',
-                                      padding:'3px 8px',
-                                      borderRadius:8,
-                                      fontSize:12,
-                                      whiteSpace:'nowrap',
-                                    }}
-                                  >
-                                    {(isPublic ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{groupTitle}
-                                  </div>
-                                )}
-                                {firstLabel && (
-                                  <span
-                                    key={firstLabel.id}
-                                    title={`Ярлык: ${firstLabel.title}`}
-                                    style={{
-                                      display:'inline-block',
-                                      padding:'2px 8px',
-                                      borderRadius:999,
-                                      border:'none',
-                                      background:'transparent',
-                                      color:'#374151',
-                                      fontSize:12,
-                                      lineHeight:'16px',
-                                      whiteSpace:'nowrap',
-                                    }}
-                                  >
-                                    🏷️ {firstLabel.title}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })()}
+                          
+                          
 
                     {/* Прогресс-лента для "В работе" */}
                     {currentPhase === 'Doing' && (
@@ -2031,24 +2034,6 @@ export default function HomePage({
                             if (!hasGroup && !restLabels.length && !badge) return null;
                             return (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                                {badge && (
-                                  <span
-                                    title={badge.text}
-                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
-                                    style={{
-                                      background: badge.bg,
-                                      color: badge.fg,
-                                      border: `1px solid ${badge.brd}`,
-                                      padding: '2px 8px',
-                                      borderRadius: 999,
-                                      fontSize: 12,
-                                      whiteSpace: 'nowrap',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    {badge.text}
-                                  </span>
-                                )}
                                 {restLabels.slice(0, 3).map((l) => (
                                   <span
                                     key={l.id}
@@ -2076,14 +2061,33 @@ export default function HomePage({
                           })()}
 
                           <div style={{ fontSize: 12, opacity: 0.85, display: 'grid', gap: 2 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span>
-                                👤{' '}
-                                {String((t as any).creatorChatId || '') === String(meChatId) && myRankIcon
-                                  ? `${myRankIcon} ${(t as any).creatorName || (t as any).assigneeName || ''}`
-                                  : String((t as any).creatorName || (t as any).assigneeName || '')}
-                              </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              {(() => {
+                                const assigneeName = String((t as any).assigneeName || '').trim();
+                                const assigneeId = String((t as any).assigneeChatId || '');
+                                const creatorName = String((t as any).creatorName || '').trim();
+                                const who = assigneeName || (assigneeId ? assigneeId : creatorName);
+                                return (<RankName chatId={assigneeId} name={who} meChatId={meChatId} myRankIcon={myRankIcon} />);
+                              })()}
                               {needsPhoto ? <span title="Требуется фото">☝️📸</span> : null}
+                              {badge && (
+                                <span
+                                  title={badge.text}
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
+                                  style={{
+                                    background: badge.bg,
+                                    color: badge.fg,
+                                    border: 'none',
+                                    padding: '2px 8px',
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    whiteSpace: 'nowrap',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {badge.text}
+                                </span>
+                              )}
                             </div>
                             {/* дата создания скрыта */}
                           </div>
@@ -2130,8 +2134,8 @@ export default function HomePage({
                                     textAlign: 'left',
                                     padding: '6px 10px',
                                     borderRadius: 10,
-                                    border: '1px solid #d1e7dd',
-                                    background: '#ecfdf5',
+                                    border: 'none',
+                                    background: 'transparent',
                                     color: '#065f46',
                                     fontSize: 12,
                                     cursor: 'pointer',
@@ -2220,7 +2224,7 @@ export default function HomePage({
                                     const children = preTasks.filter(x => String((x as any).id) !== String((p as any).id) && Array.isArray((x as any).links) && (x as any).links.some((l:any) => String((l as any).depPreTaskId || (l as any).preTaskId || '') === String((p as any).id)));
                                     const cnt = children.length;
                                     const footer = cnt ? (
-                                      <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
+                                      <div role="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [key]: !(prev[key]) })); }} style={{ display:'inline-block', maxWidth:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'none', background:'transparent', color:'#065f46', fontSize:12, cursor:'pointer' }}>Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}</div>
                                     ) : null;
                                     return (
                                       <div style={{ position:'relative' }}>
@@ -2342,7 +2346,7 @@ export default function HomePage({
                                                 <div
                                                   role="button"
                                                   onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }}
-                                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'none', background:'transparent', color:'#065f46', fontSize:12, cursor:'pointer' }}
                                                 >
                                                   <span
                                                     style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
@@ -2549,7 +2553,7 @@ export default function HomePage({
                                 try { logChildrenForPre(sid); } catch {}
                                 if (!openAfter[key]) { await ensurePreTaskFresh(sid); await refreshPreTasks(); }
                               }}
-                              style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                              style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'none', background:'transparent', color:'#065f46', fontSize:12, cursor:'pointer' }}
                             >
                               Запустят после ({cnt}) {openAfter[key] ? '⬆' : '⬇'}
                             </div>
@@ -2571,7 +2575,7 @@ export default function HomePage({
                                 <div
                                   role="button"
                                   onClick={async (e)=>{ e.preventDefault(); e.stopPropagation(); setOpenAfter(prev => ({ ...prev, [childKey]: !(prev[childKey]) })); try { logChildrenForPre(String(cp.id)); } catch {}; if (!openAfter[childKey]) { await ensurePreTaskFresh(String(cp.id)); await refreshPreTasks(); } }}
-                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'1px solid #d1e7dd', background:'#ecfdf5', color:'#065f46', fontSize:12, cursor:'pointer' }}
+                                  style={{ width:'100%', textAlign:'left', padding:'6px 10px', borderRadius:10, border:'none', background:'transparent', color:'#065f46', fontSize:12, cursor:'pointer' }}
                                         >
                                           <span
                                             style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:18, height:18, borderRadius:999, border:'1px solid #93c5fd', background:'#eff6ff', color:'#3b82f6', fontSize:12, marginRight:6 }}
