@@ -7,9 +7,11 @@ type Props = {
   compact?: boolean; // true = не выходить за пределы контейнера (вся геометрия внутри)
   side?: 'left' | 'right'; // сторона крепления значка
   align?: 'center' | 'top'; // вертикальное выравнивание контейнера
+  fillColor?: string; // цвет круга (фон) — если не задан, используется дефолт
+  borderColor?: string; // цвет рамки круга — если не задан, используется дефолт
 };
 
-export default function EdgePreTaskBadge({ count, title, onClick, style, side = 'right', align = 'center' }: Props) {
+export default function EdgePreTaskBadge({ count, title, onClick, style, side = 'right', align = 'center', fillColor, borderColor }: Props) {
   // Показываем стрелку, если есть связи. Для pretask тоже учитываем count.
   const hasPre = count > 0;
   const label = title || (hasPre ? 'Управление предзадачами' : 'Создать предзадачу');
@@ -57,8 +59,8 @@ export default function EdgePreTaskBadge({ count, title, onClick, style, side = 
           width: size,
           height: size,
           borderRadius: 999,
-          background: hasPre ? '#ffffff' : grayFill,
-          border: `1px solid ${hasPre ? blueBorder : grayBorder}`,
+          background: fillColor ?? (hasPre ? '#ffffff' : grayFill),
+          border: `1px solid ${borderColor ?? (hasPre ? blueBorder : grayBorder)}`,
           boxShadow: '0 0 0 2px rgba(0,0,0,0.04)'
         }}
       />

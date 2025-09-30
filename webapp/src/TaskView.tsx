@@ -651,11 +651,11 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
                 : creator;
               if (task?.type === 'EVENT') {
                 return creator
-                  ? <>Событие от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{nameWithIcon}</span></>
+                  ? <>Событие от: <span style={{ color: '#374151', opacity: 1 }}>{nameWithIcon}</span></>
                   : 'Событие';
               }
               return creator
-                ? <>Задача от: <span style={{ color: '#8aa0ff', opacity: 1 }}>{nameWithIcon}</span></>
+                ? <>Задача от: <span style={{ color: '#374151', opacity: 1 }}>{nameWithIcon}</span></>
                 : 'Задача';
             })()}
           </div>
@@ -685,7 +685,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
              border: groupIsPublic ? '1px solid #2a4a2a' : '1px solid #2a3346',
               borderRadius: 8,
               padding: '2px 8px',
-              color: groupIsPublic ? '#86efac' : '#8aa0ff',
+              color: groupIsPublic ? '#86efac' : '#374151',
               cursor: 'pointer'
             }}
           >
@@ -702,8 +702,8 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               padding: '2px 10px',
               borderRadius: 999,
               border: '1px solid #2a3346',
-              background: '#12202a',
-              color: '#d7ffd7',
+              background: 'transparent',
+              color: '#374151',
               fontSize: 12,
               lineHeight: '16px',
               cursor: 'pointer'
@@ -796,21 +796,18 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
 
         {String(phase) !== 'Approval' && (
         <>
-        {/* Текущий статус (с иконкой), чтобы всегда было видно в каком состоянии задача */}
-        <div style={{ margin: '6px 0 4px', fontSize: 12 }}>
-          <span style={{ opacity: 0.8 }}>Статус:</span>{' '}
-          <span style={{ color: 'inherit' }}>
-            {(() => {
-              const ph = String(phase || '');
-              if (ph === 'Inbox') return '🌱 Новое';
-              if (ph === 'Doing') return '🔨 В работе';
-              if (ph === 'Done') return '✔ Завершено';
-              if (ph === 'Cancel') return '❌ Отмена';
-              if (ph === 'Approval') return '👉👈 Согласов';
-              if (ph === 'Wait') return '🥶 Ждёт';
-              return ph || '—';
-            })()}
-          </span>
+        {/* Текущий статус по центру под текстовым полем */}
+        <div style={{ margin: '6px 0 4px', fontSize: 12, textAlign: 'center', opacity: 0.9 }}>
+          {(() => {
+            const ph = String(phase || '');
+            if (ph === 'Inbox') return '🌱 Новое';
+            if (ph === 'Doing') return '🔨 В работе';
+            if (ph === 'Done') return '✔ Завершено';
+            if (ph === 'Cancel') return '❌ Отмена';
+            if (ph === 'Approval') return '👉👈 Согласов';
+            if (ph === 'Wait') return '🥶 Ждёт';
+            return ph || '—';
+          })()}
         </div>
 
         <StageCarousel
@@ -1212,27 +1209,29 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
 
       {/* Наблюдатели: компактный заголовок справа + выпадающий список */}
       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start', gap: 4, flexWrap: 'nowrap', alignItems: 'center' }}>
-        <button
-          onClick={() => setWatchersOpen((v) => !v)}
-          title={watchersOpen ? 'Свернуть' : 'Развернуть'}
-          style={{
-            background: 'transparent',
-            color: 'inherit',
-            border: '1px solid transparent',
-            borderRadius: 10,
-            padding: '6px 10px 6px 0',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 12,
-            lineHeight: '16px',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          <span>Следят: ({watchersCount})</span>
-          <span style={{ opacity: 0.85 }}>{watchersOpen ? '▲' : '▼'}</span>
-        </button>
+        {watchersCount > 0 && (
+          <button
+            onClick={() => setWatchersOpen((v) => !v)}
+            title={watchersOpen ? 'Свернуть' : 'Развернуть'}
+            style={{
+              background: 'transparent',
+              color: 'inherit',
+              border: '1px solid transparent',
+              borderRadius: 10,
+              padding: '6px 10px 6px 0',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 12,
+              lineHeight: '16px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>👀 ({watchersCount})</span>
+            <span style={{ opacity: 0.85 }}>{watchersOpen ? '▲' : '▼'}</span>
+          </button>
+        )}
 
         <button
           onClick={toggleWatchSelf}
@@ -1249,7 +1248,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             whiteSpace: 'nowrap',
           }}
         >
-          {meWatching ? 'Отписаться' : 'Подписаться'}
+          {meWatching ? 'Не следить' : 'Следить'}
         </button>
       </div>
 

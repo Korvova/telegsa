@@ -114,7 +114,7 @@ function badgeForPhase(p?: StageKey | string): Badge | null {
     case 'Wait':
       return { text: '🥶 Ждёт', bg: '#E0F2FF', fg: '#063f5c', brd: '#B9E4FF' };
     case 'Inbox':
-      return { text: '🌱 Новое', bg: '#ECEAFE', fg: '#2e1065', brd: '#DBD7FF' };
+      return { text: '🌱 Новое', bg: '#FFFFFF', fg: '#2e1065', brd: '#D1D5DB' };
     default:
       return null;
   }
@@ -1706,6 +1706,8 @@ export default function HomePage({
                                   kind="task"
                                   count={finalLeft}
                                   side="left"
+                                  fillColor={cardBg}
+                                  borderColor={cardBrd}
                                   onClick={async () => {
                                     try {
                                       const tid = String((t as any).id);
@@ -1757,6 +1759,8 @@ export default function HomePage({
                                 <EdgePreTaskBadge
                                   kind="task"
                                   count={finalRight}
+                                  fillColor={cardBg}
+                                  borderColor={cardBrd}
                                   onClick={async () => {
                                   try {
                                       const tid = String((t as any).id);
@@ -1919,32 +1923,66 @@ export default function HomePage({
                             </div>
                             {/* статус перенесён наверх карточки */}
                           </div>
-                          {badge && (
-                            <span
-                              title={badge.text}
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
-                              style={{
-                                position: 'absolute',
-                                right: 14,
-                                top: 1,
-                                background: badge.bg,
-                                color: badge.fg,
-                                border: `1px solid ${badge.brd}`,
-                                padding: '2px 10px',
-                                borderRadius: 999,
-                                fontSize: 12,
-                                whiteSpace: 'nowrap',
-                                cursor: 'pointer',
-                                zIndex: 90,
-                              }}
-                            >
-                              {badge.text}
-                            </span>
-                          )}
+                          {(() => {
+                            const groupTitle = String((t as any).groupTitle || '');
+                            const isPublic = !!(((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])));
+                            // первая метка для верхней строки
+                            const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
+                            const titles = (t as any).labelTitles as string[] | undefined;
+                            const labelsTop: { id: string; title: string }[] = Array.isArray(raw)
+                              ? raw.map((l, i) => ({ id: l.id || `${t.id}_f${i}`, title: l.title }))
+                              : Array.isArray(titles)
+                              ? titles.map((title, i) => ({ id: `${t.id}_ft${i}`, title }))
+                              : (labelsByTask[t.id] || []).map((l, i) => ({ id: l.id || `${t.id}_c${i}`, title: l.title }));
+                            const firstLabel = labelsTop[0];
+                            if (!groupTitle && !firstLabel) return null;
+                            return (
+                              <div
+                                style={{ position:'absolute', right:14, top:1, zIndex:90, display:'inline-flex', alignItems:'center', gap:6, flexWrap:'nowrap' }}
+                              >
+                                {groupTitle && (
+                                  <div
+                                    title={groupTitle}
+                                    style={{
+                                      display:'inline-block',
+                                      background:'transparent',
+                                      color: isPublic ? '#16a34a' : '#374151',
+                                      border: 'none',
+                                      padding:'3px 8px',
+                                      borderRadius:8,
+                                      fontSize:12,
+                                      whiteSpace:'nowrap',
+                                    }}
+                                  >
+                                    {(isPublic ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{groupTitle}
+                                  </div>
+                                )}
+                                {firstLabel && (
+                                  <span
+                                    key={firstLabel.id}
+                                    title={`Ярлык: ${firstLabel.title}`}
+                                    style={{
+                                      display:'inline-block',
+                                      padding:'2px 8px',
+                                      borderRadius:999,
+                                      border:'none',
+                                      background:'transparent',
+                                      color:'#374151',
+                                      fontSize:12,
+                                      lineHeight:'16px',
+                                      whiteSpace:'nowrap',
+                                    }}
+                                  >
+                                    🏷️ {firstLabel.title}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                     {/* Прогресс-лента для "В работе" */}
                     {currentPhase === 'Doing' && (
-                      <div style={{ height: 4, borderRadius: 999, background: '#1f2937', overflow: 'hidden', marginBottom: 6 }}>
+                      <div style={{ height: 4, borderRadius: 999, background: '#B4BFCD', overflow: 'hidden', marginBottom: 6 }}>
                         <div
                           style={{
                             height: '100%',
@@ -1979,9 +2017,8 @@ export default function HomePage({
                             </span>
                           )}
 
-                          {/* Группа и ярлыки в одной строке */}
+                          {/* Статус и ярлыки в одной строке (группа+первый ярлык наверху) */}
                           {(() => {
-                            const isPublic = !!(((t as any).isPublicGroup || ((t as any).groupId && groupPublicById[String((t as any).groupId)])));
                             const hasGroup = Boolean((t as any).groupTitle);
                             const raw = (t as any).labels as { id?: string; title: string }[] | undefined;
                             const titles = (t as any).labelTitles as string[] | undefined;
@@ -1990,45 +2027,49 @@ export default function HomePage({
                               : Array.isArray(titles)
                               ? titles.map((title, i) => ({ id: `${t.id}_ft${i}`, title }))
                               : (labelsByTask[t.id] || []).map((l, i) => ({ id: l.id || `${t.id}_c${i}`, title: l.title }));
-                            if (!hasGroup && !labels.length) return null;
+                            const restLabels = labels.slice(labels.length ? 1 : 0); // первый ушёл наверх
+                            if (!hasGroup && !restLabels.length && !badge) return null;
                             return (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-                                {hasGroup && (
-                                  <div
+                                {badge && (
+                                  <span
+                                    title={badge.text}
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpenQBar({ id: t.id, page: pg.key as PageKey }); try { WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {} }}
                                     style={{
-                                      display: 'inline-block',
-                                      background: isPublic ? 'transparent' : groupChipBg,
-                                      color: isPublic ? '#16a34a' : '#fff',
-                                      padding: '3px 8px',
-                                      borderRadius: 8,
+                                      background: badge.bg,
+                                      color: badge.fg,
+                                      border: `1px solid ${badge.brd}`,
+                                      padding: '2px 8px',
+                                      borderRadius: 999,
                                       fontSize: 12,
-                                      border: isPublic ? '1px solid #16a34a' : undefined,
+                                      whiteSpace: 'nowrap',
+                                      cursor: 'pointer',
                                     }}
                                   >
-                                    {(isPublic ? '🌍 ' : ((t as any).isTelegramGroup ? '➡️ ' : ''))}{(t as any).groupTitle}
-                                  </div>
+                                    {badge.text}
+                                  </span>
                                 )}
-                                {labels.slice(0, 3).map((l) => (
+                                {restLabels.slice(0, 3).map((l) => (
                                   <span
                                     key={l.id}
                                     title={`Ярлык: ${l.title}`}
                                     style={{
-                                      display: 'inline-block',
-                                      padding: '2px 8px',
-                                      borderRadius: 999,
-                                      border: '1px solid #dbeafe',
-                                      background: '#eff6ff',
-                                      color: '#1e40af',
-                                      fontSize: 12,
-                                      lineHeight: '16px',
-                                      whiteSpace: 'nowrap',
+                                      display:'inline-block',
+                                      padding:'2px 8px',
+                                      borderRadius:999,
+                                      border:'none',
+                                      background:'transparent',
+                                      color:'#374151',
+                                      fontSize:12,
+                                      lineHeight:'16px',
+                                      whiteSpace:'nowrap',
                                     }}
                                   >
                                     🏷️ {l.title}
                                   </span>
                                 ))}
-                                {labels.length > 3 && (
-                                  <span style={{ fontSize: 12, opacity: 0.7 }}>+{labels.length - 3}</span>
+                                {restLabels.length > 3 && (
+                                  <span style={{ fontSize: 12, opacity: 0.7 }}>+{restLabels.length - 3}</span>
                                 )}
                               </div>
                             );
