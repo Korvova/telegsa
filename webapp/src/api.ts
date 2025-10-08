@@ -1243,12 +1243,21 @@ export async function createAITokenPurchase(chatId: string, usdtAmount: string) 
   return await r.json();
 }
 
+export async function getAITokenRates(): Promise<{ tonUsd: number; updatedAt: number }> {
+  const r = await fetch(`${API_BASE}/ai/tokens/rates`);
+  if (!r.ok) throw new Error(`Failed to get rates: ${r.status}`);
+  const data = await r.json();
+  return {
+    tonUsd: data.tonUsd,
+    updatedAt: data.updatedAt,
+  };
+}
+
 export async function createAITokenPaymentRequest(params: {
   chatId: string;
-  ownerAddress: string;
-  usdtAmount: string;
+  amountUsd: string;
   purchaseId?: string;
-}): Promise<{ ok: boolean; transaction: any; purchaseId?: string; error?: string; message?: string }> {
+}): Promise<{ ok: boolean; transaction: any; purchaseId?: string; tonAmount: string; tonUsdRate: number; error?: string; message?: string }> {
   const r = await fetch(`${API_BASE}/ai/tokens/payment-request`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

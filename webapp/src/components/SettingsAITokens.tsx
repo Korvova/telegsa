@@ -64,72 +64,29 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
   };
 
   /**
-   * Handle TON/USDT payment for AI token purchase
+   * Handle TON payment for AI token purchase (simple TON transfer like bounty)
    */
   const handlePurchase = async (pkg: AITokenPackage) => {
     if (paying) return;
     setPaying(true);
 
     try {
-      // 1. Ensure TonConnect is available
-      let tonAny: any = (window as any).ton;
-      if (!tonAny?.sendTransaction) {
-        try {
-          const appOrigin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || location.origin;
-          const mod: any = await import('@tonconnect/ui');
-          const inst = new mod.TonConnectUI({
-            manifestUrl: `${appOrigin}/tonconnect-manifest.json`,
-          });
-          (window as any).ton = inst;
-          tonAny = inst;
-        } catch (err) {
-          console.error('Failed to load TonConnect:', err);
-          alert('Не удалось загрузить TonConnect');
-          setPaying(false);
-          return;
-        }
-      }
-
-      // 2. Check wallet status
-      const walletStatus = await fetch(
-        `/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`
-      );
-      const walletData = await walletStatus.json().catch(() => ({}));
-
-      if (walletData?.network && walletData.network !== 'mainnet') {
-        try {
-          tonAny?.openModal?.();
-        } catch {}
-        alert('Кошелёк не в mainnet');
+      // 1. Check TonConnect
+      const ton = (window as any).ton;
+      if (!ton?.sendTransaction) {
+        alert('Подключите TON кошелек в настройках');
         setPaying(false);
         return;
       }
 
-      if (!walletData?.connected) {
-        try {
-          tonAny?.openModal?.();
-        } catch {}
-        alert('Подключите тон-кошелёк');
-        setPaying(false);
-        return;
-      }
-
-      const ownerAddress = walletData?.address || '';
-      if (!ownerAddress) {
-        alert('Не удалось получить адрес кошелька');
-        setPaying(false);
-        return;
-      }
-
-      // 3. Create purchase record
+      // 2. Create purchase record
       const purchaseResult = await createAITokenPurchase(chatId, pkg.usdt);
       const purchaseId = purchaseResult?.purchase?.id;
 
-      // 4. Create payment request
+      // 3. Create payment request (converts USD to TON automatically)
       const paymentResult = await createAITokenPaymentRequest({
         chatId,
-        ownerAddress,
-        usdtAmount: pkg.usdt,
+        amountUsd: pkg.usdt,
         purchaseId,
       });
 
@@ -137,20 +94,12 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
         throw new Error('Failed to create payment transaction');
       }
 
-      // 5. Send transaction via TonConnect
-      const ton = (window as any).ton;
-      if (!ton?.sendTransaction) {
-        try {
-          tonAny?.openModal?.();
-        } catch {}
-        throw new Error('TonConnect не инициализирован');
-      }
-
+      // 4. Send transaction via TonConnect
       await ton.sendTransaction(paymentResult.transaction);
 
-      // 6. Success! Reload balance
+      // 5. Success!
       alert(
-        `Транзакция отправлена! Баланс обновится после подтверждения в блокчейне (обычно 1-2 минуты).`
+        `Транзакция отправлена!\n\nСумма: ${paymentResult.tonAmount} TON (~$${pkg.usdt})\nКурс: $${paymentResult.tonUsdRate.toFixed(2)}\n\nБаланс обновится после подтверждения в блокчейне.`
       );
       setBuyOpen(false);
 
@@ -164,10 +113,8 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
 
       if (errorMsg.includes('User declined the transaction')) {
         alert('Вы отклонили транзакцию');
-      } else if (errorMsg.includes('jetton_wallet_not_found')) {
-        alert('USDT кошелек не найден. Пополните USDT баланс в вашем кошельке.');
-      } else if (errorMsg.includes('tonapi_failed')) {
-        alert('Ошибка связи с TON API. Попробуйте позже.');
+      } else if (errorMsg.includes('rate_unavailable')) {
+        alert('Не удалось получить курс TON/USD. Попробуйте позже.');
       } else {
         alert(`Ошибка: ${errorMsg}`);
       }
