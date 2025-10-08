@@ -1242,3 +1242,21 @@ export async function createAITokenPurchase(chatId: string, usdtAmount: string) 
   if (!r.ok) throw new Error(`Failed to create purchase: ${r.status}`);
   return await r.json();
 }
+
+export async function createAITokenPaymentRequest(params: {
+  chatId: string;
+  ownerAddress: string;
+  usdtAmount: string;
+  purchaseId?: string;
+}): Promise<{ ok: boolean; transaction: any; purchaseId?: string; error?: string; message?: string }> {
+  const r = await fetch(`${API_BASE}/ai/tokens/payment-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    throw new Error(data.message || data.error || `Failed to create payment request: ${r.status}`);
+  }
+  return data;
+}

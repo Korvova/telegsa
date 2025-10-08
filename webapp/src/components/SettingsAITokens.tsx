@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getAITokenBalance, getAITokenPackages, type AITokenBalance, type AITokenPackage } from '../api';
+import {
+  getAITokenBalance,
+  getAITokenPackages,
+  createAITokenPurchase,
+  createAITokenPaymentRequest,
+  type AITokenBalance,
+  type AITokenPackage,
+} from '../api';
 
 export default function SettingsAITokens({ chatId }: { chatId: string }) {
   const [balance, setBalance] = useState<AITokenBalance | null>(null);
@@ -7,6 +14,7 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -53,6 +61,119 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
     if (balance.status === 'critical') return ' 🔴';
     if (balance.status === 'low') return ' ⚠️';
     return '';
+  };
+
+  /**
+   * Handle TON/USDT payment for AI token purchase
+   */
+  const handlePurchase = async (pkg: AITokenPackage) => {
+    if (paying) return;
+    setPaying(true);
+
+    try {
+      // 1. Ensure TonConnect is available
+      let tonAny: any = (window as any).ton;
+      if (!tonAny?.sendTransaction) {
+        try {
+          const appOrigin = (import.meta as any).env?.VITE_PUBLIC_ORIGIN || location.origin;
+          const mod: any = await import('@tonconnect/ui');
+          const inst = new mod.TonConnectUI({
+            manifestUrl: `${appOrigin}/tonconnect-manifest.json`,
+          });
+          (window as any).ton = inst;
+          tonAny = inst;
+        } catch (err) {
+          console.error('Failed to load TonConnect:', err);
+          alert('Не удалось загрузить TonConnect');
+          setPaying(false);
+          return;
+        }
+      }
+
+      // 2. Check wallet status
+      const walletStatus = await fetch(
+        `/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(chatId)}`
+      );
+      const walletData = await walletStatus.json().catch(() => ({}));
+
+      if (walletData?.network && walletData.network !== 'mainnet') {
+        try {
+          tonAny?.openModal?.();
+        } catch {}
+        alert('Кошелёк не в mainnet');
+        setPaying(false);
+        return;
+      }
+
+      if (!walletData?.connected) {
+        try {
+          tonAny?.openModal?.();
+        } catch {}
+        alert('Подключите тон-кошелёк');
+        setPaying(false);
+        return;
+      }
+
+      const ownerAddress = walletData?.address || '';
+      if (!ownerAddress) {
+        alert('Не удалось получить адрес кошелька');
+        setPaying(false);
+        return;
+      }
+
+      // 3. Create purchase record
+      const purchaseResult = await createAITokenPurchase(chatId, pkg.usdt);
+      const purchaseId = purchaseResult?.purchase?.id;
+
+      // 4. Create payment request
+      const paymentResult = await createAITokenPaymentRequest({
+        chatId,
+        ownerAddress,
+        usdtAmount: pkg.usdt,
+        purchaseId,
+      });
+
+      if (!paymentResult.ok || !paymentResult.transaction) {
+        throw new Error('Failed to create payment transaction');
+      }
+
+      // 5. Send transaction via TonConnect
+      const ton = (window as any).ton;
+      if (!ton?.sendTransaction) {
+        try {
+          tonAny?.openModal?.();
+        } catch {}
+        throw new Error('TonConnect не инициализирован');
+      }
+
+      await ton.sendTransaction(paymentResult.transaction);
+
+      // 6. Success! Reload balance
+      alert(
+        `Транзакция отправлена! Баланс обновится после подтверждения в блокчейне (обычно 1-2 минуты).`
+      );
+      setBuyOpen(false);
+
+      // Reload balance after a delay
+      setTimeout(() => {
+        load();
+      }, 3000);
+    } catch (err: any) {
+      console.error('Payment error:', err);
+      const errorMsg = err?.message || 'Ошибка при оплате';
+
+      if (errorMsg.includes('User declined the transaction')) {
+        alert('Вы отклонили транзакцию');
+      } else if (errorMsg.includes('jetton_wallet_not_found')) {
+        alert('USDT кошелек не найден. Пополните USDT баланс в вашем кошельке.');
+      } else if (errorMsg.includes('tonapi_failed')) {
+        alert('Ошибка связи с TON API. Попробуйте позже.');
+      } else {
+        alert(`Ошибка: ${errorMsg}`);
+      }
+    } finally {
+      setPaying(false);
+    }
   };
 
   return (
@@ -156,11 +277,8 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
               {packages.map((pkg) => (
                 <button
                   key={pkg.tokens}
-                  onClick={async () => {
-                    alert('Оплата через TON будет доступна в следующей версии');
-                    // TODO: Интеграция с TON для оплаты
-                    setBuyOpen(false);
-                  }}
+                  onClick={() => handlePurchase(pkg)}
+                  disabled={paying}
                   style={{
                     padding: '12px 14px',
                     borderRadius: 12,
