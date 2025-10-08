@@ -421,6 +421,106 @@ export function aiProcessRouter({ prisma }) {
   });
 
   /**
+   * POST /ai/tokens/process-pending
+   * Автоматически обработать pending покупки (найти транзакции в блокчейне)
+   */
+  router.post('/ai/tokens/process-pending', async (req, res) => {
+    try {
+      const { chatId } = req.body;
+
+      if (!chatId) {
+        return res.status(400).json({ ok: false, error: 'chatId_required' });
+      }
+
+      // Получаем pending покупки пользователя
+      const pendingPurchases = await prisma.aITokenPurchase.findMany({
+        where: {
+          chatId,
+          status: 'pending',
+          createdAt: {
+            gte: new Date(Date.now() - 10 * 60 * 1000), // последние 10 минут
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      });
+
+      if (pendingPurchases.length === 0) {
+        return res.json({ ok: true, processed: 0, message: 'No pending purchases' });
+      }
+
+      // Получаем адрес пользователя
+      const user = await prisma.user.findUnique({
+        where: { chatId },
+        select: { tonAddress: true },
+      });
+
+      if (!user?.tonAddress) {
+        return res.json({ ok: true, processed: 0, message: 'No TON address' });
+      }
+
+      // Получаем последние транзакции пользователя через curl (fetch не работает)
+      let transactions = [];
+      try {
+        const { execSync } = await import('child_process');
+        const result = execSync(
+          `curl -s "https://tonapi.io/v2/blockchain/accounts/${user.tonAddress}/transactions?limit=20" -H "Authorization: Bearer ${TONAPI_KEY}"`,
+          { timeout: 10000, encoding: 'utf8' }
+        );
+        const data = JSON.parse(result);
+        transactions = data?.transactions || [];
+      } catch (e) {
+        console.error('[AI Tokens] Failed to fetch transactions:', e.message);
+        return res.status(503).json({ ok: false, error: 'tonapi_failed' });
+      }
+
+      // Ищем транзакции с комментарием "ai-tokens"
+      let processed = 0;
+      for (const tx of transactions) {
+        const outMsgs = tx.out_msgs || [];
+        for (const msg of outMsgs) {
+          const comment =
+            msg?.decoded_body?.text ||
+            msg?.decoded_body?.message_internal?.body?.value?.value?.text ||
+            '';
+
+          if (comment.includes('ai-tokens')) {
+            // Извлекаем purchaseId из комментария
+            const match = comment.match(/purchase:([a-z0-9]+)/);
+            if (match) {
+              const purchaseId = match[1];
+              const purchase = pendingPurchases.find((p) => p.id === purchaseId);
+
+              if (purchase) {
+                try {
+                  await confirmPurchase(prisma, purchaseId, tx.hash);
+                  processed++;
+                  console.log(`[AI Tokens] Auto-confirmed purchase ${purchaseId}, tx ${tx.hash}`);
+                } catch (e) {
+                  console.error(`[AI Tokens] Failed to confirm ${purchaseId}:`, e.message);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      return res.json({
+        ok: true,
+        processed,
+        message: `Processed ${processed} of ${pendingPurchases.length} pending purchases`,
+      });
+    } catch (error) {
+      console.error('[AI Tokens] process-pending error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
    * POST /ai/tokens/purchase/:id/confirm
    * Подтвердить пополнение (admin only)
    */

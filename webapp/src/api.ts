@@ -1269,3 +1269,29 @@ export async function createAITokenPaymentRequest(params: {
   }
   return data;
 }
+
+export async function confirmAITokenPurchase(purchaseId: string, tonTxHash: string) {
+  const r = await fetch(`${API_BASE}/ai/tokens/purchase/${purchaseId}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tonTxHash }),
+  });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.message || data.error || `Failed to confirm purchase: ${r.status}`);
+  }
+  return await r.json();
+}
+
+export async function processPendingAITokenPurchases(chatId: string) {
+  const r = await fetch(`${API_BASE}/ai/tokens/process-pending`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId }),
+  });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.message || data.error || `Failed to process pending: ${r.status}`);
+  }
+  return await r.json();
+}

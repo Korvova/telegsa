@@ -4,6 +4,7 @@ import {
   getAITokenPackages,
   createAITokenPurchase,
   createAITokenPaymentRequest,
+  processPendingAITokenPurchases,
   type AITokenBalance,
   type AITokenPackage,
 } from '../api';
@@ -95,18 +96,34 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
       }
 
       // 4. Send transaction via TonConnect
-      await ton.sendTransaction(paymentResult.transaction);
+      const txResult = await ton.sendTransaction(paymentResult.transaction);
+      console.log('[AI Tokens] Transaction sent:', txResult);
 
-      // 5. Success!
+      // 5. Show success message
       alert(
-        `Транзакция отправлена!\n\nСумма: ${paymentResult.tonAmount} TON (~$${pkg.usdt})\nКурс: $${paymentResult.tonUsdRate.toFixed(2)}\n\nБаланс обновится после подтверждения в блокчейне.`
+        `Транзакция отправлена!\n\nСумма: ${paymentResult.tonAmount} TON (~$${pkg.usdt})\nКурс: $${paymentResult.tonUsdRate.toFixed(2)}\n\nБаланс обновится автоматически через несколько секунд.`
       );
+
       setBuyOpen(false);
 
-      // Reload balance after a delay
-      setTimeout(() => {
-        load();
-      }, 3000);
+      // 6. Wait for transaction to be confirmed in blockchain, then process pending purchases
+      setTimeout(async () => {
+        try {
+          const result = await processPendingAITokenPurchases(chatId);
+          console.log('[AI Tokens] Process pending result:', result);
+          if (result.processed > 0) {
+            // Successfully processed, reload balance immediately
+            load();
+          } else {
+            // Not found yet, try again after a delay
+            setTimeout(() => load(), 10000);
+          }
+        } catch (e) {
+          console.error('[AI Tokens] Failed to process pending:', e);
+          // Fallback: just reload balance
+          load();
+        }
+      }, 10000); // Wait 10 seconds for blockchain confirmation
     } catch (err: any) {
       console.error('Payment error:', err);
       const errorMsg = err?.message || 'Ошибка при оплате';
