@@ -61,6 +61,7 @@ import SettingsRank from './components/SettingsRank';
 import SettingsProfile from './components/SettingsProfile';
 import SettingsTheme from './components/SettingsTheme';
 import SettingsKeyboardTest from './components/SettingsKeyboardTest';
+import SettingsAITokens from './components/SettingsAITokens';
 import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
@@ -1221,6 +1222,9 @@ export default function App() {
 
               {/* Ранг пользователя */}
               <SettingsRank chatId={chatId} />
+
+              {/* Баланс токенов AI */}
+              <SettingsAITokens chatId={chatId} />
 
               {/* тут можно добавить другие пункты настроек позже */}
               <button
