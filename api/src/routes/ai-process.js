@@ -36,10 +36,18 @@ export function aiProcessRouter({ prisma }) {
       return { usd: RATES_CACHE.tonUsd, ts: RATES_CACHE.ts };
     }
 
+    // Helper: fetch JSON using curl (Node.js fetch has issues on this server)
     async function fetchJson(url) {
-      const r = await fetch(url, { headers: { accept: 'application/json' } });
-      if (!r.ok) throw new Error('bad_rate_' + r.status);
-      return r.json();
+      try {
+        const { execSync } = await import('child_process');
+        const result = execSync(`curl -s -H "accept: application/json" "${url}"`, {
+          timeout: 5000,
+          encoding: 'utf8',
+        });
+        return JSON.parse(result);
+      } catch (e) {
+        throw new Error('fetch_failed');
+      }
     }
 
     let usd = null;
@@ -48,18 +56,24 @@ export function aiProcessRouter({ prisma }) {
     try {
       const j = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=toncoin&vs_currencies=usd');
       usd = Number(j?.toncoin?.usd || null);
-    } catch {}
+      console.log('[AI Tokens] Coingecko toncoin:', { raw: j, parsed: usd });
+    } catch (e) {
+      console.log('[AI Tokens] Coingecko toncoin failed:', e.message);
+    }
 
     // 2) Coingecko the-open-network
-    if (!usd) {
+    if (!usd || !Number.isFinite(usd) || usd <= 0) {
       try {
         const j2 = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd');
         usd = Number(j2?.['the-open-network']?.usd || null);
-      } catch {}
+        console.log('[AI Tokens] Coingecko the-open-network:', { raw: j2, parsed: usd });
+      } catch (e) {
+        console.log('[AI Tokens] Coingecko the-open-network failed:', e.message);
+      }
     }
 
     // 3) TonAPI
-    if (!usd && TONAPI_KEY) {
+    if ((!usd || !Number.isFinite(usd) || usd <= 0) && TONAPI_KEY) {
       try {
         const r = await fetch(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`, {
           headers: { Authorization: `Bearer ${TONAPI_KEY}` },
@@ -69,8 +83,13 @@ export function aiProcessRouter({ prisma }) {
           const rate = j3?.rates?.TON || j3?.rates?.ton || j3?.rates?.[0];
           const maybeUsd = rate?.prices?.USD || rate?.usd || null;
           if (maybeUsd) usd = Number(maybeUsd);
+          console.log('[AI Tokens] TonAPI:', { raw: j3, rate, maybeUsd, parsed: usd });
+        } else {
+          console.log('[AI Tokens] TonAPI failed:', r.status);
         }
-      } catch {}
+      } catch (e) {
+        console.log('[AI Tokens] TonAPI error:', e.message);
+      }
     }
 
     if (!usd || !Number.isFinite(usd) || usd <= 0) {
