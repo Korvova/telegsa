@@ -101,7 +101,7 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
 
       // 5. Show success message
       alert(
-        `Транзакция отправлена!\n\nСумма: ${paymentResult.tonAmount} TON (~$${pkg.usdt})\nКурс: $${paymentResult.tonUsdRate.toFixed(2)}\n\nБаланс обновится автоматически через несколько секунд.`
+        `✅ Транзакция отправлена!\n\nСумма: ${paymentResult.tonAmount} TON (~$${pkg.usdt})\nКурс: $${paymentResult.tonUsdRate.toFixed(2)}\n\n⚡ Токены начисляются автоматически через 10-20 секунд после подтверждения в блокчейне.`
       );
 
       setBuyOpen(false);
@@ -234,8 +234,22 @@ export default function SettingsAITokens({ chatId }: { chatId: string }) {
                 ✕
               </button>
             </div>
-            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 8 }}>
               Выберите пакет токенов для AI-помощника процессов:
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.7,
+                marginBottom: 12,
+                padding: '8px 10px',
+                background: 'rgba(102, 126, 234, 0.1)',
+                borderRadius: 8,
+                border: '1px solid rgba(102, 126, 234, 0.3)',
+                color: '#a5b4fc',
+              }}
+            >
+              ⚡ Токены начисляются автоматически через 10-20 секунд после оплаты
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
               {packages.map((pkg) => (
