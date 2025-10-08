@@ -292,7 +292,7 @@ function getPurchasePackages() {
   ];
 }
 
-module.exports = {
+export {
   calculateTokenCost,
   calculateTokensForUSDT,
   getBalance,
