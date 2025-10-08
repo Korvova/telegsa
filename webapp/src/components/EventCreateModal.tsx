@@ -132,24 +132,24 @@ const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
         <label style={{ fontSize: 13, opacity: .8 }}>Название</label>
         <input
           value={title} onChange={e=>setTitle(e.target.value)}
-          style={{ width: '100%', background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 10, padding: 10, marginBottom: 10 }}
+          style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 10, padding: 10, marginBottom: 10 }}
           placeholder="Например: Встреча в Zoom"
         />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 8 }}>
           <div>
             <label style={{ fontSize: 13, opacity: .8 }}>Дата/время с</label>
             <input type="datetime-local"
               value={toLocalInput(startAt)}
               onChange={e => setStartAt(fromLocalInput(e.target.value))}
-              style={{ width: '100%', background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 10, padding: 10 }}/>
+              style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 10, padding: 10 }}/>
           </div>
           <div>
             <label style={{ fontSize: 13, opacity: .8 }}>по</label>
             <input type="datetime-local"
               value={toLocalInput(endAt)}
               onChange={e => setEndAt(fromLocalInput(e.target.value))}
-              style={{ width: '100%', background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 10, padding: 10 }}/>
+              style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 10, padding: 10 }}/>
           </div>
         </div>
 

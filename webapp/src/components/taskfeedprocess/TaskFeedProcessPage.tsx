@@ -20,6 +20,7 @@ import PreTaskNode from './PreTaskNode';
 import CreateTaskModal from '../create-task/CreateTaskModal';
 import CondEdge from '../CondEdge';
 import { API_BASE, fetchProcess, saveProcess, getTask, getPreTask, getTaskGraph, getTaskRelations, listPreTasks, type ProcessNodeDTO, type ProcessEdgeDTO } from '../../api';
+import { AIProcessButton, AIProcessModal } from '../ai-process';
 import './TaskFeedProcessPage.css';
 
 type Props = {
@@ -116,6 +117,9 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
     window.addEventListener('edit-task-open', onOpen as any);
     return () => window.removeEventListener('edit-task-open', onOpen as any);
   }, []);
+
+  // AI process assistant modal
+  const [aiModalOpen, setAiModalOpen] = useState(false);
 
   // pretask long-press is now handled by CreateTaskFab via global event; no local modal here
 
@@ -716,6 +720,19 @@ function Inner({ card, onClose, chatId }: { card: FeedTaskCardProps & { bg?: str
       >
         ⟵
       </button>
+
+      {/* AI Process Assistant Button */}
+      <AIProcessButton
+        onClick={() => setAiModalOpen(true)}
+      />
+
+      {/* AI Process Assistant Modal */}
+      <AIProcessModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        groupId={resolvedGroupId}
+        chatId={chatId}
+      />
 
       {/* Task editor modal */}
       <CreateTaskModal open={editOpen} onClose={() => setEditOpen(false)} chatId={chatId} />

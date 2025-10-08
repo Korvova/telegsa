@@ -24,6 +24,7 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
   const [busy, setBusy] = useState(false);
   const [isPublic, setIsPublic] = useState(!!group.isPublic);
   const [permOpen, setPermOpen] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
 
   const save = async () => {
     if (!isOwner) return;
@@ -181,6 +182,22 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
           <div style={{ flex: 1 }} />
 
           <button
+            onClick={() => setDescOpen(true)}
+            disabled={!isOwner || busy}
+            title="Описание группы"
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: '#202840',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              cursor: isOwner && !busy ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Описание группы
+          </button>
+
+          <button
             onClick={() => setPermOpen(true)}
             disabled={!isOwner || busy}
             title="Права группы"
@@ -237,6 +254,10 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
 
       {permOpen && (
         <PermissionsModal groupId={group.id} chatId={chatId} onClose={() => setPermOpen(false)} />
+      )}
+
+      {descOpen && (
+        <GroupDescriptionModal groupId={group.id} chatId={chatId} onClose={() => setDescOpen(false)} />
       )}
     </div>
   </div>
@@ -335,4 +356,66 @@ function labelForEdit(k: string) {
     case 'delete': return 'Удалять задачи';
     default: return k;
   }
+}
+
+function GroupDescriptionModal({ groupId, chatId, onClose }: { groupId: string; chatId: string; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [value, setValue] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const MAX = 28000;
+
+  const load = async () => {
+    if (loaded || busy) return;
+    setBusy(true);
+    try {
+      const api = await import('../api');
+      const r = await api.getGroupDescription(groupId);
+      if (r?.ok) setValue(r.description || '');
+      setLoaded(true);
+    } catch (e: any) { setErr(e?.message || 'Ошибка загрузки'); }
+    finally { setBusy(false); }
+  };
+  if (!loaded && !busy) { void load(); }
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const api = await import('../api');
+      const text = (value || '').slice(0, MAX);
+      const r = await api.setGroupDescription({ groupId, byChatId: chatId, description: text });
+      if (!r?.ok) throw new Error('save_failed');
+      onClose();
+    } catch (e: any) { setErr(e?.message || 'Ошибка сохранения'); }
+    finally { setBusy(false); }
+  };
+
+  const left = MAX - (value?.length || 0);
+
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:10000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{ width:'min(680px,94vw)', background:'#1b2030', border:'1px solid #2a3346', borderRadius:16, padding:16, color:'#e8eaed' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          <div style={{ fontWeight:700 }}>Описание группы</div>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#9ca3af', fontSize:18, cursor:'pointer' }}>✕</button>
+        </div>
+        {err ? (<div style={{ color:'#fecaca', marginBottom:8 }}>{err}</div>) : null}
+        <div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>Расскажите, зачем эта группа, адреса, ссылки и прочие данные.</div>
+        <textarea
+          value={value}
+          onChange={(e)=>{ const v = e.target.value.slice(0, MAX); setValue(v); }}
+          rows={12}
+          placeholder="Описание группы (до 28 000 символов)"
+          style={{ width:'90%', minHeight: 200, resize:'vertical', padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' }}
+        />
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:8, fontSize:12, opacity:.85 }}>
+          <div>Осталось символов: {left >= 0 ? left : 0}</div>
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={onClose} disabled={busy} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
+            <button onClick={save} disabled={busy} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff', opacity: busy?0.6:1 }}>Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

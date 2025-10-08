@@ -339,4 +339,290 @@ FAQ / быстрые ориентиры
 - TON/кошелёк: `/wallet/ton/*`, bounty `/bounty/*`, выплаты `/payout-method`.
 - Квоты: `/quota`, `/quota/purchase`.
 
+---
+
+## Важные технические заметки и решения
+
+### 🔄 Повторяющиеся задачи (Recurring Tasks)
+
+**Проблема:** Повторяющиеся задачи не создавались после первого срабатывания.
+
+**Причины:**
+1. При создании первой повторяющейся задачи через фронтенд не устанавливалось поле `startAt`
+2. Планировщик (`scheduler.js`) требует `startAt` для режима `DATE_PLUS`, но его не было → задача не планировалась
+3. При создании следующей повторяющейся задачи функция `calculateNextRecurringDate` не учитывала timezone пользователя → время сдвигалось на +3 часа (для Москвы)
+
+**Решения:**
+1. **Фронтенд** (`CreateTaskModal.tsx:864-917`):
+   - Добавлена логика вычисления `startAt` на основе `recurringConfig.time` при создании задачи
+   - Учитывается текущее время, паттерн (daily/monthly), исключенные дни, число месяца
+   - Используется `setHours()` для работы в локальном времени, `toISOString()` конвертирует в UTC
+
+2. **Бэкенд** (`scheduler.js:803,711`):
+   - Исправлена сигнатура `createNextRecurringPreTask` для получения объекта `tg`
+   - В функции `calculateNextRecurringDate:873-923` добавлен учёт timezone через `Intl.DateTimeFormat`
+   - Вычисляется offset между UTC и локальным timezone пользователя
+   - Следующая задача создаётся в **то же локальное время** (17:48 Москва → 17:48 Москва на следующий день)
+
+**Ключевые файлы:**
+- `webapp/src/components/create-task/CreateTaskModal.tsx` - вычисление `startAt` при создании
+- `api/src/scheduler.js` - функции `calculateNextRecurringDate`, `createNextRecurringPreTask`
+
+---
+
+### 🔗 Значки связей на карточках задач (Process Indicators)
+
+**Проблема:** На карточках задач показывались кружки со стрелками (индикаторы связей), но при клике на полотне ничего не было.
+
+**Причина:**
+- API эндпоинты `GET /tasks/:id` и `GET /tasks` (список) не возвращали вычисленные поля:
+  - `processLeftCount` - количество входящих связей
+  - `processRightCount` - количество исходящих связей
+  - `preChildrenCount` - количество связанных предзадач
+  - `processHasEdges` - булевый флаг наличия связей
+- В базе хранятся только массивы `processLeftKeys` и `processRightKeys`
+- Фронтенд полагался на эти вычисленные поля для отображения индикаторов
+
+**Решение:**
+1. **API** (`server.js:1350-1370` и `server.js:447-469`):
+   - В эндпоинте `GET /tasks/:id` добавлено вычисление полей на основе `processLeftKeys` и `processRightKeys`
+   - В функции `enrichColumnsWithAssignees` (используется в `GET /tasks`) добавлена та же логика
+   - Вычисление: `processLeftCount = processLeftKeys.length`, аналогично для `Right`
+   - `preChildrenCount` = количество ключей вида `"pretask:*"` в `processRightKeys`
+
+2. **Логика отображения** (`HomePage.tsx:1830-1831`):
+   - Значок показывается только если `processLeftCount > 0` или `processRightCount > 0`
+   - Для задач без связей индикатор не отображается (даже если `fromProcess: true`)
+
+**Ключевые файлы:**
+- `api/src/server.js` - функция `enrichColumnsWithAssignees`, эндпоинт `GET /tasks/:id`
+- `api/src/routes/tasks.js` - эталонная логика вычисления (строки 790-796)
+- `webapp/src/pages/Home/HomePage.tsx` - отображение `EdgePreTaskBadge`
+
+---
+
+### 🏋🏻 Отображение сложности задачи (Complexity Display)
+
+**Фича:** Добавлено отображение сложности задачи (1-10) в карточках ленты.
+
+**Реализация:**
+1. **Фронтенд - компонент FeedTaskCard** (`components/feed/FeedTaskCard.tsx:19,49,157-161`):
+   - Добавлен проп `complexity?: number | null`
+   - Если `complexity > 0`, отображается `🏋🏻 (N)` с tooltip "Сложность: N/10"
+   - Отображается после напоминания, перед условиями приёмки
+
+2. **Фронтенд - HomePage** (`pages/Home/HomePage.tsx:2169-2179`):
+   - В основном рендере карточек в ленте добавлен инлайн-блок с complexity
+   - Используется `(t as any).complexity` из данных API
+   - Также добавлено в объекты `card` для процессного полотна (строки 1872, 2440, 2555)
+
+3. **API** (уже было реализовано):
+   - Поле `complexity` уже возвращается в эндпоинтах `/tasks` и `/tasks/:id`
+   - Хранится в базе в таблице `Task.complexity: Int`
+
+**Отображение:**
+```
+⏰ 15:30
+🏋🏻 (5)
+```
+
+**Ключевые файлы:**
+- `webapp/src/components/feed/FeedTaskCard.tsx` - компонент карточки
+- `webapp/src/pages/Home/HomePage.tsx` - рендер в ленте и на полотне
+- `api/prisma/schema.prisma` - модель Task с полем complexity
+
+---
+
+### 📊 API: Сериализация данных задач
+
+**Важно:** При добавлении новых полей в карточки задач нужно обновить в **трёх местах**:
+
+1. **GET /tasks/:id** (`server.js:1350-1375`) - одна задача
+2. **GET /tasks** через `enrichColumnsWithAssignees` (`server.js:447-469`) - список задач в колонках
+3. **GET /api/tasks** через `routes/tasks.js:780-831` - альтернативный эндпоинт списка (используется реже)
+
+**Стандартные вычисляемые поля:**
+```javascript
+// Process graph stats
+const leftKeys = Array.isArray(t.processLeftKeys) ? t.processLeftKeys : [];
+const rightKeys = Array.isArray(t.processRightKeys) ? t.processRightKeys : [];
+const processLeftCount = leftKeys.length;
+const processRightCount = rightKeys.length;
+const preChildrenCount = rightKeys.filter(k => String(k).startsWith('pretask:')).length;
+const processHasEdges = (processLeftCount + processRightCount) > 0;
+```
+
+**Примечание:** Фронтенд ожидает эти поля для правильного отображения индикаторов и связей.
+
+---
+
+### 🕐 Timezone и работа с датами
+
+**Важно:** При работе с повторяющимися задачами и напоминаниями:
+
+1. **Хранение в БД:** Все даты хранятся в UTC (`DateTime` в Prisma)
+2. **Timezone пользователя:** Хранится в `PreTask.timezone` (например, "Europe/Moscow")
+3. **Конвертация:**
+   - Фронтенд: использует `setHours()` (работает в локальном времени) → `toISOString()` (конвертирует в UTC)
+   - Бэкенд: использует `Intl.DateTimeFormat` с `timeZone` для работы в локальном времени пользователя
+   - Вычисляется offset между UTC и локальным временем для корректных расчётов
+
+**Пример:** Пользователь в Москве (UTC+3) создаёт задачу на 17:48:
+- В БД: `startAt: 2025-10-08T14:48:00.000Z` (UTC)
+- Отображается: 17:48 (локальное время)
+- Следующая задача: `startAt: 2025-10-09T14:48:00.000Z` (UTC) → 17:48 по Москве (не 20:48!)
+
+**Ключевая функция:** `calculateNextRecurringDate` в `scheduler.js:873-950`
+
+---
+
+### 🎨 Сборка и деплой
+
+**Процесс обновления после изменений:**
+
+```bash
+# 1. Сборка фронтенда
+cd /var/www/telegsar/webapp
+npm run build
+
+# 2. Перезапуск API (если были изменения в бэкенде)
+pm2 restart telegsar-api
+
+# 3. Проверка логов
+pm2 logs telegsar-api --lines 20
+
+# 4. Для пользователей: полное закрытие Telegram для обновления WebApp
+```
+
+**Важно:**
+- Telegram WebApp агрессивно кэширует статику
+- Пользователям нужно **полностью закрыть Telegram** (свайпнуть из списка приложений) для обновления
+- Или использовать hard refresh в WebApp (зависит от платформы)
+
+---
+
+## 🪄 AI-помощник создания процессов
+
+**Дата:** 2025-10-08
+
+### Описание функции
+
+AI-помощник для создания процессов с использованием OpenAI GPT-4o. Интегрирован в полотно процессов (TaskFeedProcessPage).
+
+### Компоненты
+
+**Frontend** (`webapp/src/components/ai-process/`):
+- `AIProcessButton.tsx` - кнопка 🪄 на полотне процессов (справа внизу)
+- `AIProcessModal.tsx` - полноэкранная модалка с чатом
+- `AIProcessChat.tsx` - область сообщений с auto-scroll
+- `AIProcessMessage.tsx` - пузырьки сообщений (user/assistant)
+- `AIProcessInput.tsx` - поле ввода с авто-ресайзом
+
+**Backend** (`api/src/`):
+- `services/openai.js` - сервис работы с OpenAI API
+- `routes/ai-process.js` - роуты `/ai/process/message` и `/ai/process/create`
+
+### Особенности реализации
+
+**System Prompt:**
+- Объясняет DSL-формат процессов (@->@, ×->@, ×->×, @->@*, @->@[ids])
+- Атрибуты задач: 🚩 deadline, ⏰ reminder, ⚫ complexity, 💶 bounty, ☝️ approval, 🤳 photo, 📄 document
+- Запланированное создание: @[date,time]Name
+- Маркер готовности: [PROCESS_READY] в конце описания процесса
+
+**Контекст группы:**
+```javascript
+// buildContext в routes/ai-process.js
+{
+  groupInfo: { title, description },
+  members: [{ name, role, description }],
+  existingTasksCount: number
+}
+```
+
+**Хранение диалога:**
+- Диалог хранится в памяти (useState в AIProcessModal)
+- Не сохраняется в БД (MVP)
+- При закрытии модалки диалог теряется
+
+**Парсинг DSL:**
+- Функция `parseProcessDSL()` пока stub
+- Будущая задача: парсить текстовое описание процесса в nodes/edges
+- Кнопка "✅ Создать процесс" появляется при наличии processResult
+
+### Позиционирование кнопки
+
+```css
+position: fixed;
+right: 16px;
+bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+width: 56px;
+height: 56px;
+```
+
+Совпадает с позиционированием кнопки + на полотне процессов.
+
+### Environment
+
+Требуется добавить в `api/.env`:
+```
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+### API Endpoints
+
+**POST /ai/process/message**
+```json
+Request: {
+  "messages": [{ "role": "user", "content": "..." }],
+  "groupId": "uuid",
+  "chatId": "tg_chat_id"
+}
+
+Response: {
+  "message": { "role": "assistant", "content": "..." },
+  "processReady": false
+}
+```
+
+**POST /ai/process/create** (stub)
+```json
+Request: {
+  "description": "текстовое описание процесса",
+  "groupId": "uuid",
+  "chatId": "tg_chat_id"
+}
+
+Response: {
+  "nodes": [],
+  "edges": []
+}
+```
+
+### Интеграция в TaskFeedProcessPage
+
+```typescript
+// Line 122: state
+const [aiModalOpen, setAiModalOpen] = useState(false);
+
+// Line 725-735: components
+<AIProcessButton onClick={() => setAiModalOpen(true)} />
+<AIProcessModal
+  isOpen={aiModalOpen}
+  onClose={() => setAiModalOpen(false)}
+  groupId={resolvedGroupId}
+  chatId={chatId}
+/>
+```
+
+### Будущие улучшения
+
+1. **Парсинг DSL** - реализовать parseProcessDSL для создания nodes/edges
+2. **Streaming** - добавить потоковую передачу ответов OpenAI
+3. **Сохранение диалога** - опционально в БД для продолжения сессии
+4. **Редактирование** - возможность редактировать процесс перед созданием
+5. **Weather API** - условные задачи на основе погоды (@[weather:rain]...)
+
+---
+
 Конец файла.

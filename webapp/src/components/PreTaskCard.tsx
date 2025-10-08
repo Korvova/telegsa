@@ -19,6 +19,102 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
   const cnt = Array.isArray((p as any).links) ? (p as any).links.length : 0;
   const isSubtle = tone === 'subtle';
   const isFired = String(p.status || '') === 'FIRED';
+  const isRecurring = !!(p as any)?.recurringConfig;
+  const tz = (p as any)?.timezone || null;
+  const nextDateIso = (p as any)?.startAt || (p as any)?.fireAt || null;
+  function calcNextRecurringLocal(cfg: any, timeZone?: string | null): Date | null {
+    try {
+      if (!cfg || typeof cfg !== 'object') return null;
+      const pattern = String(cfg.pattern || 'daily');
+      const time = String(cfg.time || '13:00');
+      const [hours, minutes] = time.split(':').map((n: string) => parseInt(n, 10));
+      const excludeDays: number[] = Array.isArray(cfg.excludeDays) ? cfg.excludeDays : [];
+      const excludeDates: string[] = Array.isArray(cfg.excludeDates) ? cfg.excludeDates : [];
+      const monthDay = cfg.monthDay ? Number(cfg.monthDay) : null;
+      const weekOfMonth = (cfg.weekOfMonth != null) ? Number(cfg.weekOfMonth) : null;
+      const dayOfWeek = (cfg.dayOfWeek != null) ? Number(cfg.dayOfWeek) : null;
+      const now = timeZone ? new Date(new Date().toLocaleString('en-US', { timeZone })) : new Date();
+      let candidate = new Date(now);
+      candidate.setSeconds(0, 0);
+      candidate.setHours(isNaN(hours) ? 13 : hours, isNaN(minutes) ? 0 : minutes, 0, 0);
+      const dateStrOf = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const da = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${da}`;
+      };
+      function nextDay(d: Date) { const n = new Date(d); n.setDate(n.getDate() + 1); n.setHours(d.getHours(), d.getMinutes(), 0, 0); return n; }
+      function nextMonth(d: Date) { const n = new Date(d); n.setMonth(n.getMonth() + 1); n.setHours(d.getHours(), d.getMinutes(), 0, 0); return n; }
+      if (candidate <= now) candidate = (pattern === 'daily') ? nextDay(candidate) : nextMonth(candidate);
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const ds = dateStrOf(candidate);
+        if (excludeDates.includes(ds)) { candidate = (pattern === 'daily') ? nextDay(candidate) : nextMonth(candidate); continue; }
+        if (pattern === 'daily') {
+          const dow = candidate.getDay();
+          if (excludeDays.includes(dow)) { candidate = nextDay(candidate); continue; }
+          return candidate;
+        }
+        if (pattern === 'monthly') {
+          if (monthDay) {
+            const base = new Date(candidate.getFullYear(), candidate.getMonth(), 1, candidate.getHours(), candidate.getMinutes(), 0, 0);
+            let target = new Date(base);
+            target.setDate(Math.min(monthDay, 28));
+            target.setDate(monthDay);
+            if (target <= now || target.getMonth() !== base.getMonth()) {
+              const nm = nextMonth(base);
+              target = new Date(nm.getFullYear(), nm.getMonth(), 1, candidate.getHours(), candidate.getMinutes(), 0, 0);
+              target.setDate(monthDay);
+            }
+            return target;
+          }
+          if (weekOfMonth != null && dayOfWeek != null) {
+            const base = new Date(candidate.getFullYear(), candidate.getMonth(), 1, candidate.getHours(), candidate.getMinutes(), 0, 0);
+            const firstDow = base.getDay();
+            const offset = (dayOfWeek - firstDow + 7) % 7;
+            let targetDate = 1 + offset + (weekOfMonth - 1) * 7;
+            let target = new Date(base.getFullYear(), base.getMonth(), targetDate, candidate.getHours(), candidate.getMinutes(), 0, 0);
+            if (target <= now || target.getMonth() !== base.getMonth()) {
+              const nm = nextMonth(base);
+              const fDow = new Date(nm.getFullYear(), nm.getMonth(), 1).getDay();
+              const off = (dayOfWeek - fDow + 7) % 7;
+              targetDate = 1 + off + (weekOfMonth - 1) * 7;
+              target = new Date(nm.getFullYear(), nm.getMonth(), targetDate, candidate.getHours(), candidate.getMinutes(), 0, 0);
+            }
+            return target;
+          }
+          return nextMonth(candidate);
+        }
+      }
+      return null;
+    } catch { return null; }
+  }
+  function fmtRuFull(iso?: string | null, timeZone?: string | null): string {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const opts: Intl.DateTimeFormatOptions = {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+      };
+      if (timeZone) opts.timeZone = timeZone;
+      const parts = new Intl.DateTimeFormat('ru-RU', opts).formatToParts(d);
+      const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+      const dd = get('day'); const mm = get('month'); const yyyy = get('year');
+      const hh = get('hour'); const min = get('minute');
+      return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+    } catch { return ''; }
+  }
+  const recurringDateIso = (() => {
+    if (nextDateIso) return String(nextDateIso);
+    if (isRecurring) {
+      const nd = calcNextRecurringLocal((p as any)?.recurringConfig, tz);
+      if (nd) return nd.toISOString();
+    }
+    return '';
+  })();
+  const recurringParen = isRecurring && recurringDateIso ? (fmtRuFull(recurringDateIso, tz) || (()=>{
+    try { const d = new Date(String(nextDateIso)); if (!Number.isNaN(d.getTime())) { const pad=(n:number)=>String(n).padStart(2,'0'); return `${pad(d.getDate())}.${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; } } catch {}; return ''; })()) : '';
   // Palette
   const firedBg = '#e0f2fe';  // sky-100
   const firedBrd = '#bae6fd'; // sky-200
@@ -78,6 +174,11 @@ export default function PreTaskCard({ p, onOpen, onEdit, nameByChat, groupTitle,
         title="Связи предзадачи"
       />
       <div style={{ flex: 1 }}>
+        {isRecurring ? (
+          <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>
+            {`🔂 Повторяющаяся${recurringParen ? ` (${recurringParen})` : ''}`}
+          </div>
+        ) : null}
         <div style={{ fontSize: 16, marginBottom: 6, textDecoration: (isFired && doneTarget) ? 'line-through' as const : undefined }}>
           {isFired ? (<span title="Запущена" style={{ marginRight: 6, color: useFiredLight ? firedFg : '#60a5fa' }}>⌯⌲</span>) : null}
           {p.text}

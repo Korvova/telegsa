@@ -76,12 +76,23 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
       </button>
 
       {open && (
-        <div
-          style={{
-            position: 'absolute', right: 0, marginTop: 6, minWidth: 240,
-            background: '#0f1422', border: '1px solid #2a3346', borderRadius: 10, padding: 8, zIndex: 20
-          }}
-        >
+        <>
+          {/* Оверлей для закрытия меню при клике вне */}
+          <div
+            onClick={() => setOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 19,
+            }}
+          />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute', right: 0, marginTop: 6, minWidth: 240,
+              background: '#0f1422', border: '1px solid #2a3346', borderRadius: 10, padding: 8, zIndex: 20
+            }}
+          >
           {/* ID задачи */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, opacity: 0.85 }}>ID:</span>
@@ -176,9 +187,9 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
                 readOnly
                 value={link}
                 onFocus={(e) => e.currentTarget.select()}
-                style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#131a2a', color: '#e8eaed' }}
+                style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#131a2a', color: '#e8eaed' }}
               />
-              <button onClick={copy} style={{ marginTop: 6, width: '100%', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}>
+              <button onClick={copy} style={{ marginTop: 6, width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}>
                 Копировать
               </button>
             </div>
@@ -198,6 +209,7 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
             {isEvent ? 'Удалить событие' : 'Удалить'}
           </button>
         </div>
+        </>
       )}
     </div>
   );

@@ -3,11 +3,13 @@ export default function RobotPicker({
   onClose,
   onPickSchedule,
   onPickWeather,
+  onPickRecurring,
 }: {
   open: boolean;
   onClose: () => void;
   onPickSchedule: () => void;
   onPickWeather: () => void;
+  onPickRecurring: () => void;
 }) {
   if (!open) return null;
   return (
@@ -20,6 +22,7 @@ export default function RobotPicker({
         <div style={{ display:'grid', gap:8 }}>
           <button onClick={onPickSchedule} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>🕒 Плановое создание задачи</button>
           <button onClick={onPickWeather} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>🌦️ Плановое создание задачи с погодой</button>
+          <button onClick={onPickRecurring} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>🔂 Повторяющиеся задачи</button>
         </div>
         <div style={{ display:'flex', justifyContent:'flex-end', marginTop:12 }}>
           <button onClick={onClose} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>

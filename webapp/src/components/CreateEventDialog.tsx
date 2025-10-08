@@ -164,21 +164,21 @@ const eventId = r.event.id;
           value={title}
           onChange={e => setTitle(e.target.value)}
           placeholder="Что будет?"
-          style={{ width: '100%', marginTop: 6, marginBottom: 12, padding: '10px 12px',
+          style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0, marginTop: 6, marginBottom: 12, padding: '10px 12px',
             borderRadius: 12, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346' }}
         />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 }}>
           <div>
             <label style={{ fontSize: 13, opacity: .8 }}>Начало</label>
             <input type="datetime-local" value={start} onChange={e => setStart(e.target.value)}
-              style={{ width: '100%', marginTop: 6, padding: '10px 12px',
+              style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0, marginTop: 6, padding: '10px 12px',
                 borderRadius: 12, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346' }}/>
           </div>
           <div>
             <label style={{ fontSize: 13, opacity: .8 }}>Конец</label>
             <input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)}
-              style={{ width: '100%', marginTop: 6, padding: '10px 12px',
+              style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', minWidth: 0, marginTop: 6, padding: '10px 12px',
                 borderRadius: 12, background: '#121722', color: '#e8eaed', border: '1px solid #2a3346' }}/>
           </div>
         </div>

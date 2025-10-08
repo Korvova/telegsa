@@ -1,0 +1,207 @@
+/**
+ * API routes для AI-помощника создания процессов
+ */
+
+import { Router } from 'express';
+import { generateAIResponse } from '../services/openai.js';
+
+export function aiProcessRouter({ prisma }) {
+  const router = Router();
+
+  /**
+   * POST /ai/process/message
+   * Отправить сообщение AI и получить ответ
+   */
+  router.post('/ai/process/message', async (req, res) => {
+    try {
+      const { chatId, groupId, messages } = req.body;
+
+      if (!chatId) {
+        return res.status(400).json({ ok: false, error: 'chatId_required' });
+      }
+
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ ok: false, error: 'messages_required' });
+      }
+
+      // Собираем контекст группы и участников
+      const context = await buildContext(prisma, chatId, groupId);
+
+      // Генерируем ответ от AI
+      const aiResponse = await generateAIResponse({
+        messages,
+        context,
+      });
+
+      return res.json({
+        ok: true,
+        reply: aiResponse.reply,
+        isComplete: aiResponse.isComplete,
+        processDescription: aiResponse.processDescription,
+      });
+    } catch (error) {
+      console.error('[AI Process] message error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /ai/process/create
+   * Создать процесс на основе описания от AI
+   * (пока заглушка, будет реализовано позже)
+   */
+  router.post('/ai/process/create', async (req, res) => {
+    try {
+      const { chatId, groupId, processDescription } = req.body;
+
+      if (!chatId || !processDescription) {
+        return res.status(400).json({ ok: false, error: 'missing_parameters' });
+      }
+
+      // TODO: Парсинг processDescription и создание узлов/связей
+      // Пока возвращаем успех без реального создания
+      console.log('[AI Process] create process:', { chatId, groupId, processDescription });
+
+      return res.json({
+        ok: true,
+        message: 'Process creation will be implemented',
+        processId: null, // TODO: вернуть ID созданного процесса
+      });
+    } catch (error) {
+      console.error('[AI Process] create error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  return router;
+}
+
+/**
+ * Собирает контекст для AI: информация о группе, участниках, задачах
+ */
+async function buildContext(prisma, chatId, groupId) {
+  const context = {
+    groupInfo: null,
+    members: [],
+    existingTasksCount: 0,
+  };
+
+  try {
+    // Если это групповой процесс
+    if (groupId) {
+      // Получаем информацию о группе
+      const group = await prisma.group.findUnique({
+        where: { id: groupId },
+        select: {
+          title: true,
+          description: true,
+        },
+      });
+
+      if (group) {
+        context.groupInfo = {
+          title: group.title,
+          description: group.description,
+        };
+      }
+
+      // Получаем участников группы с описаниями
+      const members = await prisma.groupMember.findMany({
+        where: { groupId },
+        select: {
+          chatId: true,
+          role: true,
+          description: true,
+        },
+      });
+
+      // Дополняем данными пользователей
+      const chatIds = members.map((m) => m.chatId);
+      const users = await prisma.user.findMany({
+        where: { chatId: { in: chatIds } },
+        select: {
+          chatId: true,
+          firstName: true,
+          lastName: true,
+          username: true,
+        },
+      });
+
+      const userMap = new Map(users.map((u) => [u.chatId, u]));
+
+      context.members = members.map((m) => {
+        const user = userMap.get(m.chatId);
+        const name = user
+          ? [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+            user.username ||
+            m.chatId
+          : m.chatId;
+
+        return {
+          chatId: m.chatId,
+          name,
+          role: m.role,
+          description: m.description,
+        };
+      });
+
+      // Считаем существующие задачи в группе
+      const groupPrefix = `${groupId}::`;
+      context.existingTasksCount = await prisma.task.count({
+        where: {
+          column: {
+            name: { startsWith: groupPrefix },
+          },
+        },
+      });
+    } else {
+      // Личная доска - только текущий пользователь
+      const user = await prisma.user.findUnique({
+        where: { chatId },
+        select: {
+          firstName: true,
+          lastName: true,
+          username: true,
+        },
+      });
+
+      const name = user
+        ? [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+          user.username ||
+          chatId
+        : chatId;
+
+      context.members = [
+        {
+          chatId,
+          name,
+          role: 'owner',
+          description: null,
+        },
+      ];
+
+      // Считаем задачи на личной доске
+      context.existingTasksCount = await prisma.task.count({
+        where: {
+          chatId,
+          column: {
+            name: { not: { contains: '::' } },
+          },
+        },
+      });
+    }
+  } catch (error) {
+    console.error('[AI Process] buildContext error:', error);
+    // Возвращаем пустой контекст в случае ошибки
+  }
+
+  return context;
+}

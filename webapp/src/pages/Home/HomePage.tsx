@@ -56,6 +56,109 @@ function fmtShort(iso?: string | null): string {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Format to DD.MM.YYYY HH:mm with optional timezone
+function fmtRuFull(iso?: string | null, timeZone?: string | null): string {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const opts: Intl.DateTimeFormatOptions = {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    };
+    if (timeZone) opts.timeZone = timeZone;
+    const parts = new Intl.DateTimeFormat('ru-RU', opts).formatToParts(d);
+    const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+    const dd = get('day'); const mm = get('month'); const yyyy = get('year');
+    const hh = get('hour'); const min = get('minute');
+    return `${dd}.${mm}.${yyyy} ${hh}:${min}`;
+  } catch { return ''; }
+}
+
+// Compute next date locally from recurring config when backend hasn't filled startAt/fireAt yet
+function calcNextRecurringLocal(cfg: any, timeZone?: string | null): Date | null {
+  try {
+    if (!cfg || typeof cfg !== 'object') return null;
+    const pattern = String(cfg.pattern || 'daily');
+    const time = String(cfg.time || '13:00');
+    const [hours, minutes] = time.split(':').map((n: string) => parseInt(n, 10));
+    const excludeDays: number[] = Array.isArray(cfg.excludeDays) ? cfg.excludeDays : [];
+    const excludeDates: string[] = Array.isArray(cfg.excludeDates) ? cfg.excludeDates : [];
+    const monthDay = cfg.monthDay ? Number(cfg.monthDay) : null;
+    const weekOfMonth = (cfg.weekOfMonth != null) ? Number(cfg.weekOfMonth) : null;
+    const dayOfWeek = (cfg.dayOfWeek != null) ? Number(cfg.dayOfWeek) : null;
+
+    const now = timeZone ? new Date(new Date().toLocaleString('en-US', { timeZone })) : new Date();
+    let candidate = new Date(now);
+    candidate.setSeconds(0, 0);
+    candidate.setHours(isNaN(hours) ? 13 : hours, isNaN(minutes) ? 0 : minutes, 0, 0);
+
+    const dateStrOf = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${da}`;
+    };
+
+    function nextDay(d: Date) { const n = new Date(d); n.setDate(n.getDate() + 1); n.setHours(d.getHours(), d.getMinutes(), 0, 0); return n; }
+    function nextMonth(d: Date) { const n = new Date(d); n.setMonth(n.getMonth() + 1); n.setHours(d.getHours(), d.getMinutes(), 0, 0); return n; }
+
+    // If already passed today, move to future period
+    if (candidate <= now) candidate = (pattern === 'daily') ? nextDay(candidate) : nextMonth(candidate);
+
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const dateStr = dateStrOf(candidate);
+      // exclude exact dates
+      if (excludeDates.includes(dateStr)) {
+        candidate = (pattern === 'daily') ? nextDay(candidate) : nextMonth(candidate);
+        continue;
+      }
+
+      if (pattern === 'daily') {
+        const dow = candidate.getDay();
+        if (excludeDays.includes(dow)) { candidate = nextDay(candidate); continue; }
+        return candidate;
+      }
+
+      if (pattern === 'monthly') {
+        if (monthDay) {
+          // set to specific day of this or next month
+          const base = new Date(candidate.getFullYear(), candidate.getMonth(), 1, candidate.getHours(), candidate.getMinutes(), 0, 0);
+          let target = new Date(base);
+          target.setDate(Math.min(monthDay, 28));
+          // try adjusting to exact day if exists
+          target.setDate(monthDay);
+          if (target <= now || target.getMonth() !== base.getMonth()) {
+            const nm = nextMonth(base);
+            target = new Date(nm.getFullYear(), nm.getMonth(), 1, candidate.getHours(), candidate.getMinutes(), 0, 0);
+            target.setDate(monthDay);
+          }
+          return target;
+        }
+        if (weekOfMonth != null && dayOfWeek != null) {
+          const base = new Date(candidate.getFullYear(), candidate.getMonth(), 1, candidate.getHours(), candidate.getMinutes(), 0, 0);
+          const firstDow = base.getDay();
+          const offset = (dayOfWeek - firstDow + 7) % 7;
+          let targetDate = 1 + offset + (weekOfMonth - 1) * 7;
+          let target = new Date(base.getFullYear(), base.getMonth(), targetDate, candidate.getHours(), candidate.getMinutes(), 0, 0);
+          // if overflowed month or in the past, move to next month
+          if (target <= now || target.getMonth() !== base.getMonth()) {
+            const nm = nextMonth(base);
+            const fDow = new Date(nm.getFullYear(), nm.getMonth(), 1).getDay();
+            const off = (dayOfWeek - fDow + 7) % 7;
+            targetDate = 1 + off + (weekOfMonth - 1) * 7;
+            target = new Date(nm.getFullYear(), nm.getMonth(), targetDate, candidate.getHours(), candidate.getMinutes(), 0, 0);
+          }
+          return target;
+        }
+        // fallback: next month same day/time
+        return nextMonth(candidate);
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
 function phaseOf(t: any): StageKey | string | undefined {
   const ph = String(t?.phase ?? t?.status ?? '').trim();
   const low = ph.toLowerCase();
@@ -1233,7 +1336,7 @@ export default function HomePage({
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск…"
             style={{
-              width: '100%',
+              width: '90%',
               padding: '10px 12px',
               borderRadius: 12,
               border: '1px solid #2a3346',
@@ -1421,8 +1524,36 @@ export default function HomePage({
                                   style={{ position:'absolute', right:8, top:8, width:24, height:24, borderRadius:999, border:'1px solid #334155', background:'#182033', color:'#e5e7eb', cursor:'pointer' }}
                                 >🗑️</button>
                                 <LongPressOutline targetId={anchorIdPre} durationMs={1000} radius={12} onComplete={() => { try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((p as any)?.id) } })); } catch {} }} />
-                                <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
-                                <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                                {(() => {
+                                  const rcfg = (p as any)?.recurringConfig;
+                                  if (rcfg) {
+                                    let nextDate = when || (p as any)?.fireAt || (p as any)?.startAt;
+                                    const tz = (p as any)?.timezone || null;
+                                    if (!nextDate) {
+                                      const nd = calcNextRecurringLocal(rcfg, tz);
+                                      if (nd) nextDate = nd.toISOString();
+                                    }
+                                    const dateParen = nextDate ? (fmtRuFull(nextDate, tz) || fmtShort(nextDate)) : '';
+                                    const dateStr = nextDate ? (tz ? new Date(nextDate).toLocaleString('ru-RU', { timeZone: tz }) : new Date(nextDate).toLocaleString()) : '';
+                                    const assigneeId = String((p as any)?.plannedAssigneeChatId || '');
+                                    const assigneeName = assigneeId ? (nameByChat[assigneeId] || assigneeId) : 'не выбран';
+                                    return (
+                                      <>
+                                        <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🔂 Повторяющаяся{dateParen ? ` (${dateParen})` : ''}</div>
+                                        <div style={{ fontSize:15, marginBottom:6 }}>🔂 {(p as any).text}</div>
+                                        <div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>Ждёт: {assigneeName}</div>
+                                        {dateStr && <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Ближайшая: {dateStr} {leftText ? `• ${leftText}` : ''}</div>}
+                                      </>
+                                    );
+                                  }
+                                  return (
+                                    <>
+                                      <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
+                                      <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                                      {(() => { const aid = String((p as any)?.plannedAssigneeChatId || ''); const nm = aid ? (nameByChat[aid] || aid) : 'не выбран'; return (<div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>Ждёт: {nm}</div>); })()}
+                                    </>
+                                  );
+                                })()}
                                 {(() => {
                                   const w = (p as any)?.payload && (p as any).payload.weather;
                                   if (!w) return null;
@@ -1433,7 +1564,7 @@ export default function HomePage({
                                     <div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>🌦️ {city}: t {op} {val}°</div>
                                   );
                                 })()}
-                                {when && (
+                                {!((p as any)?.recurringConfig) && when && (
                                   <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
                                 )}
                                 <div style={{ display:'inline-block', background: '#1b2234', color:'#c7d2fe', border:'1px solid #2a3346', padding:'3px 8px', borderRadius:8, fontSize:12 }}>
@@ -1738,6 +1869,7 @@ export default function HomePage({
                                           group: grp,
                                           labels: labs,
                                           assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                          complexity: (t as any).complexity || null,
                                           bg: (colorsForPhase(phaseOf(t)).bg),
                                           brd: (colorsForPhase(phaseOf(t)).brd),
                                           phase: String(phaseOf(t)),
@@ -1791,6 +1923,7 @@ export default function HomePage({
                                           group: grp,
                                           labels: labs,
                                           assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                          complexity: (t as any).complexity || null,
                                           bg: (colorsForPhase(phaseOf(t)).bg),
                                           brd: (colorsForPhase(phaseOf(t)).brd),
                                           phase: String(phaseOf(t)),
@@ -2000,6 +2133,25 @@ export default function HomePage({
                     {dateLine && (
                       <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 6 }}>{dateLine}</div>
                     )}
+                          {/* Просрочка: показываем над строкой дедлайна, в одну строку */}
+                          {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                whiteSpace: 'nowrap',
+                                fontSize: 11,
+                                background:'#7f1d1d',
+                                color:'#fee2e2',
+                                border:'1px solid #dc2626',
+                                borderRadius:999,
+                                padding:'2px 6px',
+                                marginBottom:6,
+                              }}
+                            >
+                              {'\u26A0\uFE0F'}Просрочен
+                            </span>
+                          )}
+
                           {deadlineAt && (
                             <button
                               onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeadlineEdit({ id: t.id, value: deadlineAt }); }}
@@ -2014,11 +2166,18 @@ export default function HomePage({
                               ⏰ {fmtShort(nextReminderAt)}
                             </div>
                           )}
-                          {deadlineAt && new Date(deadlineAt).getTime() < Date.now() && (
-                            <span style={{ fontSize: 11, background:'#7f1d1d', color:'#fee2e2', border:'1px solid #dc2626', borderRadius:999, padding:'2px 6px', marginBottom:6 }}>
-                              ⚠️ Просрочен
-                            </span>
-                          )}
+                          {(() => {
+                            const complexity = Number((t as any).complexity || 0);
+                            if (complexity > 0) {
+                              return (
+                                <div style={{ fontSize: 12, marginBottom: 6, color: '#374151' }} title={`Сложность: ${complexity}/10`}>
+                                  🏋🏻 ({complexity})
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+                          {/* Бейдж просрочки перенесён выше дедлайна */}
 
                           {/* Статус и ярлыки в одной строке (группа+первый ярлык наверху) */}
                           {(() => {
@@ -2289,6 +2448,7 @@ export default function HomePage({
                                                   group: grp,
                                                   labels: labs,
                                                   assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                                  complexity: (t as any).complexity || null,
                                                   bg: (colorsForPhase(phaseOf(t)).bg),
                                                   brd: (colorsForPhase(phaseOf(t)).brd),
                                                   phase: String(phaseOf(t)),
@@ -2403,6 +2563,7 @@ export default function HomePage({
                                                           group: grp,
                                                           labels: labs,
                                                           assignee: { name: (t as any).assigneeName || null, meChatId, assigneeChatId: (t as any).assigneeChatId || null, myRankIcon },
+                                                          complexity: (t as any).complexity || null,
                                                           bg: (colorsForPhase(phaseOf(t)).bg),
                                                           brd: (colorsForPhase(phaseOf(t)).brd),
                                                           phase: String(phaseOf(t)),
@@ -2529,11 +2690,39 @@ export default function HomePage({
                       >🗑️</button>
                       {/* long-press edit for scheduled pre-task */}
                       <LongPressOutline targetId={anchorId} durationMs={1000} radius={12} onComplete={() => { try { window.dispatchEvent(new CustomEvent('edit-pretask-open', { detail: { preTaskId: String((p as any)?.id) } })); } catch {} }} />
-                      <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
-                      <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
-                      {when && (
-                        <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
-                      )}
+                      {(() => {
+                        const rcfg = (p as any)?.recurringConfig;
+                        if (rcfg) {
+                          let nextDate = when || (p as any)?.fireAt || (p as any)?.startAt;
+                          const tz = (p as any)?.timezone || null;
+                          if (!nextDate) {
+                            const nd = calcNextRecurringLocal(rcfg, tz);
+                            if (nd) nextDate = nd.toISOString();
+                          }
+                          const dateParen = nextDate ? (fmtRuFull(nextDate, tz) || fmtShort(nextDate)) : '';
+                          const dateStr = nextDate ? (tz ? new Date(nextDate).toLocaleString('ru-RU', { timeZone: tz }) : new Date(nextDate).toLocaleString()) : '';
+                          const assigneeId = String((p as any)?.plannedAssigneeChatId || '');
+                          const assigneeName = assigneeId ? (nameByChat[assigneeId] || assigneeId) : 'не выбран';
+                          return (
+                            <>
+                              <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🔂 Повторяющаяся{dateParen ? ` (${dateParen})` : ''}</div>
+                              <div style={{ fontSize:15, marginBottom:6 }}>🔂 {(p as any).text}</div>
+                              <div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>Ждёт: {assigneeName}</div>
+                              {dateStr && <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Ближайшая: {dateStr} {leftText ? `• ${leftText}` : ''}</div>}
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            <div style={{ fontSize:12, opacity:.7, marginBottom:4 }}>🕒 Плановая</div>
+                            <div style={{ fontSize:15, marginBottom:6 }}>🕒 {(p as any).text}</div>
+                            {(() => { const aid = String((p as any)?.plannedAssigneeChatId || ''); const nm = aid ? (nameByChat[aid] || aid) : 'не выбран'; return (<div style={{ fontSize:12, opacity:.85, marginBottom:6 }}>Ждёт: {nm}</div>); })()}
+                            {when && (
+                              <div style={{ fontSize:12, opacity:.8, marginBottom:6 }}>Создастся: {new Date(when).toLocaleString()} • {leftText}</div>
+                            )}
+                          </>
+                        );
+                      })()}
                       <div style={{
                         display:'inline-block', background: '#1b2234', color:'#c7d2fe', border:'1px solid #2a3346', padding:'3px 8px', borderRadius:8, fontSize:12,
                       }}>{gtitle}</div>

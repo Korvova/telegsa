@@ -41,6 +41,7 @@ import path from 'node:path';
 
 
  import { labelsRouter } from './routes/labels.js';
+import { aiProcessRouter } from './routes/ai-process.js';
 
 
 const prisma = new PrismaClient();
@@ -425,7 +426,11 @@ app.use(processRouter);
 
 /* ---------- ярлыки ---------- */
 
-app.use(labelsRouter); 
+app.use(labelsRouter);
+
+/* ---------- AI Process ---------- */
+
+app.use(aiProcessRouter({ prisma })); 
 
 
 
@@ -447,10 +452,24 @@ async function enrichColumnsWithAssignees(columnsRaw) {
   return columnsRaw.map(c => ({
     ...c,
     name: stripGroupName(c.name),
-    tasks: c.tasks.map(t => ({
-      ...t,
-      assigneeName: t.assigneeChatId ? nameByChat.get(String(t.assigneeChatId)) || null : null,
-    })),
+    tasks: c.tasks.map(t => {
+      // Добавляем process graph quick stats для корректного отображения значков
+      const leftKeys  = Array.isArray(t.processLeftKeys)  ? t.processLeftKeys  : [];
+      const rightKeys = Array.isArray(t.processRightKeys) ? t.processRightKeys : [];
+      const processLeftCount  = leftKeys.length;
+      const processRightCount = rightKeys.length;
+      const preChildrenCount  = rightKeys.filter(k => String(k).startsWith('pretask:')).length;
+      const processHasEdges   = (processLeftCount + processRightCount) > 0;
+
+      return {
+        ...t,
+        assigneeName: t.assigneeChatId ? nameByChat.get(String(t.assigneeChatId)) || null : null,
+        processLeftCount,
+        processRightCount,
+        preChildrenCount,
+        processHasEdges,
+      };
+    }),
   }));
 }
 
@@ -1347,9 +1366,28 @@ app.get('/tasks/:id', async (req, res) => {
       }));
     } catch {}
 
+    // Добавляем process graph quick stats для корректного отображения значков
+    const leftKeys  = Array.isArray(task.processLeftKeys)  ? task.processLeftKeys  : [];
+    const rightKeys = Array.isArray(task.processRightKeys) ? task.processRightKeys : [];
+    const processLeftCount  = leftKeys.length;
+    const processRightCount = rightKeys.length;
+    const preChildrenCount  = rightKeys.filter(k => String(k).startsWith('pretask:')).length;
+    const processHasEdges   = (processLeftCount + processRightCount) > 0;
+
     res.json({
       ok: true,
-      task: { ...task, assigneeName, creatorName, groupTitle, isPublicGroup, isTelegramGroup },
+      task: {
+        ...task,
+        assigneeName,
+        creatorName,
+        groupTitle,
+        isPublicGroup,
+        isTelegramGroup,
+        processLeftCount,
+        processRightCount,
+        preChildrenCount,
+        processHasEdges,
+      },
       groupId,
       phase,
       media,
@@ -2910,6 +2948,45 @@ app.patch('/groups/:id', async (req, res) => {
     }
     console.error('PATCH /groups/:id error:', e);
     res.status(500).json({ ok: false });
+  }
+});
+
+// Group description endpoints
+// GET /groups/:id/description -> { ok, description }
+app.get('/groups/:id/description', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const grp = await prisma.group.findUnique({ where: { id }, select: { description: true } });
+    if (!grp) return res.status(404).json({ ok: false, error: 'not_found' });
+    res.json({ ok: true, description: grp.description ?? null });
+  } catch (e) {
+    console.error('GET /groups/:id/description error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// PATCH /groups/:id/description  body: { byChatId, description }
+app.patch('/groups/:id/description', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const byChatId = String(req.body?.byChatId || '');
+    const descriptionRaw = req.body?.description;
+    if (!byChatId || typeof descriptionRaw !== 'string') {
+      return res.status(400).json({ ok: false, error: 'byChatId and description are required' });
+    }
+    const grp = await prisma.group.findUnique({ where: { id } });
+    if (!grp) return res.status(404).json({ ok: false, error: 'not_found' });
+    if (grp.ownerChatId !== byChatId) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+    // limit to 28k chars
+    const MAX = 28000;
+    const description = String(descriptionRaw).slice(0, MAX);
+    const updated = await prisma.group.update({ where: { id }, data: { description } });
+    res.json({ ok: true, description: updated.description ?? null });
+  } catch (e) {
+    console.error('PATCH /groups/:id/description error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
   }
 });
 

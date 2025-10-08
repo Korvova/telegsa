@@ -704,6 +704,16 @@ async function attemptFirePreTask({ prisma, tg }, preId, { canceledImmediate = f
   await markPreTaskFired(prisma, row.id, created.id, { canceled: canceledImmediate });
   try { console.log('[PRETASK][FIRED]', { id: preId, taskId: created.id, canceledImmediate }); } catch {}
   try { if (sseBroadcast) sseBroadcast(String(row.creatorChatId||''), { type:'task_fired', preId: String(preId), taskId: String(created.id), groupId: row.groupId || null }); } catch {}
+
+  // Handle recurring tasks: create next occurrence
+  if (row.recurringConfig && !canceledImmediate) {
+    try {
+      await createNextRecurringPreTask({ prisma, tg }, row);
+    } catch (e) {
+      console.error('[PRETASK][RECURRING] failed to create next occurrence', e?.message || e);
+    }
+  }
+
   return true;
 }
 
@@ -788,4 +798,188 @@ export async function initPreTaskScheduler({ prisma, tg }) {
   const overdue = await prisma.preTask.findMany({ where: { status: 'ARMED', fireAt: { lte: now } } });
   overdue.forEach(p => attemptFirePreTask({ prisma, tg }, p.id));
   log('init pre-tasks planned:', future.length, 'overdue:', overdue.length);
+}
+
+async function createNextRecurringPreTask({ prisma, tg }, firedPreTask) {
+  const cfg = firedPreTask.recurringConfig;
+  if (!cfg || typeof cfg !== 'object') return;
+
+  const { pattern, time, excludeDays, excludeDates, monthDay, weekOfMonth, dayOfWeek, count } = cfg;
+
+  // Определяем родителя цепочки (либо текущая, либо уже существующий родитель)
+  const rootParentId = firedPreTask.recurringParentId || firedPreTask.id;
+
+  // Подсчитываем уже созданные экземпляры
+  const existingCount = await prisma.preTask.count({
+    where: { recurringParentId: rootParentId, status: { in: ['PREVIEW', 'ARMED', 'FIRED'] } }
+  });
+
+  // Проверяем лимит повторений
+  if (count && existingCount >= count) {
+    console.log('[RECURRING] Limit reached', { rootParentId, count, existingCount });
+    return;
+  }
+
+  // Вычисляем следующую дату
+  const nextDate = calculateNextRecurringDate(cfg, firedPreTask.timezone || 'UTC');
+  if (!nextDate) {
+    console.log('[RECURRING] No next date calculated');
+    return;
+  }
+
+  // Проверяем ответственного - если не в группе, назначаем создателя
+  let assignee = firedPreTask.plannedAssigneeChatId;
+  if (assignee && firedPreTask.groupId) {
+    const member = await prisma.groupMember.findUnique({
+      where: { groupId_chatId: { groupId: firedPreTask.groupId, chatId: assignee } }
+    });
+    if (!member) {
+      assignee = firedPreTask.creatorChatId;
+      console.log('[RECURRING] Assignee not in group, fallback to creator', { assignee });
+    }
+  }
+
+  // Создаём следующую предзадачу
+  const nextPreTask = await prisma.preTask.create({
+    data: {
+      creatorChatId: firedPreTask.creatorChatId,
+      groupId: firedPreTask.groupId,
+      text: firedPreTask.text,
+      payload: firedPreTask.payload,
+      plannedAssigneeChatId: assignee,
+      triggerMode: 'DATE_PLUS',
+      startAt: nextDate,
+      delayMinutes: null,
+      autoCancelOnAny: firedPreTask.autoCancelOnAny,
+      timezone: firedPreTask.timezone,
+      status: 'ARMED',
+      recurringConfig: cfg,
+      recurringParentId: rootParentId,
+      fireAt: nextDate,
+    },
+  });
+
+  console.log('[RECURRING] Created next occurrence', {
+    id: nextPreTask.id,
+    parentId: rootParentId,
+    nextDate: nextDate.toISOString(),
+    occurrence: existingCount + 1,
+  });
+
+  // Планируем выполнение
+  planPreTaskAt({ prisma, tg }, nextPreTask.id, nextDate);
+}
+
+function calculateNextRecurringDate(cfg, timezone = 'UTC') {
+  const { pattern, time, excludeDays, excludeDates, monthDay, weekOfMonth, dayOfWeek } = cfg;
+  const [hours, minutes] = (time || '13:00').split(':').map(Number);
+
+  // Получаем текущее время
+  const now = new Date();
+
+  // Получаем текущую дату в локальном timezone пользователя
+  // Используем Intl API для правильной работы с timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(now);
+  const getPart = (type) => parts.find(p => p.type === type)?.value;
+
+  const tzYear = parseInt(getPart('year'));
+  const tzMonth = parseInt(getPart('month')) - 1; // месяцы с 0
+  const tzDay = parseInt(getPart('day'));
+  const tzHour = parseInt(getPart('hour'));
+  const tzMinute = parseInt(getPart('minute'));
+
+  // Создаем дату "сегодня в указанное время" в локальном timezone
+  // Формируем ISO строку и парсим как локальное время
+  const todayAtTimeStr = `${tzYear}-${String(tzMonth + 1).padStart(2, '0')}-${String(tzDay).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+
+  // Конвертируем обратно в UTC для хранения
+  // Сначала создаем дату как будто это UTC
+  const candidateLocal = new Date(`${todayAtTimeStr}Z`);
+  // Вычисляем offset между UTC и локальным timezone
+  const nowLocal = new Date(`${tzYear}-${String(tzMonth + 1).padStart(2, '0')}-${String(tzDay).padStart(2, '0')}T${String(tzHour).padStart(2, '0')}:${String(tzMinute).padStart(2, '0')}:00Z`);
+  const offset = now.getTime() - nowLocal.getTime();
+
+  // Применяем offset к кандидату
+  let candidate = new Date(candidateLocal.getTime() + offset);
+
+  // Если время уже прошло, берем следующий день/месяц
+  if (candidate <= now) {
+    if (pattern === 'daily') {
+      candidate.setDate(candidate.getDate() + 1);
+    } else {
+      candidate.setMonth(candidate.getMonth() + 1);
+    }
+  }
+
+  // Ищем подходящую дату (максимум 60 попыток)
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const dateStr = candidate.toISOString().split('T')[0];
+    const currentDayOfWeek = candidate.getDay();
+
+    // Проверяем исключения по датам
+    if (excludeDates && excludeDates.includes(dateStr)) {
+      if (pattern === 'daily') {
+        candidate.setDate(candidate.getDate() + 1);
+      } else {
+        candidate.setMonth(candidate.getMonth() + 1);
+      }
+      continue;
+    }
+
+    // Для daily: проверяем исключения по дням недели
+    if (pattern === 'daily') {
+      if (excludeDays && excludeDays.includes(currentDayOfWeek)) {
+        candidate.setDate(candidate.getDate() + 1);
+        continue;
+      }
+      return candidate;
+    }
+
+    // Для monthly: проверяем условия
+    if (pattern === 'monthly') {
+      if (monthDay) {
+        // По числу месяца
+        if (candidate.getDate() === monthDay) {
+          return candidate;
+        }
+        candidate.setDate(monthDay);
+        if (candidate <= now) {
+          candidate.setMonth(candidate.getMonth() + 1);
+        }
+      } else if (weekOfMonth !== undefined && dayOfWeek !== undefined) {
+        // По неделе и дню недели
+        const firstDayOfMonth = new Date(candidate.getFullYear(), candidate.getMonth(), 1);
+        const firstDayOfWeek = firstDayOfMonth.getDay();
+        const offset = (dayOfWeek - firstDayOfWeek + 7) % 7;
+        const targetDate = 1 + offset + (weekOfMonth - 1) * 7;
+
+        candidate.setDate(targetDate);
+        if (candidate <= now || candidate.getMonth() !== firstDayOfMonth.getMonth()) {
+          candidate = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 1);
+          continue;
+        }
+        return candidate;
+      }
+    }
+
+    // Защита от бесконечного цикла
+    if (pattern === 'monthly') {
+      candidate.setMonth(candidate.getMonth() + 1);
+    } else {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+  }
+
+  return null;
 }

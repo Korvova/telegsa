@@ -374,6 +374,23 @@ export async function setGroupMemberDescription(params: { groupId: string; membe
   try { return await r.json(); } catch { return { ok: r.ok }; }
 }
 
+// Group description (owner-only)
+export async function getGroupDescription(groupId: string): Promise<{ ok: boolean; description: string | null }>{
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(groupId)}/description`, { credentials: 'include' });
+  if (!r.ok) return { ok: false, description: null };
+  return r.json();
+}
+
+export async function setGroupDescription(params: { groupId: string; byChatId: string; description: string }): Promise<{ ok: boolean; description?: string | null }>{
+  const r = await fetch(`${API_BASE}/groups/${encodeURIComponent(params.groupId)}/description`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ byChatId: params.byChatId, description: params.description }),
+  });
+  if (!r.ok) return { ok: false } as any;
+  return r.json();
+}
+
 export async function createGroupInvite(params: { chatId: string; groupId: string }): Promise<{
   ok: boolean;
   link?: string;

@@ -16,6 +16,7 @@ export type FeedTaskCardProps = {
   group?: { title: string; public?: boolean; telegram?: boolean; chipBg?: string } | null;
   labels?: string[];
   assignee?: { name?: string | null; meChatId?: string; assigneeChatId?: string | null; myRankIcon?: string | null } | null;
+  complexity?: number | null;
   // optional interactions used в ленте
   onEditDeadline?: (() => void) | null;
   onClickBadge?: (() => void) | null;
@@ -35,6 +36,7 @@ export default function FeedTaskCard({
   group,
   labels = [],
   assignee,
+  complexity,
   onEditDeadline,
   onClickBadge,
 }: FeedTaskCardProps) {
@@ -44,6 +46,7 @@ export default function FeedTaskCard({
   const isOverdue = !!(deadline?.overdue);
   const firstLabelTitle = (labels && labels.length > 0) ? labels[0] : null;
   const restLabelsCount = Math.max(0, (labels?.length || 0) - 1);
+  const hasComplexity = typeof complexity === 'number' && complexity > 0;
 
   return (
     <div style={{ position: 'relative' }} data-task-id={id}>
@@ -148,6 +151,12 @@ export default function FeedTaskCard({
       {nextReminderAt && (
         <div style={{ fontSize: 12, marginBottom: 6, color: '#374151' }}>
           ⏰ {formatShort(nextReminderAt)}
+        </div>
+      )}
+
+      {hasComplexity && (
+        <div style={{ fontSize: 12, marginBottom: 6, color: '#374151' }} title={`Сложность: ${complexity}/10`}>
+          🏋🏻 ({complexity})
         </div>
       )}
 

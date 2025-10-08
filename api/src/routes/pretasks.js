@@ -95,9 +95,11 @@ export function preTasksRouter({ prisma, tg }) {
           autoCancelOnAny,
           timezone,
           status: 'PREVIEW',
+          recurringConfig: body.recurringConfig ?? null,
+          recurringParentId: body.recurringParentId ?? null,
         },
       });
-      try { console.log('[PRETASK][CREATE]', { id: created.id, creatorChatId, triggerMode, startAt: startAt?.toISOString?.() || null, groupId }); } catch {}
+      try { console.log('[PRETASK][CREATE]', { id: created.id, creatorChatId, triggerMode, startAt: startAt?.toISOString?.() || null, groupId, recurring: !!body.recurringConfig }); } catch {}
 
       const deps = Array.isArray(body.links) ? body.links : [];
       if (deps.length) {

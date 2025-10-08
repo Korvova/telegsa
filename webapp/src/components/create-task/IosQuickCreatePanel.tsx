@@ -88,10 +88,10 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       setTimeout(focusLoop, 60);
     };
     setTimeout(focusLoop, 0);
-    // arm overlay for one frame to ignore the opening click
+    // arm interactions guard for a short time to absorb the opening tap
     setArming(true);
-    requestAnimationFrame(() => setArming(false));
-    return () => { if (tf) clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); setArming(true); };
+    const armT = setTimeout(() => setArming(false), 220);
+    return () => { if (tf) clearTimeout(tf); clearTimeout(t1); clearTimeout(t2); clearTimeout(armT); setArming(true); };
   }, [open]);
 
   // load groups when panel opens
@@ -437,7 +437,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           left: 10,
           right: 10,
           bottom: 0,
-          pointerEvents: 'auto',
+          pointerEvents: arming ? 'none' : 'auto',
           zIndex: 1000000,
           // transform managed by useKeyboardDock
           transition: 'none',

@@ -32,6 +32,8 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
   const [editTarget, setEditTarget] = useState<GroupMember | null>(null);
   const [descDraft, setDescDraft] = useState<string>('');
   const [savingDesc, setSavingDesc] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
+  const [permOpen, setPermOpen] = useState(false);
   const [permLoading, setPermLoading] = useState(false);
   const [permDraft, setPermDraft] = useState<any>(null);
 
@@ -152,7 +154,8 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
       });
       if (!r?.ok) throw new Error('save_failed');
       WebApp?.HapticFeedback?.notificationOccurred?.('success');
-      setEditTarget(null);
+      // оставляем окно управления участником открытым
+      setDescOpen(false);
       await reload();
       onChanged?.();
     } catch (e) {
@@ -161,6 +164,17 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
       WebApp?.HapticFeedback?.notificationOccurred?.('error');
     } finally {
       setSavingDesc(false);
+    }
+  };
+
+  const savePerms = async () => {
+    if (!editTarget) return;
+    try {
+      await setGroupMemberPerms(group.id, chatId, String(editTarget.chatId || ''), permDraft || {});
+      alert('Права сохранены');
+      setPermOpen(false);
+    } catch {
+      alert('Не удалось сохранить права');
     }
   };
 
@@ -305,50 +319,70 @@ export default function GroupMembers({ group, chatId, isOwner, onChanged, onLeft
 
           <div>
             <div style={{ fontSize:13, opacity:.8, marginBottom:6 }}>Действия</div>
-            <button
-              onClick={() => { if (editTarget) handleRemove(editTarget); }}
-              style={{ padding:'8px 10px', borderRadius:10, border:'1px solid #472a2a', background:'#3a1f1f', color:'#ffd7d7', cursor:'pointer' }}
-            >
-              Удалить участника из группы
-            </button>
-          </div>
-
-          <div>
-            <div style={{ fontWeight:600, marginBottom:6 }}>Описание</div>
-            <textarea
-              value={descDraft}
-              onChange={(e) => setDescDraft(e.target.value)}
-              placeholder="Кто он, что умеет, заметки по роли в этой группе…"
-              style={{ width:'100%', minHeight:120, padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' }}
-            />
-            <div style={{ display:'flex', gap:8, marginTop:8 }}>
-              <button onClick={saveDescription} disabled={savingDesc} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor: savingDesc ? 'default' : 'pointer' }}>Сохранить</button>
-              <button onClick={() => setEditTarget(null)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'transparent', color:'#9fb1ff', cursor:'pointer' }}>Отмена</button>
+            <div style={{ display:'grid', gap:8 }}>
+              <button
+                onClick={() => setDescOpen(true)}
+                style={{ padding:'8px 10px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer', textAlign:'left' }}
+              >
+                📜 Описание участника
+              </button>
+              <button
+                onClick={() => setPermOpen(true)}
+                style={{ padding:'8px 10px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer', textAlign:'left' }}
+              >
+                🛡️ Права
+              </button>
+              <button
+                onClick={() => { if (editTarget) handleRemove(editTarget); }}
+                style={{ padding:'8px 10px', borderRadius:10, border:'1px solid #472a2a', background:'#3a1f1f', color:'#ffd7d7', cursor:'pointer', textAlign:'left' }}
+              >
+                Удалить участника из группы
+              </button>
             </div>
           </div>
 
-          <div>
-            <div style={{ fontWeight:600, marginBottom:6 }}>Права</div>
-            {permLoading ? (
-              <div style={{ opacity:.7 }}>Загрузка…</div>
-            ) : (
-              <div style={{ display:'grid', gap:6, fontSize:13 }}>
-                <label><input type="checkbox" checked={!!permDraft?.canCreateTasks} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), canCreateTasks: e.target.checked }))} /> Может ставить задачи в группе</label>
-                <label><input type="checkbox" checked={!!permDraft?.changeStatusAny} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), changeStatusAny: e.target.checked }))} /> Может менять статус любых задач</label>
-                <label><input type="checkbox" checked={permDraft?.viewOwnOnly===false} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), viewOwnOnly: e.target.checked ? false : undefined }))} /> Видеть все задачи (снять ограничение)</label>
-                <div style={{ marginTop:6, opacity:.85 }}>Изменение деталей задачи:</div>
-                {['assignee','text','labels','accept','expenses','deadline','reminders','watchers','comments','delete'].map((k)=> (
-                  <label key={k}><input type="checkbox" checked={!!(permDraft?.edit?.[k])} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), edit: { ...((d as any)?.edit||{}), [k]: e.target.checked } }))} /> {labelForEdit(k)}</label>
-                ))}
-                <div style={{ display:'flex', gap:8, marginTop:8 }}>
-                  <button
-                    onClick={async()=>{ try { await setGroupMemberPerms(group.id, chatId, String(editTarget?.chatId||''), permDraft||{}); alert('Права сохранены'); } catch { alert('Не удалось сохранить права'); } }}
-                    style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}
-                  >Сохранить права</button>
-                </div>
-              </div>
-            )}
+          {/* Права перенесены в отдельную модалку */}
+        </div>
+      </OverlayModal>
+
+      {/* Отдельная модалка для редактирования описания */}
+      <OverlayModal open={!!editTarget && descOpen} onClose={() => setDescOpen(false)}>
+        <div style={{ display:'grid', gap:12 }}>
+          <div style={{ fontWeight:700, fontSize:16 }}>Описание: {editTarget?.name || editTarget?.chatId}</div>
+          <textarea
+            value={descDraft}
+            onChange={(e) => setDescDraft(e.target.value)}
+            placeholder="Кто он, что умеет, заметки по роли в этой группе…"
+            style={{ width:'100%', maxWidth:'100%', boxSizing:'border-box', minWidth:0, minHeight:120, padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#121722', color:'#e8eaed' }}
+          />
+          <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+            <button onClick={() => setDescOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'transparent', color:'#9fb1ff', cursor:'pointer' }}>Отмена</button>
+            <button onClick={saveDescription} disabled={savingDesc} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor: savingDesc ? 'default' : 'pointer' }}>Сохранить</button>
           </div>
+        </div>
+      </OverlayModal>
+
+      {/* Отдельная модалка для прав участника */}
+      <OverlayModal open={!!editTarget && permOpen} onClose={() => setPermOpen(false)}>
+        <div style={{ display:'grid', gap:12 }}>
+          <div style={{ fontWeight:700, fontSize:16 }}>Права: {editTarget?.name || editTarget?.chatId}</div>
+          {permLoading ? (
+            <div style={{ opacity:.7 }}>Загрузка…</div>
+          ) : (
+            <div style={{ display:'grid', gap:6, fontSize:13 }}>
+              <label><input type="checkbox" checked={!!permDraft?.canCreateTasks} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), canCreateTasks: e.target.checked }))} /> Может ставить задачи в группе</label>
+              <label><input type="checkbox" checked={!!permDraft?.changeStatusAny} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), changeStatusAny: e.target.checked }))} /> Может менять статус любых задач</label>
+              <label><input type="checkbox" checked={permDraft?.viewOwnOnly===false} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), viewOwnOnly: e.target.checked ? false : undefined }))} /> Видеть все задачи (снять ограничение)</label>
+              <div style={{ marginTop:6, opacity:.85 }}>Изменение деталей задачи:</div>
+              {['assignee','text','labels','accept','expenses','deadline','reminders','watchers','comments','delete'].map((k)=> (
+                <label key={k}><input type="checkbox" checked={!!(permDraft?.edit?.[k])} onChange={(e)=>setPermDraft((d:any)=>({ ...(d||{}), edit: { ...((d as any)?.edit||{}), [k]: e.target.checked } }))} /> {labelForEdit(k)}</label>
+              ))}
+              <div style={{ display:'flex', gap:8, marginTop:8, justifyContent:'flex-end' }}>
+                <button onClick={() => setPermOpen(false)} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'transparent', color:'#9fb1ff', cursor:'pointer' }}>Отмена</button>
+                <button onClick={savePerms} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' }}>Сохранить</button>
+              </div>
+            </div>
+          )}
         </div>
       </OverlayModal>
     </div>

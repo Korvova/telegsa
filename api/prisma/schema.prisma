@@ -176,6 +176,7 @@ model Group {
   id          String   @id @default(cuid())
   ownerChatId String
   title       String
+  description String?  @db.Text
   isTelegramGroup Boolean @default(false)
   tgChatId    String?  @unique
   isPublic    Boolean  @default(false)
@@ -638,6 +639,10 @@ model PreTask {
   // Поведение при отмене одной из зависимостей (если включён чекбокс)
   autoCancelOnAny    Boolean             @default(false)
 
+  // NEW: Повторяющиеся задачи (recurring config)
+  recurringConfig    Json?               // { pattern: 'daily'|'weekly'|'monthly', time: '13:00', excludeDays?: [0,6], excludeDates?: ['2025-01-01'], monthDay?: number, weekOfMonth?: number, dayOfWeek?: number, count?: number|null }
+  recurringParentId  String?             // ID родительской recurring предзадачи (для цепочки)
+
   // служебные поля
   status             PreTaskStatus       @default(PREVIEW)
   targetTaskId       String?             // id созданной реальной задачи (после FIRED)
@@ -658,6 +663,7 @@ model PreTask {
   @@index([creatorChatId])
   @@index([groupId])
   @@index([status])
+  @@index([recurringParentId])
 }
 
 /// Связи предзадачи с зависимостями: либо на обычную задачу, либо на другую предзадачу

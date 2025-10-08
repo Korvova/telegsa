@@ -76,7 +76,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const ownGroups = useMemo(() => allGroups.filter(g => g.kind === 'own'), [allGroups]);
   const memberGroups = useMemo(() => allGroups.filter(g => g.kind === 'member'), [allGroups]);
 
-  const [isClosing, setIsClosing] = useState(false);
+  const [isClosing] = useState(false); // не используется, но нужна для совместимости
   const [thumbStage, setThumbStage] = useState<0 | 1 | 2>(0); // 0=скрыт, 1=появление, 2=затухание
 
   // заголовок группы
@@ -133,7 +133,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   // куда «тянуть» карточку (в пикселях) при закрытии
-  const [pull, setPull] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [pull] = useState<{ x: number; y: number }>({ x: 0, y: 0 }); // не используется, но нужна для совместимости
 
   // участники текущей группы (для «Выбрать из группы»)
   const [members, setMembers] = useState<GroupMember[]>([]);
@@ -206,33 +206,38 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
         };
       case 'Doing':
         return {
-          background: 'linear-gradient(135deg, #2c3f5b, #5a7ea8)',
-          border: '1px solid #3e5a85',
-          boxShadow: '0 8px 24px rgba(91,126,169,.24), inset 0 0 18px rgba(255,255,255,.05)'
+          background: 'linear-gradient(135deg, #d4e4f7, #a8c5e8)',
+          border: '1px solid #8fadd4',
+          boxShadow: '0 6px 20px rgba(91,126,169,.14), inset 0 0 12px rgba(255,255,255,.15)',
+          color: '#0f172a'
         };
       case 'Done':
         return {
-          background: 'linear-gradient(135deg, #1d3b2a, #2a7a4a)',
-          border: '1px solid #2b5f44',
-          boxShadow: '0 8px 24px rgba(16,185,129,.22), inset 0 0 18px rgba(255,255,255,.05)'
+          background: 'linear-gradient(135deg, #d4f4dd, #a8e4b8)',
+          border: '1px solid #8dcea0',
+          boxShadow: '0 6px 20px rgba(16,185,129,.14), inset 0 0 12px rgba(255,255,255,.15)',
+          color: '#0f172a'
         };
       case 'Cancel':
         return {
-          background: 'linear-gradient(135deg, #3a1f1f, #7a2a2a)',
-          border: '1px solid #5a2b2b',
-          boxShadow: '0 8px 24px rgba(244,63,94,.20), inset 0 0 18px rgba(255,255,255,.04)'
+          background: 'linear-gradient(135deg, #fdd4d4, #f8a8a8)',
+          border: '1px solid #f08d8d',
+          boxShadow: '0 6px 20px rgba(244,63,94,.14), inset 0 0 12px rgba(255,255,255,.15)',
+          color: '#0f172a'
         };
       case 'Approval':
         return {
-          background: 'linear-gradient(135deg, #3a2a10, #a6791a)',
-          border: '1px solid #6a4a20',
-          boxShadow: '0 8px 24px rgba(250,204,21,.18), inset 0 0 18px rgba(255,255,255,.04)'
+          background: 'linear-gradient(135deg, #fef4d4, #fce8a8)',
+          border: '1px solid #f5d88d',
+          boxShadow: '0 6px 20px rgba(250,204,21,.14), inset 0 0 12px rgba(255,255,255,.15)',
+          color: '#0f172a'
         };
       case 'Wait':
         return {
-          background: 'radial-gradient(circle at 20% 0%, rgba(255,255,255,0.08), transparent 42%), radial-gradient(circle at 85% 20%, rgba(255,255,255,0.06), transparent 45%), linear-gradient(135deg, #0e2230, #2a6aa4)',
-          border: '1px solid #274864',
-          boxShadow: '0 10px 28px rgba(56,189,248,.22), inset 0 0 22px rgba(220,245,255,.06)'
+          background: 'linear-gradient(135deg, #d4f0fd, #a8dcf5)',
+          border: '1px solid #8dc8e8',
+          boxShadow: '0 6px 20px rgba(56,189,248,.14), inset 0 0 12px rgba(255,255,255,.15)',
+          color: '#0f172a'
         };
       default:
         return { background: '#1b2030', border: '1px solid #2a3346' };
@@ -416,49 +421,23 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
     if (!task.assigneeChatId) setAssigningAssigneeChatId(null);
   }, [task?.assigneeName, task?.assigneeChatId]);
 
-  // Плавное сворачивание карточки в 👍 и возврат на канбан
-  const animateCloseWithThumb = (finalGroupId?: string | null) => {
+  // Показ 👍 без закрытия карточки
+  const animateCloseWithThumb = (_finalGroupId?: string | null) => {
     // 0) снимаем остатки прошлого прогона
-    setIsClosing(false);
-    setPull({ x: 0, y: 0 });
     setThumbStage(0);
 
     // 1) показать 👍 по центру (слегка «впрыгивает»)
     setThumbStage(1);
 
-    // 2) через небольшой лаг начинаем стягивать карточку в 👍
-    setTimeout(() => {
-      const el = cardRef.current;
-      if (el) {
-        const r = el.getBoundingClientRect();
-        const cx = r.left + r.width / 2;
-        const cy = r.top + r.height / 2;
-
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const centerX = vw / 2;
-        const centerY = vh / 2;
-
-        setPull({
-          x: centerX - cx,
-          y: centerY - cy,
-        });
-      }
-      setIsClosing(true);
-    }, 120); // карточка «зеленеет», затем старт «всасывания»
-
-    // 3) 👍 делает «бум» — увеличивается и начинает исчезать
+    // 2) 👍 делает «бум» — увеличивается и начинает исчезать
     setTimeout(() => {
       setThumbStage(2);
-    }, 620);
+    }, 400);
 
-    // 4) завершение
+    // 3) скрываем 👍 и остаёмся на карточке (не закрываем)
     setTimeout(() => {
       setThumbStage(0);
-      setIsClosing(false);
-      setPull({ x: 0, y: 0 });
-      onClose(finalGroupId ?? groupIdRef.current);
-    }, 920);
+    }, 700);
   };
 
   // перенос в другую группу: находим Inbox целевой группы, двигаем через /tasks/:id/move
@@ -739,9 +718,111 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           {/* Убрано: точки и списки связей процесса в TaskView */}
         </div>
 
+        {/* Бейдж просрочки: сразу под textarea, над дедлайном */}
+        {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
+          <div style={{ marginTop: 8 }}>
+            <span
+              style={{
+                fontSize: 12,
+                background: '#7f1d1d',
+                color: '#fee2e2',
+                border: '1px solid #dc2626',
+                borderRadius: 999,
+                padding: '2px 8px',
+              }}
+            >
+              ⚠️ Просрочен
+            </span>
+          </div>
+        )}
+
         {/* ярлык под textarea убран — теперь наверху рядом с группой */}
 
         {/* Затраты перенесены в меню "⋮" */}
+
+        {/* Условия приёма */}
+        {(() => {
+          const cond = String((task as any)?.acceptCondition || 'NONE');
+          if (cond === 'NONE') return null;
+
+          const conditionLabels: Record<string, string> = {
+            PHOTO: 'Нужно фото 📸',
+            APPROVAL: 'Нужно согласование 🤝',
+            PHOTO_AND_APPROVAL: 'Фото + согласование 📸🤝',
+            DOC_AND_APPROVAL: 'Документ + согласование 📎🤝',
+          };
+
+          const label = conditionLabels[cond] || '';
+          if (!label) return null;
+
+          return (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, opacity: 0.9 }}>☝️ {label}</span>
+              <button
+                onClick={async () => {
+                  try {
+                    const mod = await import('./api');
+                    const r = await mod.setAcceptCondition(taskId, meChatId, 'NONE');
+                    if (r?.ok && r.task) setTask(prev => prev ? ({ ...prev, acceptCondition: 'NONE' } as any) : prev);
+                    if (r && (r as any).ok === false && String((r as any).error || '') === 'no_rights') {
+                      alert('У вас нет прав на это действие');
+                    }
+                  } catch (e: any) {
+                    const msg = String(e?.message || '');
+                    if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+                  }
+                }}
+                title="Убрать условие приёма"
+                style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer', fontSize: 14 }}
+              >
+                (×)
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* Дедлайн */}
+        {(() => {
+          const deadline = task?.deadlineAt;
+          if (!deadline) return null;
+
+          const d = new Date(String(deadline));
+          if (isNaN(d.getTime())) return null;
+
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const when = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          const isPast = d.getTime() < Date.now();
+
+          return (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, opacity: 0.9, color: isPast ? '#fca5a5' : 'inherit' }}>
+                🚩 Дедлайн: {when}
+                {isPast && ' ⚠️'}
+              </span>
+              <button
+                onClick={async () => {
+                  try {
+                    const r = await setTaskDeadline(taskId, meChatId, null);
+                    if (r?.ok && r.task) {
+                      setTask((prev) => (prev ? { ...prev, deadlineAt: null } : prev));
+                      onChanged();
+                    }
+                    if (r && (r as any).ok === false && String((r as any).error || '') === 'no_rights') {
+                      alert('У вас нет прав на это действие');
+                    }
+                  } catch (e: any) {
+                    const msg = String(e?.message || '');
+                    if (/403/.test(msg) || /no_rights/.test(msg)) alert('У вас нет прав на это действие');
+                  }
+                }}
+                title="Убрать дедлайн"
+                style={{ background: 'transparent', border: 'none', color: '#8aa0ff', cursor: 'pointer', fontSize: 14 }}
+              >
+                (×)
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Список напоминаний */}
         {reminders.length > 0 && (
@@ -1005,23 +1086,6 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
         )}
 
         {/* Кнопки условий/дедлайна/напоминаний вынесены в меню ⋮ */}
-        {/* Сохраняем бейдж просрочки, если есть */}
-        {task?.deadlineAt && new Date(String(task.deadlineAt)).getTime() < Date.now() && (
-          <div style={{ marginTop: 8 }}>
-            <span
-              style={{
-                fontSize: 12,
-                background: '#7f1d1d',
-                color: '#fee2e2',
-                border: '1px solid #dc2626',
-                borderRadius: 999,
-                padding: '2px 8px',
-              }}
-            >
-              ⚠️ Просрочен
-            </span>
-          </div>
-        )}
 
         {/* Ответственный / действия назначения (для событий скрываем — там EventPanel) */}
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

@@ -18,6 +18,7 @@ import AcceptConditionsModal from './AcceptConditionsModal';
 import GroupPicker from './GroupPicker';
 import RobotPicker from './robots/RobotPicker';
 import WeatherScheduleModal from './robots/WeatherScheduleModal';
+import RecurringScheduleModal, { type RecurringConfig } from './robots/RecurringScheduleModal';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import WebApp from '@twa-dev/sdk';
 import {
@@ -378,6 +379,10 @@ export default function CreateTaskModal({
   useEffect(() => { if (scheduleOpen) { try { textAreaRef.current?.blur(); } catch {} } }, [scheduleOpen]);
   // weather config
   const [weatherCfg, setWeatherCfg] = useState<null | { atIso: string; city: string; lat: number; lon: number; op: 'GE'|'LE'; valueC: number }>(null);
+  // recurring config
+  const [recurringOpen, setRecurringOpen] = useState(false);
+  const [recurringCfg, setRecurringCfg] = useState<RecurringConfig | null>(null);
+  useEffect(() => { if (recurringOpen) { try { textAreaRef.current?.blur(); } catch {} } }, [recurringOpen]);
 
   // UI modals
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -396,7 +401,35 @@ export default function CreateTaskModal({
     return { when: d.toLocaleString(), left };
   }, [scheduleAt]);
 
-  const scheduledBanner = (!isEdit && weatherCfg) ? (
+  const recurringInfo = useMemo(() => {
+    if (!recurringCfg) return null;
+    const { pattern, time, excludeDays, monthDay, weekOfMonth, dayOfWeek, count } = recurringCfg;
+    const parts = [];
+    if (pattern === 'daily') {
+      parts.push(`Каждый день в ${time}`);
+      if (excludeDays && excludeDays.length > 0) {
+        const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+        parts.push(`кроме ${excludeDays.map(d => days[d]).join(', ')}`);
+      }
+    } else {
+      if (monthDay) {
+        parts.push(`Каждый месяц ${monthDay}-го числа в ${time}`);
+      } else if (weekOfMonth && dayOfWeek !== undefined) {
+        const days = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+        parts.push(`Каждый месяц ${weekOfMonth}-я неделя ${days[dayOfWeek]} в ${time}`);
+      }
+    }
+    if (count) parts.push(`(${count} раз)`);
+    else parts.push('(всегда)');
+    return parts.join(' ');
+  }, [recurringCfg]);
+
+  const scheduledBanner = (!isEdit && recurringCfg) ? (
+    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+      <span>🔂 {recurringInfo}</span>
+      <button onClick={() => { setRecurringCfg(null); setScheduleAt(null); setPreCfg(null); }} title="Сбросить повторение" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
+    </div>
+  ) : (!isEdit && weatherCfg) ? (
     <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
       <span>{`🌦️ Если ${new Date(weatherCfg.atIso).toLocaleString()} в (${weatherCfg.city}) погода (${weatherCfg.op==='GE'?'>=':'<='}) ${weatherCfg.valueC}°`}</span>
       <button onClick={() => { setWeatherCfg(null); setScheduleAt(null); setPreCfg(null); }} title="Сбросить погодное условие" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer' }}>(x)</button>
@@ -511,6 +544,21 @@ export default function CreateTaskModal({
       // clear bounty draft after success
       try { if (_bountyLocked) { await clearDraft(); setBountyLocked(false); } } catch {}
       onCreated?.();
+      // Clear all form state before closing
+      setText('');
+      setPendingFiles([]);
+      setDeadlineAt(null);
+      setAcceptConditionState('NONE');
+      setRemindersDraft([]);
+      setSelectedLabelId(null);
+      setBountyAmount(0);
+      setBountyRub(null);
+      setComplexity(null);
+      setScheduleAt(null);
+      setWeatherCfg(null);
+      setPreCfg(null);
+      setEdgeContext(null);
+      setExistingMedia([]);
       onClose();
       // Notify process canvas to place the node and connect edge (if came from edge-task-open)
       try {
@@ -594,7 +642,18 @@ export default function CreateTaskModal({
           isPublicGroup,
         }}));
       } catch {}
-      onCreated?.(); onClose();
+      onCreated?.();
+      // Clear all form state before closing
+      setText('');
+      setPendingFiles([]);
+      setDeadlineAt(null);
+      setAcceptConditionState('NONE');
+      setRemindersDraft([]);
+      setSelectedLabelId(null);
+      setEditTaskId(null);
+      setEditOrigGroupId(null);
+      setExistingMedia([]);
+      onClose();
     } finally { setBusy(false); }
   }
 
@@ -619,7 +678,12 @@ export default function CreateTaskModal({
       try {
         window.dispatchEvent(new CustomEvent('pretask-patched', { detail: { id: editPreTaskId, text: val } }));
       } catch {}
-      onCreated?.(); onClose();
+      onCreated?.();
+      // Clear all form state before closing
+      setText('');
+      setEditPreTaskId(null);
+      setPreCfg(null);
+      onClose();
     } finally { setBusy(false); }
   }
 
@@ -773,7 +837,7 @@ export default function CreateTaskModal({
                     onClick={isPreEdit ? doSavePreTaskEdit : doSaveEdit}
                     style={{ width:'100%', height:'100%', borderRadius:999, background:'#2563eb', color:'#fff', border:'1px solid transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}
                   >💾</button>
-                ) : ((!isEdit && (!!scheduleAt || !!weatherCfg)) || (preCfg && preCfg.links?.length)) ? (
+                ) : ((!isEdit && (!!scheduleAt || !!weatherCfg || !!recurringCfg)) || (preCfg && preCfg.links?.length)) ? (
                   <PreTaskActionsLauncher
                     label="➤"
                     meChatId={chatId}
@@ -797,6 +861,60 @@ export default function CreateTaskModal({
                       if (weatherCfg) {
                         body.payload = { ...(body.payload||{}), weather: { kind: 'TEMP_AT_2M', lat: weatherCfg.lat, lon: weatherCfg.lon, city: weatherCfg.city, op: weatherCfg.op, valueC: weatherCfg.valueC } };
                       }
+                      if (recurringCfg) {
+                        body.recurringConfig = recurringCfg;
+                        // Вычисляем startAt на основе времени из recurringConfig
+                        if (recurringCfg.time && !body.startAt) {
+                          const [hours, minutes] = recurringCfg.time.split(':').map(Number);
+                          const now = new Date();
+                          const firstRun = new Date(now);
+                          firstRun.setHours(hours, minutes, 0, 0);
+
+                          // Если время уже прошло сегодня, планируем на завтра/следующий месяц
+                          if (firstRun <= now) {
+                            if (recurringCfg.pattern === 'daily') {
+                              firstRun.setDate(firstRun.getDate() + 1);
+                            } else if (recurringCfg.pattern === 'monthly') {
+                              firstRun.setMonth(firstRun.getMonth() + 1);
+                            }
+                          }
+
+                          // Для daily: проверяем исключенные дни недели
+                          if (recurringCfg.pattern === 'daily' && recurringCfg.excludeDays) {
+                            let attempts = 0;
+                            while (recurringCfg.excludeDays.includes(firstRun.getDay()) && attempts < 7) {
+                              firstRun.setDate(firstRun.getDate() + 1);
+                              attempts++;
+                            }
+                          }
+
+                          // Для monthly: настраиваем день месяца или неделю
+                          if (recurringCfg.pattern === 'monthly') {
+                            if (recurringCfg.monthDay) {
+                              firstRun.setDate(recurringCfg.monthDay);
+                              if (firstRun <= now) {
+                                firstRun.setMonth(firstRun.getMonth() + 1);
+                              }
+                            } else if (recurringCfg.weekOfMonth !== undefined && recurringCfg.dayOfWeek !== undefined) {
+                              const firstDayOfMonth = new Date(firstRun.getFullYear(), firstRun.getMonth(), 1);
+                              const firstDayOfWeek = firstDayOfMonth.getDay();
+                              const offset = (recurringCfg.dayOfWeek - firstDayOfWeek + 7) % 7;
+                              const targetDate = 1 + offset + (recurringCfg.weekOfMonth - 1) * 7;
+                              firstRun.setDate(targetDate);
+                              if (firstRun <= now) {
+                                firstRun.setMonth(firstRun.getMonth() + 1);
+                                const newFirstDay = new Date(firstRun.getFullYear(), firstRun.getMonth(), 1);
+                                const newFirstDayOfWeek = newFirstDay.getDay();
+                                const newOffset = (recurringCfg.dayOfWeek - newFirstDayOfWeek + 7) % 7;
+                                const newTargetDate = 1 + newOffset + (recurringCfg.weekOfMonth - 1) * 7;
+                                firstRun.setDate(newTargetDate);
+                              }
+                            }
+                          }
+
+                          body.startAt = firstRun.toISOString();
+                        }
+                      }
                       const api = await import('../../api');
                       const resp = await (api as any).createPreTask(body);
                       if (!(resp as any)?.ok) {
@@ -809,7 +927,7 @@ export default function CreateTaskModal({
                         const parentsPre = linksArr.filter((l:any)=>l.preTaskId).map((l:any)=>String(l.preTaskId));
                         window.dispatchEvent(new CustomEvent('pre-task-created', { detail: { preTask: (resp as any)?.preTask || null, parentTaskIds: parentsTask, parentPreTaskIds: parentsPre } }));
                       } catch {}
-                      setText(''); setPreCfg(null); setScheduleAt(null); setWeatherCfg(null); onCreated?.(); onClose();
+                      setText(''); setPreCfg(null); setScheduleAt(null); setWeatherCfg(null); setRecurringCfg(null); onCreated?.(); onClose();
                     }}
                     style={{ width: '100%', height: '100%' }}
                   />
@@ -974,11 +1092,22 @@ export default function CreateTaskModal({
           onClose={() => { setRobotOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
           onPickSchedule={() => { setRobotOpen(false); setScheduleOpen(true); }}
           onPickWeather={() => { setRobotOpen(false); setWeatherOpen(true); }}
+          onPickRecurring={() => { setRobotOpen(false); setRecurringOpen(true); }}
         />
         <WeatherScheduleModal
           open={weatherOpen}
           onClose={() => { setWeatherOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
           onApply={(p) => { setWeatherOpen(false); setWeatherCfg(p); setScheduleAt(p.atIso); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
+        />
+        <RecurringScheduleModal
+          open={recurringOpen}
+          onClose={() => { setRecurringOpen(false); try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {} }}
+          onApply={(cfg) => {
+            setRecurringOpen(false);
+            setRecurringCfg(cfg);
+            setPreCfg({ links: [], mode: 'DATE_PLUS', startAt: null, delayMinutes: null, autoCancelOnAny: false } as any);
+            try { setTimeout(() => textAreaRef.current?.focus(), 0); } catch {}
+          }}
         />
 
         <BountyPicker
