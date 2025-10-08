@@ -43,10 +43,18 @@ export function bountyRouter() {
     if (allowCache && RATES_CACHE.tonRub && now - RATES_CACHE.ts < 60_000) {
       return { rub: RATES_CACHE.tonRub, ts: RATES_CACHE.ts };
     }
+    // Use curl instead of fetch (Node.js fetch has issues on this server)
     async function fetchJson(url) {
-      const r = await fetch(url, { headers: { accept: 'application/json' } });
-      if (!r.ok) throw new Error('bad_rate_' + r.status);
-      return r.json();
+      try {
+        const { execSync } = await import('child_process');
+        const result = execSync(`curl -s -H "accept: application/json" "${url}"`, {
+          timeout: 5000,
+          encoding: 'utf8',
+        });
+        return JSON.parse(result);
+      } catch (e) {
+        throw new Error('fetch_failed');
+      }
     }
     let rub = null;
     // 1) Coingecko toncoin
@@ -55,22 +63,19 @@ export function bountyRouter() {
       rub = Number(j?.toncoin?.rub || null);
     } catch {}
     // 2) Coingecko the-open-network
-    if (!rub) {
+    if (!rub || !Number.isFinite(rub) || rub <= 0) {
       try {
         const j2 = await fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=rub');
         rub = Number(j2?.['the-open-network']?.rub || null);
       } catch {}
     }
     // 3) TonAPI (если ключ задан)
-    if (!rub && TONAPI_KEY) {
+    if ((!rub || !Number.isFinite(rub) || rub <= 0) && TONAPI_KEY) {
       try {
-        const r = await fetch(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`, { headers: { Authorization: `Bearer ${TONAPI_KEY}` } });
-        if (r.ok) {
-          const j3 = await r.json();
-          const rate = j3?.rates?.TON || j3?.rates?.ton || j3?.rates?.[0];
-          const maybeRub = rate?.prices?.RUB || rate?.rub || null;
-          if (maybeRub) rub = Number(maybeRub);
-        }
+        const j3 = await fetchJson(`${TONAPI_BASE_URL}/v2/rates?tokens=ton`);
+        const rate = j3?.rates?.TON || j3?.rates?.ton || j3?.rates?.[0];
+        const maybeRub = rate?.prices?.RUB || rate?.rub || null;
+        if (maybeRub) rub = Number(maybeRub);
       } catch {}
     }
     if (!rub || !Number.isFinite(rub) || rub <= 0) throw new Error('rate_unavailable');
