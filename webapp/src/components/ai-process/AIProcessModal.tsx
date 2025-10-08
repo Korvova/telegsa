@@ -6,6 +6,7 @@
 import { useState, useRef, useEffect } from 'react';
 import AIProcessChat from './AIProcessChat';
 import AIProcessInput from './AIProcessInput';
+import { getAITokenBalance, type AITokenBalance } from '../../api';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -20,10 +21,11 @@ type AIProcessModalProps = {
   chatId: string;
 };
 
-export default function AIProcessModal({ isOpen, onClose, groupId: _groupId, chatId: _chatId }: AIProcessModalProps) {
+export default function AIProcessModal({ isOpen, onClose, groupId: _groupId, chatId }: AIProcessModalProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [processResult, _setProcessResult] = useState<string | null>(null);
+  const [tokenBalance, setTokenBalance] = useState<AITokenBalance | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Начальное приветственное сообщение от ИИ
@@ -38,6 +40,15 @@ export default function AIProcessModal({ isOpen, onClose, groupId: _groupId, cha
       ]);
     }
   }, [isOpen, messages.length]);
+
+  // Загрузка баланса токенов при открытии
+  useEffect(() => {
+    if (isOpen && chatId) {
+      getAITokenBalance(chatId)
+        .then(setTokenBalance)
+        .catch((err) => console.error('Failed to load token balance:', err));
+    }
+  }, [isOpen, chatId]);
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -117,10 +128,18 @@ export default function AIProcessModal({ isOpen, onClose, groupId: _groupId, cha
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       >
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: 18, fontWeight: 600 }}>🪄 AI-помощник</div>
           <div style={{ fontSize: 12, opacity: 0.9, marginTop: 2 }}>
-            Опишите что хотите спланировать
+            {tokenBalance ? (
+              <span>
+                Токены: {tokenBalance.balance.toLocaleString()}
+                {tokenBalance.status === 'low' && ' ⚠️'}
+                {tokenBalance.status === 'critical' && ' 🔴'}
+              </span>
+            ) : (
+              'Опишите что хотите спланировать'
+            )}
           </div>
         </div>
         <button

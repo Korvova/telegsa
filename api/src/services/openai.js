@@ -5,7 +5,10 @@
  * - Генерацию диалога с пользователем
  * - Создание структурированного описания процесса
  * - Парсинг DSL в JSON-структуру
+ * - Учет использованных токенов
  */
+
+import { hasEnoughTokens, recordUsage } from './ai-tokens.js';
 
 // System prompt для GPT-4
 const SYSTEM_PROMPT = `Ты — помощник по созданию процессов и планированию задач в системе управления проектами.
@@ -51,15 +54,24 @@ const SYSTEM_PROMPT = `Ты — помощник по созданию проц�
 /**
  * Генерирует ответ от AI на основе контекста и истории сообщений
  * @param {Object} params
+ * @param {Object} params.prisma - Prisma client
+ * @param {string} params.chatId - ID пользователя
+ * @param {string} params.groupId - ID группы (опционально)
  * @param {Array} params.messages - История сообщений [{role, content}]
  * @param {Object} params.context - Контекст группы и участников
- * @returns {Promise<{reply: string, isComplete: boolean, processDescription?: string}>}
+ * @returns {Promise<{reply: string, isComplete: boolean, processDescription?: string, tokensUsed?: number}>}
  */
-export async function generateAIResponse({ messages, context }) {
+export async function generateAIResponse({ prisma, chatId, groupId, messages, context }) {
   try {
     const openaiKey = process.env.OPENAI_API_KEY;
     if (!openaiKey) {
       throw new Error('OPENAI_API_KEY not configured');
+    }
+
+    // Проверяем баланс токенов (примерно 1000 токенов на запрос)
+    const hasBalance = await hasEnoughTokens(prisma, chatId, 1000);
+    if (!hasBalance) {
+      throw new Error('INSUFFICIENT_TOKENS');
     }
 
     // Формируем системное сообщение с контекстом
@@ -101,6 +113,29 @@ ${context.members.map(m => `- ${m.name}${m.role ? ` (${m.role})` : ''}${m.descri
     const data = await response.json();
     const aiReply = data.choices[0]?.message?.content || 'Произошла ошибка';
 
+    // Получаем информацию о токенах из ответа
+    const usage = data.usage || {};
+    const inputTokens = usage.prompt_tokens || 0;
+    const outputTokens = usage.completion_tokens || 0;
+    const totalTokens = usage.total_tokens || 0;
+
+    // Записываем использование токенов
+    if (totalTokens > 0) {
+      try {
+        await recordUsage(prisma, {
+          chatId,
+          groupId,
+          inputTokens,
+          outputTokens,
+          model: 'gpt-4o-mini',
+          promptType: 'process',
+        });
+      } catch (usageError) {
+        console.error('[OpenAI] Failed to record token usage:', usageError);
+        // Не прерываем выполнение, если не удалось записать usage
+      }
+    }
+
     // Проверяем, готов ли процесс
     const isComplete = aiReply.includes('[PROCESS_READY]');
     let processDescription = null;
@@ -114,6 +149,7 @@ ${context.members.map(m => `- ${m.name}${m.role ? ` (${m.role})` : ''}${m.descri
       reply: isComplete ? processDescription : aiReply,
       isComplete,
       processDescription: isComplete ? processDescription : null,
+      tokensUsed: totalTokens,
     };
   } catch (error) {
     console.error('[OpenAI] generateAIResponse error:', error);

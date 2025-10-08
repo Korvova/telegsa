@@ -233,6 +233,8 @@ model User {
   rankScore   Int      @default(0)   // итоговые очки 🦅/score
   rankLevel   String?               // слаг/икон-уровень (например, "squirrel", "eagle")
   rankUpdatedAt DateTime?           // когда обновлялся снапшот
+  // AI tokens balance (for OpenAI API usage)
+  aiTokensBalance Int @default(30000) // начальный баланс 30000 токенов
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -253,6 +255,42 @@ model UserQuotaPurchase {
   createdAt DateTime @default(now())
 
   @@index([chatId])
+}
+
+// === AI Token Usage History ===
+model AITokenUsage {
+  id              String   @id @default(cuid())
+  chatId          String
+  groupId         String?  // группа, в которой использовался AI (если есть)
+  inputTokens     Int      // входные токены (prompt)
+  outputTokens    Int      // выходные токены (completion)
+  totalTokens     Int      // общее количество токенов
+  model           String   @default("gpt-4o") // модель OpenAI
+  promptType      String   @default("process") // тип промпта: process, other
+  balanceBefore   Int      // баланс до использования
+  balanceAfter    Int      // баланс после использования
+  createdAt       DateTime @default(now())
+
+  @@index([chatId])
+  @@index([createdAt])
+}
+
+// === AI Token Purchase History ===
+model AITokenPurchase {
+  id              String   @id @default(cuid())
+  chatId          String
+  tokensAmount    Int      // количество купленных токенов
+  usdtAmount      String   // сумма в USDT (храним как строку для точности)
+  tonTxHash       String?  // хеш транзакции TON
+  status          String   @default("pending") // pending, completed, failed
+  balanceBefore   Int      // баланс до пополнения
+  balanceAfter    Int      // баланс после пополнения
+  createdAt       DateTime @default(now())
+  completedAt     DateTime? // когда подтверждена оплата
+
+  @@index([chatId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model GroupMember {

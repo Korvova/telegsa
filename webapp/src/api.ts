@@ -1194,3 +1194,51 @@ export async function deletePreTask(id: string) {
   }
   try { const j = await r.json(); return j as { ok: boolean; error?: string }; } catch { return { ok: true } as any; }
 }
+
+/* ==================== AI Tokens API ==================== */
+
+export type AITokenBalance = {
+  balance: number;
+  status: 'normal' | 'low' | 'critical';
+  lastUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    createdAt: string;
+  } | null;
+};
+
+export type AITokenPackage = {
+  tokens: number;
+  usdt: string;
+  label: string;
+  recommended: boolean;
+};
+
+export async function getAITokenBalance(chatId: string): Promise<AITokenBalance> {
+  const r = await fetch(`${API_BASE}/ai/tokens/balance?chatId=${encodeURIComponent(chatId)}`);
+  if (!r.ok) throw new Error(`Failed to get AI token balance: ${r.status}`);
+  const data = await r.json();
+  return {
+    balance: data.balance,
+    status: data.status,
+    lastUsage: data.lastUsage,
+  };
+}
+
+export async function getAITokenPackages(): Promise<AITokenPackage[]> {
+  const r = await fetch(`${API_BASE}/ai/tokens/packages`);
+  if (!r.ok) throw new Error(`Failed to get AI token packages: ${r.status}`);
+  const data = await r.json();
+  return data.packages;
+}
+
+export async function createAITokenPurchase(chatId: string, usdtAmount: string) {
+  const r = await fetch(`${API_BASE}/ai/tokens/purchase`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, usdtAmount }),
+  });
+  if (!r.ok) throw new Error(`Failed to create purchase: ${r.status}`);
+  return await r.json();
+}

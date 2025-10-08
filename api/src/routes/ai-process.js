@@ -1,9 +1,16 @@
 /**
- * API routes для AI-помощника создания процессов
+ * API routes для AI-помощника создания процессов и управления токенами
  */
 
 import { Router } from 'express';
 import { generateAIResponse } from '../services/openai.js';
+import {
+  getBalance,
+  getUsageHistory,
+  createPurchase,
+  confirmPurchase,
+  getPurchasePackages,
+} from '../services/ai-tokens.js';
 
 export function aiProcessRouter({ prisma }) {
   const router = Router();
@@ -29,6 +36,9 @@ export function aiProcessRouter({ prisma }) {
 
       // Генерируем ответ от AI
       const aiResponse = await generateAIResponse({
+        prisma,
+        chatId,
+        groupId,
         messages,
         context,
       });
@@ -38,9 +48,20 @@ export function aiProcessRouter({ prisma }) {
         reply: aiResponse.reply,
         isComplete: aiResponse.isComplete,
         processDescription: aiResponse.processDescription,
+        tokensUsed: aiResponse.tokensUsed,
       });
     } catch (error) {
       console.error('[AI Process] message error:', error);
+
+      // Специальная обработка ошибки недостаточного баланса
+      if (error.message === 'INSUFFICIENT_TOKENS') {
+        return res.status(402).json({
+          ok: false,
+          error: 'insufficient_tokens',
+          message: 'Недостаточно токенов для выполнения запроса',
+        });
+      }
+
       return res.status(500).json({
         ok: false,
         error: 'internal_error',
@@ -73,6 +94,141 @@ export function aiProcessRouter({ prisma }) {
       });
     } catch (error) {
       console.error('[AI Process] create error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * GET /ai/tokens/balance
+   * Получить баланс токенов пользователя
+   */
+  router.get('/ai/tokens/balance', async (req, res) => {
+    try {
+      const { chatId } = req.query;
+
+      if (!chatId) {
+        return res.status(400).json({ ok: false, error: 'chatId_required' });
+      }
+
+      const balanceData = await getBalance(prisma, chatId);
+
+      return res.json({
+        ok: true,
+        ...balanceData,
+      });
+    } catch (error) {
+      console.error('[AI Tokens] balance error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * GET /ai/tokens/usage
+   * Получить историю использования токенов
+   */
+  router.get('/ai/tokens/usage', async (req, res) => {
+    try {
+      const { chatId, limit = 10 } = req.query;
+
+      if (!chatId) {
+        return res.status(400).json({ ok: false, error: 'chatId_required' });
+      }
+
+      const history = await getUsageHistory(prisma, chatId, parseInt(limit));
+
+      return res.json({
+        ok: true,
+        ...history,
+      });
+    } catch (error) {
+      console.error('[AI Tokens] usage error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * GET /ai/tokens/packages
+   * Получить доступные пакеты для покупки
+   */
+  router.get('/ai/tokens/packages', async (req, res) => {
+    try {
+      const packages = getPurchasePackages();
+
+      return res.json({
+        ok: true,
+        packages,
+      });
+    } catch (error) {
+      console.error('[AI Tokens] packages error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /ai/tokens/purchase
+   * Создать запрос на пополнение токенов
+   */
+  router.post('/ai/tokens/purchase', async (req, res) => {
+    try {
+      const { chatId, usdtAmount } = req.body;
+
+      if (!chatId || !usdtAmount) {
+        return res.status(400).json({ ok: false, error: 'missing_parameters' });
+      }
+
+      const purchase = await createPurchase(prisma, chatId, usdtAmount);
+
+      return res.json({
+        ok: true,
+        purchase,
+      });
+    } catch (error) {
+      console.error('[AI Tokens] purchase error:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'internal_error',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /ai/tokens/purchase/:id/confirm
+   * Подтвердить пополнение (admin only)
+   */
+  router.post('/ai/tokens/purchase/:id/confirm', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { tonTxHash } = req.body;
+
+      if (!tonTxHash) {
+        return res.status(400).json({ ok: false, error: 'tx_hash_required' });
+      }
+
+      const result = await confirmPurchase(prisma, id, tonTxHash);
+
+      return res.json({
+        ok: true,
+        ...result,
+      });
+    } catch (error) {
+      console.error('[AI Tokens] confirm error:', error);
       return res.status(500).json({
         ok: false,
         error: 'internal_error',

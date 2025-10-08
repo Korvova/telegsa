@@ -625,4 +625,146 @@ const [aiModalOpen, setAiModalOpen] = useState(false);
 
 ---
 
+## 💰 Система токенов AI (подготовка базы)
+
+**Дата:** 2025-10-08
+
+### Описание
+
+Система оплаты использования OpenAI API через токены. Пользователи покупают токены за USDT через TON, используют их при работе с AI-помощником.
+
+### База данных
+
+**User.aiTokensBalance** (Int, default: 10000):
+- Текущий баланс токенов пользователя
+- Начальный баланс: 10000 токенов (для тестирования)
+
+**AITokenUsage** - история использования:
+```prisma
+model AITokenUsage {
+  id              String   @id @default(cuid())
+  chatId          String
+  groupId         String?
+  inputTokens     Int      // prompt tokens
+  outputTokens    Int      // completion tokens
+  totalTokens     Int      // total
+  model           String   @default("gpt-4o")
+  promptType      String   @default("process")
+  balanceBefore   Int
+  balanceAfter    Int
+  createdAt       DateTime @default(now())
+}
+```
+
+**AITokenPurchase** - история пополнений:
+```prisma
+model AITokenPurchase {
+  id              String   @id @default(cuid())
+  chatId          String
+  tokensAmount    Int
+  usdtAmount      String   // точная сумма в USDT
+  tonTxHash       String?
+  status          String   @default("pending") // pending, completed, failed
+  balanceBefore   Int
+  balanceAfter    Int
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+}
+```
+
+### Миграция
+
+```bash
+cd /var/www/telegsar/api
+npx prisma migrate dev --name add_ai_tokens_system
+```
+
+### Планируемые функции
+
+**1. Учет токенов при каждом запросе к AI:**
+- Получить usage из OpenAI response
+- Создать запись AITokenUsage
+- Уменьшить User.aiTokensBalance
+- Если баланс < totalTokens - показать ошибку
+
+**2. Отображение баланса:**
+- В заголовке AI-модалки: "🪄 AI-помощник | Токены: 5000"
+- Прогресс-бар или цветовая индикация (зеленый > 5000, желтый > 1000, красный < 1000)
+
+**3. Модалка пополнения:**
+- Когда токенов недостаточно
+- Варианты пакетов:
+  - 10,000 токенов = ? USDT
+  - 50,000 токенов = ? USDT
+  - 100,000 токенов = ? USDT
+- Оплата через TON (USDT)
+- После подтверждения транзакции - создать AITokenPurchase, увеличить баланс
+
+**4. Админ-панель:**
+- Просмотр покупок (pending/completed/failed)
+- Ручное подтверждение пополнения
+- Статистика использования токенов
+
+### Вопросы для реализации
+
+1. **Курс обмена**: 1 USDT = сколько токенов?
+2. **Где показывать баланс**: только в AI-модалке или на главной странице?
+3. **Пакеты**: какие варианты пополнения предложить?
+4. **Минимальный баланс**: при каком балансе показывать предупреждение?
+5. **Бесплатные токены**: давать ли бонус при регистрации?
+
+### API endpoints (TODO)
+
+**GET /api/ai/tokens/balance** - получить баланс:
+```json
+{
+  "balance": 5000,
+  "lastUsage": {
+    "inputTokens": 150,
+    "outputTokens": 350,
+    "totalTokens": 500,
+    "createdAt": "2025-10-08T16:22:00Z"
+  }
+}
+```
+
+**GET /api/ai/tokens/usage** - история использования:
+```json
+{
+  "usage": [
+    {
+      "id": "...",
+      "totalTokens": 500,
+      "balanceAfter": 9500,
+      "createdAt": "2025-10-08T16:22:00Z"
+    }
+  ],
+  "total": 50
+}
+```
+
+**POST /api/ai/tokens/purchase** - создать запрос на пополнение:
+```json
+Request: {
+  "tokensAmount": 10000,
+  "usdtAmount": "5.00"
+}
+
+Response: {
+  "id": "purchase_id",
+  "paymentAddress": "UQC...",
+  "amount": "5.00",
+  "status": "pending"
+}
+```
+
+**POST /api/ai/tokens/purchase/:id/confirm** - подтвердить пополнение (admin):
+```json
+{
+  "tonTxHash": "abc123..."
+}
+```
+
+---
+
 Конец файла.
