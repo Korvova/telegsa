@@ -165,7 +165,7 @@ export default function PostCreateActionsLauncher({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 2000,
+        zIndex: 1000010,
         background: 'rgba(0,0,0,.45)',
         display: 'flex',
         alignItems: 'center',
