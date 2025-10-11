@@ -158,33 +158,38 @@ export default function IosPostCreateActionsLauncher({
 
   // ==== UI ====
 
-  // 1) собираем JSX оверлея
+  // 1) собираем JSX оверлея (как модальные окна 🚩☝️⏰ в IosQuickCreatePanel)
   const sheet = !open ? null : (
     <div
       onClick={closeSheet}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 99999,
-        background: 'rgba(0,0,0,.5)',
+        zIndex: 1000010,
+        background: 'rgba(0,0,0,.8)',
         display: 'flex',
-        alignItems: 'flex-end',
+        alignItems: 'center',
         justifyContent: 'center',
-        padding: 12,
-        paddingBottom: 80,
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0px)',
+        backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)',
+        WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any),
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onMouseDownCapture={(e) => e.stopPropagation()}
+        onPointerDownCapture={(e) => e.stopPropagation()}
+        onTouchStartCapture={(e) => e.stopPropagation()}
         style={{
-          width: '100%',
-          maxWidth: 520,
-          background: '#131a26',
+          background: '#1b2030',
+          color: '#e8eaed',
           border: '1px solid #2a3346',
-          borderRadius: 16,
+          borderRadius: 12,
           padding: 12,
-          color: '#fff',
-          boxShadow: '0 16px 50px rgba(0,0,0,.45)',
+          width: 'min(420px, 92vw)',
         }}
       >
         {subView === 'root' ? (
