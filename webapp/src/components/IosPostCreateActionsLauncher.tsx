@@ -1,4 +1,4 @@
-// webapp/src/components/PostCreateActionsLauncher.tsx
+// webapp/src/components/IosPostCreateActionsLauncher.tsx
 import React, { useMemo, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
 import { prepareShareMessage } from '../api';
@@ -21,7 +21,7 @@ type Props = {
   onMake: () => Promise<MakeResult>;
 };
 
-export default function PostCreateActionsLauncher({
+export default function IosPostCreateActionsLauncher({
   label = 'Создать',
   disabled,
   style,

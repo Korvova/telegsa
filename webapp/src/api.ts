@@ -1295,3 +1295,119 @@ export async function processPendingAITokenPurchases(chatId: string) {
   }
   return await r.json();
 }
+
+/* ---------- Rank Purchase ---------- */
+
+export type RankInfo = {
+  rank: string;
+  score: number;
+  activeRank: string;
+  earnedRank: string;
+  purchasedRank: string | null;
+  trialEndsAt: string | null;
+  updatedAt: string | null;
+};
+
+export async function getRankInfo(chatId: string): Promise<RankInfo> {
+  const r = await fetch(`${API_BASE}/me/rank?chatId=${encodeURIComponent(chatId)}`);
+  if (!r.ok) throw new Error(`Failed to get rank info: ${r.status}`);
+  const data = await r.json();
+  return {
+    rank: data.rank,
+    score: data.score,
+    activeRank: data.activeRank,
+    earnedRank: data.earnedRank,
+    purchasedRank: data.purchasedRank,
+    trialEndsAt: data.trialEndsAt,
+    updatedAt: data.updatedAt,
+  };
+}
+
+export async function getRankPrices(): Promise<Record<string, number>> {
+  const r = await fetch(`${API_BASE}/me/rank/prices`);
+  if (!r.ok) throw new Error(`Failed to get rank prices: ${r.status}`);
+  const data = await r.json();
+  return data.prices;
+}
+
+export async function getRankRates(): Promise<{ tonRub: number; updatedAt: number }> {
+  const r = await fetch(`${API_BASE}/me/rank/rates`);
+  if (!r.ok) throw new Error(`Failed to get rates: ${r.status}`);
+  const data = await r.json();
+  return {
+    tonRub: data.tonRub,
+    updatedAt: data.updatedAt,
+  };
+}
+
+export async function createRankPurchase(chatId: string, rank: string) {
+  const r = await fetch(`${API_BASE}/me/rank/purchase`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, rank }),
+  });
+  if (!r.ok) throw new Error(`Failed to create rank purchase: ${r.status}`);
+  return await r.json();
+}
+
+export async function createRankPaymentRequest(params: {
+  chatId: string;
+  rubAmount: string;
+  purchaseId?: string;
+}): Promise<{ ok: boolean; transaction: any; purchaseId?: string; tonAmount: string; tonRubRate: number; error?: string; message?: string }> {
+  const r = await fetch(`${API_BASE}/me/rank/payment-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    throw new Error(data.message || data.error || `Failed to create payment request: ${r.status}`);
+  }
+  return data;
+}
+
+export async function confirmRankPurchase(purchaseId: string, tonTxHash: string) {
+  const r = await fetch(`${API_BASE}/me/rank/purchase/${purchaseId}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tonTxHash }),
+  });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.message || data.error || `Failed to confirm rank purchase: ${r.status}`);
+  }
+  return await r.json();
+}
+
+/* ---------- API Token Functions ---------- */
+
+export type APITokenInfo = {
+  chatId: string;
+  firstName: string | null;
+  lastName: string | null;
+  apiToken: string;
+  createdAt: string;
+};
+
+export async function getAPITokenInfo(chatId: string): Promise<APITokenInfo> {
+  const r = await fetch(`${API_BASE}/api/v1/token/info?chatId=${encodeURIComponent(chatId)}`);
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.message || data.error || `Failed to get API token: ${r.status}`);
+  }
+  return await r.json();
+}
+
+export async function regenerateAPIToken(chatId: string): Promise<APITokenInfo> {
+  const r = await fetch(`${API_BASE}/api/v1/token/regenerate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId }),
+  });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.message || data.error || `Failed to regenerate token: ${r.status}`);
+  }
+  return await r.json();
+}

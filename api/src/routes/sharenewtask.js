@@ -46,6 +46,7 @@ export function shareNewTaskRouter({ prisma }) {
       const { chatId, taskId } = req.body || {};
       const who = String(chatId || '');
       const srcId = String(taskId || '');
+      console.log('[sharenewtask.accept] called with:', { chatId: who, taskId: srcId });
       if (!who || !srcId) return res.status(400).json({ ok: false, error: 'bad_request' });
 
       const src = await prisma.task.findUnique({
@@ -74,6 +75,27 @@ export function shareNewTaskRouter({ prisma }) {
         inbox = await prisma.column.create({
           data: { chatId: String(boardChatId), name: inboxName, order: count },
         });
+      }
+
+      // Автоматически добавляем пользователя в участники группы ПЕРЕД дедупликацией
+      // чтобы он был добавлен даже если задача уже существует
+      if (groupId && who) {
+        try {
+          const existingMember = await prisma.groupMember.findFirst({
+            where: { groupId, chatId: who },
+          });
+          if (!existingMember) {
+            await prisma.groupMember.create({
+              data: { groupId, chatId: who, role: 'member' },
+            });
+            console.log('[sharenewtask.accept] ✅ Added user to group:', { groupId, chatId: who });
+          } else {
+            console.log('[sharenewtask.accept] ℹ️ User already in group:', { groupId, chatId: who });
+          }
+        } catch (err) {
+          console.error('[sharenewtask.accept] ❌ Failed to add user to group:', err);
+          // Не блокируем создание задачи, если не удалось добавить в группу
+        }
       }
 
       // Дедупликация: ищем уже существующую копию этой задачи именно у этого пользователя в рамках этой борды/группы (по тексту + assignee + колонкам группы)
@@ -106,10 +128,43 @@ export function shareNewTaskRouter({ prisma }) {
           order: nextOrder,
           text: src.text,
           assigneeChatId: who,
-          createdByChatId: who,
-          // если есть спецполя — не копируем, чтобы не мешать логике событий и т.д.
+          createdByChatId: src.createdByChatId || src.chatId, // Оригинальный создатель задачи
+          // Копируем все важные параметры из исходной задачи
+          deadlineAt: src.deadlineAt,
+          acceptCondition: src.acceptCondition,
+          expenses: src.expenses,
+          complexity: src.complexity,
+          type: src.type,
+          startAt: src.startAt,
+          endAt: src.endAt,
+          // НЕ копируем: bounty, progress, tgMessageId, sourceChatId/sourceMessageId, fromProcess, processLeftKeys/processRightKeys, originPreTaskId
         },
       });
+
+      // Копируем напоминания из исходной задачи
+      try {
+        const srcReminders = await prisma.taskReminder.findMany({
+          where: { taskId: srcId },
+        });
+        if (srcReminders.length > 0) {
+          await prisma.taskReminder.createMany({
+            data: srcReminders.map(r => ({
+              id: 'cmgm' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
+              taskId: clone.id,
+              target: r.target,
+              fireAt: r.fireAt,
+              createdBy: who,
+              replyToMessageId: null, // не копируем ссылку на сообщение
+              sentAt: null, // напоминание еще не отправлено
+              tries: 0,
+            })),
+          });
+          console.log(`[sharenewtask.accept] ✅ Copied ${srcReminders.length} reminders`);
+        }
+      } catch (err) {
+        console.error('[sharenewtask.accept] ⚠️ Failed to copy reminders:', err);
+        // Не блокируем создание задачи, если не удалось скопировать напоминания
+      }
 
       return res.json({ ok: true, taskId: clone.id, created: true });
     } catch (e) {

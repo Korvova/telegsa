@@ -31,6 +31,7 @@ import { preTasksRouter } from './routes/pretasks.js';
 import { expensesRouter } from './routes/expenses.js';
 import { rankRouter } from './routes/rank.js';
 import { ratingRouter } from './routes/rating.js';
+import { apiV1Router } from './routes/api-v1.js';
 
 
 import { execa } from 'execa';
@@ -413,6 +414,9 @@ app.use(deadlineRouter);
 app.use(ratingRouter);
 app.use(rankRouter);
 
+// External API v1
+app.use('/api/v1', apiV1Router);
+
 /* ---------- Мероприятия ---------- */
 
 app.use('/events', eventsRouter);
@@ -793,7 +797,13 @@ app.post('/webhook', async (req, res) => {
                   await tx.user.upsert({
                     where: { chatId: id },
                     update: { username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
-                    create: { chatId: id, username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
+                    create: {
+                      chatId: id,
+                      username: u.username || null,
+                      firstName: u.first_name || null,
+                      lastName: u.last_name || null,
+                      rankTrialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                    },
                   });
                 }
               });
@@ -1043,7 +1053,13 @@ app.post('/webhook', async (req, res) => {
               await tx.user.upsert({
                 where: { chatId: id },
                 update: { username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
-                create: { chatId: id, username: u.username || null, firstName: u.first_name || null, lastName: u.last_name || null },
+                create: {
+                  chatId: id,
+                  username: u.username || null,
+                  firstName: u.first_name || null,
+                  lastName: u.last_name || null,
+                  rankTrialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                },
               });
             }
           });
@@ -1430,6 +1446,8 @@ app.post('/me', async (req, res) => {
         firstName: firstName || null,
         lastName: lastName || null,
         username: username || null,
+        // Trial Lion rank for 30 days for new users
+        rankTrialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
       update: {
         firstName: firstName || null,
@@ -1467,7 +1485,11 @@ app.post('/me/theme', async (req, res) => {
     const valid = /^#([0-9a-fA-F]{6})$/.test(v) ? v : null;
     await prisma.user.upsert({
       where: { chatId: String(chatId) },
-      create: { chatId: String(chatId), themeBg: valid },
+      create: {
+        chatId: String(chatId),
+        themeBg: valid,
+        rankTrialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
       update: { themeBg: valid },
     });
     res.json({ ok: true, themeBg: valid });
@@ -2682,8 +2704,18 @@ app.get('/groups', async (req, res) => {
 
     let myGroups = await prisma.group.findMany({ where: { ownerChatId: chatId } });
     if (myGroups.length === 0) {
-      const created = await prisma.group.create({ data: { ownerChatId: chatId, title: 'Моя группа' } });
-      myGroups = [created];
+      try {
+        const created = await prisma.group.create({ data: { ownerChatId: chatId, title: 'Моя группа' } });
+        myGroups = [created];
+      } catch (err) {
+        // Если группа с таким названием уже существует (race condition или дубликат),
+        // просто перезагружаем список групп
+        if (err?.code === 'P2002') {
+          myGroups = await prisma.group.findMany({ where: { ownerChatId: chatId } });
+        } else {
+          throw err;
+        }
+      }
     }
 
     const memberLinks = await prisma.groupMember.findMany({ where: { chatId }, include: { group: true } });

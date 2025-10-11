@@ -233,8 +233,15 @@ model User {
   rankScore   Int      @default(0)   // итоговые очки 🦅/score
   rankLevel   String?               // слаг/икон-уровень (например, "squirrel", "eagle")
   rankUpdatedAt DateTime?           // когда обновлялся снапшот
+  // Trial Lion rank for 30 days (new users)
+  rankTrialEndsAt DateTime?         // когда заканчивается trial период LION
+  rankPurchased   UserRank?         // купленный ранг (если есть)
+  rankPurchasedAt DateTime?         // когда куплен ранг
   // AI tokens balance (for OpenAI API usage)
   aiTokensBalance Int @default(30000) // начальный баланс 30000 токенов
+  // API access token
+  apiToken String? @unique // UUID токен для внешнего API доступа
+  apiTokenCreatedAt DateTime? // когда создан API токен
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -285,6 +292,23 @@ model AITokenPurchase {
   status          String   @default("pending") // pending, completed, failed
   balanceBefore   Int      // баланс до пополнения
   balanceAfter    Int      // баланс после пополнения
+  createdAt       DateTime @default(now())
+  completedAt     DateTime? // когда подтверждена оплата
+
+  @@index([chatId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// === Rank Purchase History ===
+model RankPurchase {
+  id              String   @id @default(cuid())
+  chatId          String
+  rank            UserRank // купленный ранг
+  rubAmount       String   // сумма в рублях (храним как строку для точности)
+  tonAmount       String   // сумма в TON (храним как строку для точности)
+  tonTxHash       String?  // хеш транзакции TON
+  status          String   @default("pending") // pending, completed, failed
   createdAt       DateTime @default(now())
   completedAt     DateTime? // когда подтверждена оплата
 

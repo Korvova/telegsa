@@ -1,7 +1,7 @@
 // webapp/src/components/Achievements.tsx
 import { useEffect, useMemo, useState } from 'react';
 import type { TaskFeedItem } from '../api';
-import { listGroups, fetchBoard, type Column, getRankInfo, createRankPurchase, createRankPaymentRequest, type RankInfo } from '../api';
+import { listGroups, fetchBoard, type Column } from '../api';
 import OverlayModal from './OverlayModal';
 import AchievementsRulesModal from './AchievementsRulesModal';
 
@@ -104,22 +104,22 @@ export function computeAchievements(items: TaskFeedItem[], meChatId: string): Ac
 export type RankDef = { threshold: number; icon: string; title: string; code: string; priceRub?: number; perks?: string[] };
 
 export const RANKS: RankDef[] = [
-  { threshold: 0, icon: '🐜', title: 'Муравей', code: 'ANT' },
-  { threshold: 10, icon: '🐟', title: 'Рыба', code: 'FISH', priceRub: 1000, perks: ['Возможность отправлять голосовые сообщения.'] },
-  { threshold: 500, icon: '🦂', title: 'Скорпион', code: 'SCORPION', priceRub: 5000, perks: ['Дедлайны задач', 'Комиссия 6% вместо 8% за вознаграждения'] },
-  { threshold: 800, icon: '🐿️', title: 'Белка', code: 'SQUIRREL', priceRub: 10000, perks: ['Напоминания задач', 'Комиссия 5% вместо 6%'] },
-  { threshold: 1100, icon: '🐱', title: 'Кот', code: 'CAT', priceRub: 15000, perks: ['1 бесплатный публичный проект'] },
-  { threshold: 1400, icon: '🐶', title: 'Собака', code: 'DOG', priceRub: 20000, perks: ['Скидка 20% на тарифы'] },
-  { threshold: 1900, icon: '🐺', title: 'Волк', code: 'WOLF', priceRub: 30000, perks: ['Комиссия 4% вместо 5%', 'Скидка 30% на тарифы', '1 предзадача'] },
-  { threshold: 2400, icon: '🐻', title: 'Медведь', code: 'BEAR', priceRub: 40000, perks: ['Комиссия 3% вместо 4%', 'Скидка 40% на тарифы', '3 предзадачи', 'Неограниченные ярлыки'] },
-  { threshold: 3700, icon: '🦅', title: 'Орёл', code: 'EAGLE', priceRub: 50000, perks: ['Подписки на задачи', 'Фото и согласование (условие: фото + согласование)', 'Скидка 50% на тарифы'] },
-  { threshold: 4600, icon: '🐎', title: 'Лошадь', code: 'HORSE', priceRub: 60000, perks: ['Добавлять Фото+согласование, Документ+согласование'] },
-  { threshold: 5700, icon: '🐉', title: 'Дракон', code: 'DRAGON', priceRub: 70000, perks: ['Визуальные БП с предзадачами до 5'] },
-  { threshold: 7000, icon: '🦈', title: 'Акула', code: 'SHARK', priceRub: 80000, perks: ['Комиссия 2% вместо 3%', '100 предзадач', 'Скидка 50% на тарифы'] },
-  { threshold: 8500, icon: '🐘', title: 'Слон', code: 'ELEPHANT', priceRub: 90000, perks: ['Комиссия 2% вместо 3%', '10 000 предзадач', 'Скидка 60% на тарифы'] },
-  { threshold: 10300, icon: '🦖', title: 'Тирекс', code: 'TREX', priceRub: 95000, perks: ['Чекеры погоды и перезапуска процессов (бесплатно)'] },
-  { threshold: 12500, icon: '🐯', title: 'Тигр', code: 'TIGER', priceRub: 98000, perks: ['Комиссия 1% вместо 2%', 'Скидка 70% на тарифы', '3 бесплатные публичные группы', 'Доступ к ИИ для автоматизации БП'] },
-  { threshold: 20000, icon: '🦁', title: 'Лев', code: 'LION', priceRub: 100000, perks: ['Комиссия 0% за вознаграждения', 'Скидка 80% на тарифы', 'Ранний доступ к обновлениям', 'Персональный чат с поддержкой'] },
+  { threshold: 0, icon: '🐜', title: 'Муравей' },
+  { threshold: 10, icon: '🐟', title: 'Рыба', perks: ['Возможность отправлять голосовые сообщения.'] },
+  { threshold: 500, icon: '🦂', title: 'Скорпион', perks: ['Дедлайны задач', 'Комиссия 6% вместо 8% за вознаграждения'] },
+  { threshold: 800, icon: '🐿️', title: 'Белка', perks: ['Напоминания задач', 'Комиссия 5% вместо 6%'] },
+  { threshold: 1100, icon: '🐱', title: 'Кот', perks: ['1 бесплатный публичный проект'] },
+  { threshold: 1400, icon: '🐶', title: 'Собака', perks: ['Скидка 20% на тарифы'] },
+  { threshold: 1900, icon: '🐺', title: 'Волк', perks: ['Комиссия 4% вместо 5%', 'Скидка 30% на тарифы', '1 предзадача'] },
+  { threshold: 2400, icon: '🐻', title: 'Медведь', perks: ['Комиссия 3% вместо 4%', 'Скидка 40% на тарифы', '3 предзадачи', 'Неограниченные ярлыки'] },
+  { threshold: 3700, icon: '🦅', title: 'Орёл', perks: ['Подписки на задачи', 'Фото и согласование (условие: фото + согласование)', 'Скидка 50% на тарифы'] },
+  { threshold: 4600, icon: '🐎', title: 'Лошадь', perks: ['Добавлять Фото+согласование, Документ+согласование'] },
+  { threshold: 5700, icon: '🐉', title: 'Дракон', perks: ['Визуальные БП с предзадачами до 5'] },
+  { threshold: 7000, icon: '🦈', title: 'Акула', perks: ['Комиссия 2% вместо 3%', '100 предзадач', 'Скидка 50% на тарифы'] },
+  { threshold: 8500, icon: '🐘', title: 'Слон', perks: ['Комиссия 2% вместо 3%', '10 000 предзадач', 'Скидка 60% на тарифы'] },
+  { threshold: 10300, icon: '🦖', title: 'Тирекс', perks: ['Чекеры погоды и перезапуска процессов (бесплатно)'] },
+  { threshold: 12500, icon: '🐯', title: 'Тигр', perks: ['Комиссия 1% вместо 2%', 'Скидка 70% на тарифы', '3 бесплатные публичные группы', 'Доступ к ИИ для автоматизации БП'] },
+  { threshold: 20000, icon: '🦁', title: 'Лев', perks: ['Комиссия 0% за вознаграждения', 'Скидка 80% на тарифы', 'Ранний доступ к обновлениям', 'Персональный чат с поддержкой'] },
 ];
 
 export function pickRank(eaglesScore: number): { current: RankDef; next: RankDef | null } {
@@ -316,8 +316,7 @@ export function RankBadgeButton({ items, meChatId }: { items: TaskFeedItem[]; me
         if (!r.ok) { if (alive) setSavedRank(null); return; }
         const j = await r.json().catch(() => ({}));
         if (!alive) return;
-        // Use activeRank instead of legacy rank field
-        if (j && j.ok && j.activeRank) setSavedRank(String(j.activeRank)); else setSavedRank(null);
+        if (j && j.ok && j.rank) setSavedRank(String(j.rank)); else setSavedRank(null);
       } catch { if (alive) setSavedRank(null); }
     })();
     return () => { alive = false; };
@@ -332,7 +331,7 @@ export function RankBadgeButton({ items, meChatId }: { items: TaskFeedItem[]; me
       >
         {iconFromCode(savedRank) || current.icon}
       </button>
-      {open && <RankModal open={open} onClose={() => setOpen(false)} stats={stats} savedRankIcon={iconFromCode(savedRank) || undefined} chatId={meChatId} />}
+      {open && <RankModal open={open} onClose={() => setOpen(false)} stats={stats} savedRankIcon={iconFromCode(savedRank) || undefined} />}
     </>
   );
 }
@@ -370,97 +369,13 @@ function AchievementsDetailModal({ stats, onClose, onPick }: { stats: AchStats; 
   );
 }
 
-function RankModal({ open, onClose, stats, savedRankIcon, chatId }: { open: boolean; onClose: () => void; stats: AchStats; savedRankIcon?: string; chatId: string }) {
+function RankModal({ open, onClose, stats, savedRankIcon }: { open: boolean; onClose: () => void; stats: AchStats; savedRankIcon?: string }) {
   const score = stats.eagles;
   const { current, next } = pickRank(score);
   const [openRanks, setOpenRanks] = useState<Record<number, boolean>>({});
-  const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
-  const [buying, setBuying] = useState(false);
   const toggleRank = (thr: number) => setOpenRanks((m) => ({ ...m, [thr]: !m[thr] }));
 
-  useEffect(() => {
-    if (!open || !chatId) return;
-    let alive = true;
-    (async () => {
-      try {
-        const info = await getRankInfo(chatId);
-        if (alive) setRankInfo(info);
-      } catch (e) {
-        console.error('Failed to load rank info:', e);
-      }
-    })();
-    return () => { alive = false; };
-  }, [open, chatId]);
-
-  const handlePurchase = async (rankCode: string, priceRub: number) => {
-    if (buying) return;
-    setBuying(true);
-
-    try {
-      // 1. Check TON wallet connection
-      const ton = (window as any).ton;
-      if (!ton?.sendTransaction) {
-        alert('Подключите TON кошелёк в настройках');
-        setBuying(false);
-        return;
-      }
-
-      // 2. Create purchase record
-      console.log('[Rank] Creating purchase...', { chatId, rankCode, priceRub });
-      const purchaseResult = await createRankPurchase(chatId, rankCode);
-      console.log('[Rank] Purchase created:', purchaseResult);
-
-      // 3. Create payment request
-      console.log('[Rank] Creating payment request...', { rubAmount: String(priceRub) });
-      const paymentResult = await createRankPaymentRequest({
-        chatId,
-        rubAmount: String(priceRub),
-        purchaseId: purchaseResult.purchase.id,
-      });
-      console.log('[Rank] Payment request created:', paymentResult);
-
-      // 4. Send transaction via TonConnect
-      const txResult = await ton.sendTransaction(paymentResult.transaction);
-      console.log('[Rank] Transaction sent:', txResult);
-
-      // 5. Show success message
-      alert(
-        `✅ Транзакция отправлена!\n\nСумма: ${paymentResult.tonAmount} TON (~${priceRub}₽)\nКурс: ${paymentResult.tonRubRate.toFixed(2)}₽/TON\n\nРанг будет активирован через 10-20 секунд после подтверждения в блокчейне.`
-      );
-
-      setBuying(false);
-      onClose();
-
-      // 6. Reload rank info after delay
-      setTimeout(async () => {
-        try {
-          const updated = await getRankInfo(chatId);
-          setRankInfo(updated);
-        } catch (e) {
-          console.error('Failed to reload rank info:', e);
-        }
-      }, 15000);
-    } catch (error: any) {
-      console.error('[Rank] Purchase error:', error);
-      if (error?.message?.includes('User declined')) {
-        alert('Транзакция отменена');
-      } else {
-        alert(`Ошибка: ${error?.message || 'Unknown error'}`);
-      }
-      setBuying(false);
-    }
-  };
-
   if (!open) return null;
-
-  // Get active rank index
-  const activeRankCode = rankInfo?.activeRank || current.code || 'ANT';
-  const activeRankIndex = RANKS.findIndex((r) => r.code === activeRankCode);
-
-  // Check if trial is active
-  const trialActive = rankInfo?.trialEndsAt && new Date(rankInfo.trialEndsAt).getTime() > Date.now();
-  const trialDaysLeft = trialActive ? Math.ceil((new Date(rankInfo!.trialEndsAt!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
-
   return (
     <OverlayModal open={open} onClose={onClose} maxWidth={600}>
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
@@ -469,18 +384,6 @@ function RankModal({ open, onClose, stats, savedRankIcon, chatId }: { open: bool
         <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#9fb1ff', cursor:'pointer', fontSize:18 }}>✖</button>
       </div>
       <div style={{ fontSize:14, marginBottom:8 }}>Очки (🦅): <b>{score}</b></div>
-
-      {trialActive && (
-        <div style={{ fontSize:13, marginBottom:8, padding:'8px 10px', background:'rgba(255,215,0,0.1)', border:'1px solid rgba(255,215,0,0.3)', borderRadius:8, color:'#ffd700' }}>
-          🎁 Trial период: осталось <b>{trialDaysLeft}</b> {trialDaysLeft === 1 ? 'день' : 'дней'}
-        </div>
-      )}
-
-      {rankInfo?.purchasedRank && (
-        <div style={{ fontSize:13, marginBottom:8, padding:'8px 10px', background:'rgba(102,126,234,0.1)', border:'1px solid rgba(102,126,234,0.3)', borderRadius:8, color:'#a5b4fc' }}>
-          💎 Куплен ранг: {RANKS.find((r) => r.code === rankInfo.purchasedRank)?.icon} {RANKS.find((r) => r.code === rankInfo.purchasedRank)?.title}
-        </div>
-      )}
 
       {next ? (
         <div style={{ fontSize:14, marginBottom:12 }}>
@@ -491,48 +394,25 @@ function RankModal({ open, onClose, stats, savedRankIcon, chatId }: { open: bool
       )}
 
       <div style={{ maxHeight: '55vh', overflowY:'auto', display:'grid', gap:8 }}>
-        {RANKS.map((r, idx) => {
+        {RANKS.map((r) => {
           const opened = !!openRanks[r.threshold];
-          const canPurchase = r.priceRub && idx > activeRankIndex;
           return (
-            <div key={r.threshold} style={{ border:'1px solid #2a3346', borderRadius:12, overflow:'hidden', background: idx <= activeRankIndex ? '#17203a' : '#121722' }}>
+            <div key={r.threshold} style={{ border:'1px solid #2a3346', borderRadius:12, overflow:'hidden', background: score >= r.threshold ? '#17203a' : '#121722' }}>
               <button
                 onClick={() => toggleRank(r.threshold)}
                 style={{ display:'flex', alignItems:'center', gap:10, width:'100%', textAlign:'left', background:'transparent', color:'#e8eaed', border:'none', padding:'10px 12px', cursor:'pointer' }}
               >
                 <div style={{ fontSize:18 }}>{r.icon}</div>
                 <div style={{ fontWeight:600, flex:1 }}>{r.title} ({r.threshold}🦅)</div>
-                {idx <= activeRankIndex && <div style={{ fontSize:12, opacity:0.7 }}>✓ Доступен</div>}
                 <div style={{ opacity:0.9 }}>{opened ? '▲' : '▼'}</div>
               </button>
-              {opened && (
+              {opened && r.perks && r.perks.length ? (
                 <div style={{ padding:'0 12px 10px 38px' }}>
-                  {r.perks && r.perks.length > 0 && (
-                    <ul style={{ margin:0, marginBottom:8 }}>
-                      {r.perks.map((p, i) => (<li key={i} style={{ fontSize:13, opacity:0.95, lineHeight:1.6 }}>{p}</li>))}
-                    </ul>
-                  )}
-                  {canPurchase && (
-                    <button
-                      onClick={() => handlePurchase(r.code, r.priceRub!)}
-                      disabled={buying}
-                      style={{
-                        background:'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                        color:'#fff',
-                        border:'none',
-                        borderRadius:8,
-                        padding:'8px 12px',
-                        fontSize:13,
-                        fontWeight:600,
-                        cursor: buying ? 'not-allowed' : 'pointer',
-                        opacity: buying ? 0.6 : 1,
-                      }}
-                    >
-                      {buying ? 'Обработка...' : `Купить за ${(r.priceRub! / 1000).toFixed(0)}K₽`}
-                    </button>
-                  )}
+                  <ul style={{ margin:0 }}>
+                    {r.perks.map((p, i) => (<li key={i} style={{ fontSize:13, opacity:0.95, lineHeight:1.6 }}>{p}</li>))}
+                  </ul>
                 </div>
-              )}
+              ) : null}
             </div>
           );
         })}

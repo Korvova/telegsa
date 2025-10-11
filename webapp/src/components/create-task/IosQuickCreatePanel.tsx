@@ -9,7 +9,7 @@ import useAudioPreview from './hooks/useAudioPreview';
 import useKeyboardDock from '../../hooks/useKeyboardDock';
 import GroupPicker from './GroupPicker';
 import CameraCaptureModal from '../CameraCaptureModal';
-import PostCreateActionsLauncher from '../PostCreateActionsLauncher';
+import IosPostCreateActionsLauncher from '../IosPostCreateActionsLauncher';
 import WebApp from '@twa-dev/sdk';
 
 // Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
@@ -558,7 +558,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {(text.trim().length > 0 || !!voiceFile || pendingFiles.length > 0) ? (
-                  <PostCreateActionsLauncher
+                  <IosPostCreateActionsLauncher
                     label="➤"
                     disabled={busy}
                     style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1 }}
