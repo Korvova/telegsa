@@ -165,26 +165,23 @@ export default function PostCreateActionsLauncher({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 99999,
-        background: 'rgba(0,0,0,.5)',
+        zIndex: 2000,
+        background: 'rgba(0,0,0,.45)',
         display: 'flex',
-        alignItems: 'flex-end',
+        alignItems: 'center',
         justifyContent: 'center',
         padding: 12,
-        paddingBottom: 80,
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%',
-          maxWidth: 520,
-          background: '#131a26',
+          width: 'min(420px, 92vw)',
+          background: '#1b2030',
           border: '1px solid #2a3346',
-          borderRadius: 16,
+          borderRadius: 12,
           padding: 12,
-          color: '#fff',
-          boxShadow: '0 16px 50px rgba(0,0,0,.45)',
+          color: '#e8eaed',
         }}
       >
         {subView === 'root' ? (
