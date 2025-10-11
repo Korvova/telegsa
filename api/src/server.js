@@ -1564,13 +1564,13 @@ app.patch('/tasks/:id', async (req, res) => {
       const now = updated?.assigneeChatId ? String(updated.assigneeChatId) : null;
 
       if (was !== now && now) {
-        // Имя назначенного
-        let assigneeName = null;
+        // Имя того, кто принял задачу (caller)
+        let actorName = null;
         try {
-          const u = await prisma.user.findUnique({ where: { chatId: now } });
-          assigneeName = u
-            ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || now
-            : now;
+          const u = await prisma.user.findUnique({ where: { chatId: String(chatId || '') } });
+          actorName = u
+            ? [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || String(chatId || '')
+            : String(chatId || '');
         } catch {}
 
         // Настройки уведомлений: используем chatId как telegramId
@@ -1580,12 +1580,12 @@ app.patch('/tasks/:id', async (req, res) => {
         });
 
         if (!st || (st.receiveTaskAccepted && st.writeAccessGranted)) {
-          const actorName = assigneeName || 'Пользователь';
+          const displayName = actorName || 'Пользователь';
           const title = updated.text || 'Без названия';
 
           await tg('sendMessage', {
             chat_id: now, // пишем назначенному
-            text: `👤 <b>${actorName}</b> принял(а) задачу: <b>${title}</b>`,
+            text: `👤 <b>${displayName}</b> принял(а) задачу: <b>${title}</b>`,
             parse_mode: 'HTML',
             disable_web_page_preview: true,
           });
@@ -1903,22 +1903,22 @@ app.post('/invites/accept', async (req, res) => {
       });
       assigned = true;
 
-      // 🔔 уведомление назначенному
+      // 🔔 уведомление поручителю (пригласившему)
       try {
         const taskAfter = await prisma.task.findUnique({ where: { id: invite.taskId } });
-        const now = String(who);
+        const inviterChatId = String(invite.invitedByChatId);
         const st = await prisma.notificationSetting.findUnique({
-          where: { telegramId: now },
+          where: { telegramId: inviterChatId },
           select: { receiveTaskAccepted: true, writeAccessGranted: true },
         });
 
-        // имя пригласившего
+        // имя того, кто принял (who)
         let actorName = null;
         try {
-          const actor = await prisma.user.findUnique({ where: { chatId: String(invite.invitedByChatId) } });
+          const actor = await prisma.user.findUnique({ where: { chatId: String(who) } });
           actorName = actor
-            ? [actor.firstName, actor.lastName].filter(Boolean).join(' ') || actor.username || String(invite.invitedByChatId)
-            : String(invite.invitedByChatId);
+            ? [actor.firstName, actor.lastName].filter(Boolean).join(' ') || actor.username || String(who)
+            : String(who);
         } catch {}
 
         const title = taskAfter?.text || 'Без названия';
@@ -1926,7 +1926,7 @@ app.post('/invites/accept', async (req, res) => {
 
         if (!st || (st.receiveTaskAccepted && st.writeAccessGranted)) {
           await tg('sendMessage', {
-            chat_id: now,
+            chat_id: inviterChatId,
             text: textMsg,
             parse_mode: 'HTML',
             disable_web_page_preview: true,
