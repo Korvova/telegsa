@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { createTask, listGroups, transcribeVoice, API_BASE, setTaskDeadline, setAcceptCondition, type Group } from '../../api';
+import { createTask, listGroups, transcribeVoice, API_BASE, setTaskDeadline, setAcceptCondition, type Group, getGroupMembers, type GroupMember } from '../../api';
 import { createTaskReminder } from '../../api/reminders';
 import DeadlinePicker from '../DeadlinePicker';
 import VoiceRecorder from '../VoiceRecorder';
@@ -9,6 +9,7 @@ import useAudioPreview from './hooks/useAudioPreview';
 import useKeyboardDock from '../../hooks/useKeyboardDock';
 import GroupPicker from './GroupPicker';
 import CameraCaptureModal from '../CameraCaptureModal';
+import PostCreateActionsLauncher from '../PostCreateActionsLauncher';
 import WebApp from '@twa-dev/sdk';
 
 // Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
@@ -46,6 +47,8 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupTab, setGroupTab] = useState<'own' | 'member'>('own');
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  // members for PostCreateActionsLauncher
+  const [members, setMembers] = useState<Array<{ chatId: string; name: string }>>([]);
 
   // (no continuous kb tracking; compute on demand)
   // lock keyboard height at moment of opening modal to center above keyboard
@@ -104,6 +107,29 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
       } catch {}
     })();
   }, [open, chatId]);
+
+  // load members for group (or self)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMembers() {
+      if (!groupId) {
+        const meName = WebApp?.initDataUnsafe?.user ? [WebApp.initDataUnsafe.user.first_name, WebApp.initDataUnsafe.user.last_name].filter(Boolean).join(' ') : String(chatId);
+        if (!cancelled) setMembers([{ chatId, name: meName || String(chatId) }]);
+        return;
+      }
+      try {
+        const r = await getGroupMembers(groupId);
+        if (!r.ok) throw new Error('members_load_failed');
+        const owner = r.owner ? [r.owner] : [];
+        const raw: GroupMember[] = [...owner, ...(r.members || [])];
+        const uniq = new Map<string, { chatId: string; name: string }>();
+        raw.forEach((m) => { if (!m?.chatId) return; const nm = (m.name || String(m.chatId)).trim(); uniq.set(String(m.chatId), { chatId: String(m.chatId), name: nm || String(m.chatId) }); });
+        if (!cancelled) { const arr = Array.from(uniq.values()); setMembers(arr.length ? arr : [{ chatId, name: 'Я' }]); }
+      } catch { if (!cancelled) setMembers([{ chatId, name: 'Я' }]); }
+    }
+    loadMembers();
+    return () => { cancelled = true; };
+  }, [groupId, chatId]);
 
   const groupLabel = () => {
     try {
@@ -170,9 +196,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     };
   }, [open]);
 
-  const save = async () => {
+  const save = async (): Promise<{ id: string; title: string } | null> => {
     const val = text.trim();
-    if ((val.length === 0 && !voiceFile && pendingFiles.length === 0) || busy) return;
+    if ((val.length === 0 && !voiceFile && pendingFiles.length === 0) || busy) return null;
     setBusy(true);
     setUploadProg(null);
     try {
@@ -211,7 +237,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             setBusy(false);
             setUploadProg(null);
             try { alert(`Не удалось загрузить: ${failed.map(f => f.name || 'файл').join(', ')}`); } catch {}
-            return; // do not clear/close
+            return null; // do not clear/close
           }
           // apply deadline if set
           if (deadlineAt) {
@@ -233,7 +259,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         setPendingFiles([]);
         try { onCreated?.(); } catch {}
         onClose();
+        return { id: newTaskId, title: baseText };
       }
+      return null;
     } catch (e: any) {
       // Проверяем, не превышена ли квота
       try {
@@ -261,6 +289,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     } finally {
       setBusy(false);
     }
+    return null;
   };
 
   // Simple caret helper to keep iOS keyboard up when starting mic
@@ -529,14 +558,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {(text.trim().length > 0 || !!voiceFile || pendingFiles.length > 0) ? (
-                  <button
+                  <PostCreateActionsLauncher
+                    label="➤"
                     disabled={busy}
-                    onClick={() => save()}
                     style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1 }}
-                    aria-label="Создать"
-                  >
-                    ➤
-                  </button>
+                    meChatId={chatId}
+                    members={members}
+                    onMake={async () => {
+                      // Call save and get taskId/title
+                      const result = await save();
+                      if (!result) throw new Error('Task creation failed');
+                      return { taskId: result.id, taskTitle: result.title };
+                    }}
+                  />
                 ) : (
                   <div onMouseDownCapture={ensureCaretFocus} onTouchStartCapture={ensureCaretFocus} style={{ width:'100%', height:'100%' }}>
                     <VoiceRecorder maxSeconds={30} buttonStyle={{ width:'100%', height:'100%' }} onRecorded={(file) => { setVoiceFile(file); setTimeout(() => ensureCaretFocus(), 0); }} />
