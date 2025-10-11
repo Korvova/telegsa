@@ -166,7 +166,6 @@ export default function CommentsThread({
         background: bg ?? wrap.background,
         border: border ?? wrap.border as any,
         color: color ?? undefined,
-        paddingBottom: `calc(72px + ${kbBottom}px + env(safe-area-inset-bottom, 0px))`,
       }}
     >
       <div style={title}>Комментарии</div>
@@ -231,10 +230,10 @@ export default function CommentsThread({
 
       <div style={{
         ...inputRow,
-        ...(isiOS
-          ? { position: 'fixed', left: 16, right: 16, bottom: 'env(safe-area-inset-bottom, 0px)', transform: `translateY(-${kbBottom}px)`, zIndex: 2200 }
-          : { position: 'sticky', bottom: 0 }),
-        background: 'transparent', paddingBottom: 6,
+        position: 'relative',
+        background: 'transparent',
+        paddingBottom: isiOS ? `${kbBottom + 6}px` : '6px',
+        marginTop: 8,
       }}>
         <input
           ref={inputRef}
