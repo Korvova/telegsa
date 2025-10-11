@@ -165,12 +165,13 @@ export default function PostCreateActionsLauncher({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 9999,
+        zIndex: 99999,
         background: 'rgba(0,0,0,.5)',
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
         padding: 12,
+        paddingBottom: 80,
       }}
     >
       <div
