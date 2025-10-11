@@ -162,6 +162,7 @@ export default function PostCreateActionsLauncher({
   const sheet = !open ? null : (
     <div
       onClick={closeSheet}
+      onTouchEnd={closeSheet}
       style={{
         position: 'fixed',
         inset: 0,
@@ -174,7 +175,8 @@ export default function PostCreateActionsLauncher({
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+        onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); }}
         style={{
           width: 'min(420px, 92vw)',
           background: '#1b2030',
