@@ -234,8 +234,30 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
         try { onCreated?.(); } catch {}
         onClose();
       }
-    } catch (e) {
-      try { alert('Не удалось создать задачу'); } catch {}
+    } catch (e: any) {
+      // Проверяем, не превышена ли квота
+      try {
+        const msg = String(e?.message || '');
+        const isQuotaError = /quota_exceeded/i.test(msg) || (e?.response?.status === 402);
+        if (isQuotaError) {
+          // Показываем красивое сообщение
+          const userChoice = confirm(
+            '❌ Превышен лимит на создание задач!\n\n' +
+            'Вы исчерпали квоту на создание задач в этом месяце.\n\n' +
+            'Нажмите "ОК", чтобы перейти в настройки и пополнить квоту.'
+          );
+          if (userChoice) {
+            // Закрываем панель и переходим в настройки
+            onClose();
+            // Отправляем событие для переключения на таб "Настройки"
+            try {
+              window.dispatchEvent(new CustomEvent('navigate-to-settings', { detail: { tab: 'quota' } }));
+            } catch {}
+          }
+        } else {
+          alert('Не удалось создать задачу');
+        }
+      } catch {}
     } finally {
       setBusy(false);
     }

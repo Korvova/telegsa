@@ -62,6 +62,7 @@ import SettingsProfile from './components/SettingsProfile';
 import SettingsTheme from './components/SettingsTheme';
 import SettingsKeyboardTest from './components/SettingsKeyboardTest';
 import SettingsAITokens from './components/SettingsAITokens';
+import SettingsAPI from './components/SettingsAPI';
 import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
@@ -454,6 +455,21 @@ export default function App() {
     };
     window.addEventListener('open-task', handler as any);
     return () => window.removeEventListener('open-task', handler as any);
+  }, []);
+
+  // Listen for navigate-to-settings event (from quota exceeded in IosQuickCreatePanel)
+  useEffect(() => {
+    const handler = (e: any) => {
+      try {
+        console.log('[NAV] navigate-to-settings event', e?.detail);
+        setTab('settings');
+        setSettingsPage('root');
+        // Note: SettingsQuota component will be visible on settings page
+        // The 'tab' field from event detail can be used for future tab navigation within settings
+      } catch {}
+    };
+    window.addEventListener('navigate-to-settings', handler as any);
+    return () => window.removeEventListener('navigate-to-settings', handler as any);
   }, []);
 
   useEffect(() => {
@@ -1225,6 +1241,9 @@ export default function App() {
 
               {/* Баланс токенов AI */}
               <SettingsAITokens chatId={chatId} />
+
+              {/* External API */}
+              <SettingsAPI chatId={chatId} />
 
               {/* тут можно добавить другие пункты настроек позже */}
               <button
