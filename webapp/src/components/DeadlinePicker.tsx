@@ -45,7 +45,6 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
   const [dateStr, setDateStr] = useState<string>(''); // YYYY-MM-DD
   const [timeStr, setTimeStr] = useState<string>(''); // HH:MM
   const [error, setError] = useState<string | null>(null);
-  const [narrow, setNarrow] = useState<boolean>(false);
 
   useEffect(() => {
     if (!open) return;
@@ -58,12 +57,6 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
     } else {
       setDateStr(''); setTimeStr('');
     }
-    try {
-      const check = () => setNarrow((window.innerWidth || 0) < 380);
-      check();
-      window.addEventListener('resize', check);
-      return () => window.removeEventListener('resize', check);
-    } catch {}
   }, [open, value]);
 
   const nowMinDT = useMemo(() => {
@@ -106,7 +99,7 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
           onMouseDownCapture={(e)=>e.stopPropagation()}
           onPointerDownCapture={(e)=>e.stopPropagation()}
           onTouchStartCapture={(e)=>e.stopPropagation()}
-          style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:12 }}>
+          style={{ position:'fixed', left:0, right:0, bottom:0, borderTopLeftRadius:16, borderTopRightRadius:16, background:'#1b2030', color:'#e8eaed', border:'1px solid #2a3346', padding:16 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
             <div style={{ fontWeight:700 }}>{icon} {title}</div>
             <button onClick={onClose} style={{ background:'transparent', border:'none', color:'#8aa0ff', fontSize:18, cursor:'pointer' }}>✕</button>
@@ -122,10 +115,10 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
             <button onClick={()=>{ const d=new Date(); const day=(d.getDay()+6)%7; const add=((7-day)%7)||7; d.setDate(d.getDate()+add); d.setHours(10,0,0,0); const pad=(n:number)=>String(n).padStart(2,'0'); setDateStr(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`); setTimeStr('10:00'); }} style={chipBtn}>Пн 10:00</button>
           </div>
 
-          {/* Big iOS-friendly pickers */}
-          <div style={{ display:'grid', gridTemplateColumns: narrow ? '1fr' : '1fr 1fr', gap:8, alignItems:'stretch' }}>
-            <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={iosInput} />
-            <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={iosInput} />
+          {/* Big iOS-friendly pickers - vertical layout to prevent overlap */}
+          <div style={{ display:'flex', flexDirection:'column', gap:8, paddingLeft:4, paddingRight:4 }}>
+            <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={{...iosInput, minWidth:0, width:'calc(100% - 8px)', maxWidth:'calc(100% - 8px)'}} />
+            <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={{...iosInput, minWidth:0, width:'calc(100% - 8px)', maxWidth:'calc(100% - 8px)'}} />
           </div>
           {error ? <div style={{ color:'salmon', fontSize:12, marginTop:6 }}>{error}</div> : null}
 
@@ -165,9 +158,9 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
         </div>
         {isiOS ? (
           <>
-            <div style={{ display:'grid', gridTemplateColumns: '1fr 1fr', gap:8 }}>
-              <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={iosInput} />
-              <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={iosInput} />
+            <div style={{ display:'flex', flexDirection:'column', gap:8, paddingLeft:4, paddingRight:4 }}>
+              <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={{...iosInput, minWidth:0, width:'calc(100% - 8px)', maxWidth:'calc(100% - 8px)'}} />
+              <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={{...iosInput, minWidth:0, width:'calc(100% - 8px)', maxWidth:'calc(100% - 8px)'}} />
             </div>
             {error ? <div style={{ color:'salmon', fontSize:12, marginTop:6 }}>{error}</div> : null}
           </>
@@ -200,6 +193,6 @@ export default function DeadlinePicker({ open, value, onChange, onClose, minNow 
 }
 
 const chipBtn: React.CSSProperties = { padding:'10px 12px', borderRadius:12, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer', textAlign:'center' };
-const iosInput: React.CSSProperties = { width:'100%', maxWidth:'100%', boxSizing:'border-box', minWidth:0, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px', fontSize:16 };
+const iosInput: React.CSSProperties = { width:'100%', maxWidth:'100%', boxSizing:'border-box', minWidth:0, background:'#0b1220', color:'#e5e7eb', border:'1px solid #1f2937', borderRadius:10, padding:'6px 8px', fontSize:14 };
 const btnSecondary: React.CSSProperties = { padding:'10px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed', cursor:'pointer' };
 const btnPrimary: React.CSSProperties = { padding:'10px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff', cursor:'pointer' };

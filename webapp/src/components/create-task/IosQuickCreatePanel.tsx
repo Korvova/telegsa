@@ -1,20 +1,27 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { createTask, listGroups, transcribeVoice, API_BASE, setTaskDeadline, setAcceptCondition, type Group, getGroupMembers, type GroupMember } from '../../api';
+import { createTask, updateTask, listGroups, transcribeVoice, API_BASE, setTaskDeadline, setAcceptCondition, setTaskBounty, type Group, getGroupMembers, type GroupMember } from '../../api';
 import { createTaskReminder } from '../../api/reminders';
 import DeadlinePicker from '../DeadlinePicker';
 import VoiceRecorder from '../VoiceRecorder';
+import BountyPicker from '../BountyPicker';
+import TonWalletConnect from '../TonWalletConnect';
 import useAudioPreview from './hooks/useAudioPreview';
+import useTonPayment from './hooks/useTonPayment';
 // import { useKeyboardInsets } from '../../hooks/useKeyboardInsets';
 import useKeyboardDock from '../../hooks/useKeyboardDock';
 import GroupPicker from './GroupPicker';
 import CameraCaptureModal from '../CameraCaptureModal';
 import IosPostCreateActionsLauncher from '../IosPostCreateActionsLauncher';
+import ComplexityToggle from './ComplexityToggle';
+import RobotPicker from './robots/RobotPicker';
+import WeatherScheduleModal from './robots/WeatherScheduleModal';
+import RecurringScheduleModal, { type RecurringConfig } from './robots/RecurringScheduleModal';
 import WebApp from '@twa-dev/sdk';
 
 // Use unified keyboard insets (VisualViewport + TWA viewport) to dock the panel
 
-export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGroupId, onCreated }: { open: boolean; onClose: () => void; chatId: string; defaultGroupId?: string | null; onCreated?: () => void; }) {
+export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGroupId, onCreated, initialEdit }: { open: boolean; onClose: () => void; chatId: string; defaultGroupId?: string | null; onCreated?: () => void; initialEdit?: any; }) {
   const microRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const bootRef = useRef<HTMLInputElement | null>(null); // hidden input to keep iOS gesture chain
@@ -41,6 +48,23 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   // reminders (⏰)
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [remindersDraft, setRemindersDraft] = useState<Array<{ target: 'ME' | 'RESPONSIBLE' | 'ALL'; fireAtIso: string }>>([]);
+  // complexity (🔘)
+  const [complexity, setComplexity] = useState<number | null>(null);
+  // bounty (💰)
+  const [bountyOpen, setBountyOpen] = useState(false);
+  const [bountyAmount, setBountyAmount] = useState<number>(0);
+  const [bountyRub, setBountyRub] = useState<number | null>(null);
+  const [bountyLocked, setBountyLocked] = useState<boolean>(false);
+  const [walletConnecting, setWalletConnecting] = useState<boolean>(false); // hide BountyPicker when wallet modal is open
+  const { startPayment, refund, loadDraft, clearDraft } = useTonPayment(chatId);
+  // robots (🤖)
+  const [robotOpen, setRobotOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState<string | null>(null);
+  const [weatherOpen, setWeatherOpen] = useState(false);
+  const [weatherCfg, setWeatherCfg] = useState<null | { atIso: string; city: string; lat: number; lon: number; op: 'GE'|'LE'; valueC: number }>(null);
+  const [recurringOpen, setRecurringOpen] = useState(false);
+  const [recurringCfg, setRecurringCfg] = useState<RecurringConfig | null>(null);
   // group selection (like Android header)
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
@@ -49,6 +73,9 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
   const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
   // members for PostCreateActionsLauncher
   const [members, setMembers] = useState<Array<{ chatId: string; name: string }>>([]);
+  // edit mode
+  const [editTaskId, setEditTaskId] = useState<string | null>(null);
+  const isEdit = !!editTaskId;
 
   // (no continuous kb tracking; compute on demand)
   // lock keyboard height at moment of opening modal to center above keyboard
@@ -131,6 +158,88 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     return () => { cancelled = true; };
   }, [groupId, chatId]);
 
+  // Compute schedule info display
+  const scheduleInfo = useMemo(() => {
+    if (!scheduleAt) return null;
+    const d = new Date(String(scheduleAt));
+    if (Number.isNaN(d.getTime())) return null;
+    const ms = d.getTime() - Date.now();
+    const signOverdue = ms < 0; const abs = Math.abs(ms);
+    const dd = Math.floor(abs / 86400000), hh = Math.floor((abs % 86400000) / 3600000), mm = Math.floor((abs % 3600000) / 60000);
+    const left = signOverdue ? 'скоро' : (dd > 0 ? `${dd}д ${hh}ч` : (hh > 0 ? `${hh}ч ${mm}м` : `${mm}м`));
+    return { when: d.toLocaleString(), left };
+  }, [scheduleAt]);
+
+  // Compute recurring info display
+  const recurringInfo = useMemo(() => {
+    if (!recurringCfg) return null;
+    const { pattern, time, excludeDays, monthDay, weekOfMonth, dayOfWeek, count } = recurringCfg;
+    const parts = [];
+    if (pattern === 'daily') {
+      parts.push(`Каждый день в ${time}`);
+      if (excludeDays && excludeDays.length > 0) {
+        const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+        parts.push(`кроме ${excludeDays.map(d => days[d]).join(', ')}`);
+      }
+    } else {
+      if (monthDay) {
+        parts.push(`Каждый месяц ${monthDay}-го числа в ${time}`);
+      } else if (weekOfMonth && dayOfWeek !== undefined) {
+        const days = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+        parts.push(`Каждый месяц ${weekOfMonth}-я неделя ${days[dayOfWeek]} в ${time}`);
+      }
+    }
+    if (count) parts.push(`(${count} раз)`);
+    else parts.push('(всегда)');
+    return parts.join(' ');
+  }, [recurringCfg]);
+
+  // Apply initialEdit if provided (like Android CreateTaskModal)
+  useEffect(() => {
+    if (!open || !initialEdit) return;
+    try {
+      const d = initialEdit || {};
+      const taskId: string = String(d.taskId || '');
+      if (!taskId) return;
+      setEditTaskId(taskId);
+      setText(String(d.text || ''));
+      setGroupId((d.groupId ?? null) as string | null);
+      setDeadlineAt(d.deadlineAt || null);
+      setAcceptConditionState((d.acceptCondition as any) || 'NONE');
+    } catch {}
+  }, [open, initialEdit]);
+
+  // Aggressive focus loop for edit mode (like panel open logic)
+  // Triggered when text changes AND we're in edit mode - ensures text is rendered before focusing
+  useEffect(() => {
+    if (!open || !editTaskId || !text) return;
+    // Aggressive focus loop to ensure caret placement for edit
+    let keepFocus = true;
+    let focusTries = 0;
+    const focusLoop = () => {
+      if (!keepFocus) return;
+      focusTries += 1;
+      try { ensureCaretFocus(); } catch {}
+      try {
+        const vv: VisualViewport | undefined = (typeof window !== 'undefined' ? (window as any).visualViewport : undefined);
+        const innerH = (typeof window !== 'undefined' ? window.innerHeight : 0);
+        const vvH = vv?.height || innerH;
+        const opened = Math.max(0, innerH - vvH) > 0;
+        if (opened || focusTries > 20) { keepFocus = false; return; }
+      } catch {}
+      setTimeout(focusLoop, 60);
+    };
+    setTimeout(focusLoop, 0);
+    return () => { keepFocus = false; };
+  }, [open, editTaskId, text]);
+
+  // Clear edit mode when panel closes
+  useEffect(() => {
+    if (!open) {
+      setEditTaskId(null);
+    }
+  }, [open]);
+
   const groupLabel = () => {
     try {
       if (!groupId) return 'Моя группа';
@@ -174,6 +283,19 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); };
   }, [toolsOpen, open]);
 
+  // init draft (bounty) if exists on server when modal opens (like Android)
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      const d = await loadDraft();
+      if (d && typeof d.amountTon === 'number') {
+        setBountyAmount(d.amountTon);
+        setBountyRub(typeof d.amountRub === 'number' ? d.amountRub : null);
+        setBountyLocked(true);
+      }
+    })();
+  }, [open, loadDraft]);
+
   // minimal background stabilization while panel is visible on iOS (no hard height/overflow changes)
   useEffect(() => {
     if (!open) return;
@@ -196,7 +318,90 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     };
   }, [open]);
 
+  // Save edit function (similar to Android CreateTaskModal)
+  const doSaveEdit = async (): Promise<void> => {
+    if (!editTaskId) return;
+    const val = text.trim();
+    setBusy(true);
+    try {
+      // Update task text if changed
+      if (val) {
+        try {
+          await updateTask(editTaskId, val, chatId);
+        } catch (e: any) {
+          if (String(e?.message || '').includes('403')) alert('У вас нет прав на это действие');
+          throw e;
+        }
+      }
+      // Update deadline
+      try {
+        await setTaskDeadline(editTaskId, chatId, deadlineAt);
+      } catch {}
+      // Update accept conditions
+      try {
+        await setAcceptCondition(editTaskId, chatId, acceptCondition as any);
+      } catch {}
+      // Upload new files if any
+      if (pendingFiles.length) {
+        for (const raw of pendingFiles) {
+          try {
+            let f = raw;
+            if (isHeicLike(f)) { f = await convertHeicToJpeg(f); }
+            if (isImageLike(f)) { f = await downscaleImageToMax(f, 2560, 0.9); }
+            await uploadFileXHR(editTaskId, chatId, f);
+          } catch {}
+        }
+      }
+      try {
+        WebApp?.HapticFeedback?.notificationOccurred?.('success');
+      } catch {}
+      // Notify feed/canvas of local changes
+      try {
+        const g = (groups || []).find((x: any) => String(x.id) === String(groupId || '')) as any;
+        const groupTitle = g ? String(g.title || '') : undefined;
+        const isPublicGroup = g ? Boolean((g as any).isPublic) : undefined;
+        window.dispatchEvent(new CustomEvent('task-patched', {
+          detail: {
+            id: editTaskId,
+            text: val || undefined,
+            deadlineAt: deadlineAt ?? undefined,
+            acceptCondition,
+            groupId: groupId ?? null,
+            groupTitle,
+            isPublicGroup,
+          }
+        }));
+      } catch {}
+      try {
+        onCreated?.();
+      } catch {}
+      // Clear form and close
+      setText('');
+      setVoiceFile(null);
+      setPendingFiles([]);
+      setDeadlineAt(null);
+      setAcceptConditionState('NONE');
+      setRemindersDraft([]);
+      setComplexity(null);
+      setScheduleAt(null);
+      setWeatherCfg(null);
+      setRecurringCfg(null);
+      setEditTaskId(null);
+      onClose();
+    } catch (e: any) {
+      alert('Не удалось сохранить изменения');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const save = async (): Promise<{ id: string; title: string } | null> => {
+    // If in edit mode, use doSaveEdit and return null
+    if (isEdit) {
+      await doSaveEdit();
+      return null;
+    }
+
     const val = text.trim();
     if ((val.length === 0 && !voiceFile && pendingFiles.length === 0) || busy) return null;
     setBusy(true);
@@ -204,7 +409,142 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
     try {
       const gid = groupId ?? defaultGroupId ?? undefined;
       const baseText = val || 'Голосовое сообщение';
-      const r = await createTask(chatId, baseText, gid as any);
+
+      // If any robot config is set (schedule/weather/recurring), create a preTask instead
+      if (scheduleAt || weatherCfg || recurringCfg) {
+        const api = await import('../../api');
+        const body: any = {
+          chatId,
+          groupId: gid ?? null,
+          text: baseText,
+          plannedAssigneeChatId: null,
+          triggerMode: 'DATE_PLUS',
+          startAt: scheduleAt || null,
+          delayMinutes: null,
+          autoCancelOnAny: false,
+          links: [],
+          arm: true,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        };
+
+        // Add weather payload if configured
+        if (weatherCfg) {
+          body.payload = {
+            ...(body.payload || {}),
+            weather: {
+              kind: 'TEMP_AT_2M',
+              lat: weatherCfg.lat,
+              lon: weatherCfg.lon,
+              city: weatherCfg.city,
+              op: weatherCfg.op,
+              valueC: weatherCfg.valueC
+            }
+          };
+        }
+
+        // Add recurring config if configured
+        if (recurringCfg) {
+          body.recurringConfig = recurringCfg;
+          // Calculate first run time based on recurringCfg
+          if (recurringCfg.time && !body.startAt) {
+            const [hours, minutes] = recurringCfg.time.split(':').map(Number);
+            const now = new Date();
+            const firstRun = new Date(now);
+            firstRun.setHours(hours, minutes, 0, 0);
+
+            // If time already passed today, schedule for tomorrow/next month
+            if (firstRun <= now) {
+              if (recurringCfg.pattern === 'daily') {
+                firstRun.setDate(firstRun.getDate() + 1);
+              } else if (recurringCfg.pattern === 'monthly') {
+                firstRun.setMonth(firstRun.getMonth() + 1);
+              }
+            }
+
+            // For daily: check excluded days
+            if (recurringCfg.pattern === 'daily' && recurringCfg.excludeDays) {
+              let attempts = 0;
+              while (recurringCfg.excludeDays.includes(firstRun.getDay()) && attempts < 7) {
+                firstRun.setDate(firstRun.getDate() + 1);
+                attempts++;
+              }
+            }
+
+            // For monthly: set specific day or week
+            if (recurringCfg.pattern === 'monthly') {
+              if (recurringCfg.monthDay) {
+                firstRun.setDate(recurringCfg.monthDay);
+                if (firstRun <= now) {
+                  firstRun.setMonth(firstRun.getMonth() + 1);
+                }
+              } else if (recurringCfg.weekOfMonth !== undefined && recurringCfg.dayOfWeek !== undefined) {
+                const firstDayOfMonth = new Date(firstRun.getFullYear(), firstRun.getMonth(), 1);
+                const firstDayOfWeek = firstDayOfMonth.getDay();
+                const offset = (recurringCfg.dayOfWeek - firstDayOfWeek + 7) % 7;
+                const targetDate = 1 + offset + (recurringCfg.weekOfMonth - 1) * 7;
+                firstRun.setDate(targetDate);
+                if (firstRun <= now) {
+                  firstRun.setMonth(firstRun.getMonth() + 1);
+                  const newFirstDay = new Date(firstRun.getFullYear(), firstRun.getMonth(), 1);
+                  const newFirstDayOfWeek = newFirstDay.getDay();
+                  const newOffset = (recurringCfg.dayOfWeek - newFirstDayOfWeek + 7) % 7;
+                  const newTargetDate = 1 + newOffset + (recurringCfg.weekOfMonth - 1) * 7;
+                  firstRun.setDate(newTargetDate);
+                }
+              }
+            }
+
+            body.startAt = firstRun.toISOString();
+          }
+        }
+
+        const resp = await (api as any).createPreTask(body);
+        if (!(resp as any)?.ok) {
+          if (String((resp as any)?.error || '') === 'quota_exceeded') {
+            const userChoice = confirm(
+              '❌ Превышен лимит на создание задач!\n\n' +
+              'Вы исчерпали квоту на создание задач в этом месяце.\n\n' +
+              'Нажмите "ОК", чтобы перейти в настройки и пополнить квоту.'
+            );
+            if (userChoice) {
+              onClose();
+              try {
+                window.dispatchEvent(new CustomEvent('navigate-to-settings', { detail: { tab: 'quota' } }));
+              } catch {}
+            }
+            return null;
+          }
+          throw new Error((resp as any)?.error || 'pretask_create_failed');
+        }
+
+        // PreTask created successfully
+        try {
+          window.dispatchEvent(new CustomEvent('pre-task-created', {
+            detail: {
+              preTask: (resp as any)?.preTask || null,
+              parentTaskIds: [],
+              parentPreTaskIds: []
+            }
+          }));
+        } catch {}
+
+        setText('');
+        setVoiceFile(null);
+        setPendingFiles([]);
+        setDeadlineAt(null);
+        setAcceptConditionState('NONE');
+        setRemindersDraft([]);
+        setComplexity(null);
+        setScheduleAt(null);
+        setWeatherCfg(null);
+        setRecurringCfg(null);
+        try { onCreated?.(); } catch {}
+        onClose();
+        return { id: (resp as any)?.preTask?.id || '', title: baseText };
+      }
+
+      // Regular task creation (no robot configs)
+      const r = await createTask(chatId, baseText, gid as any, complexity ?? undefined);
       if ((r as any)?.ok !== false) {
         const newTaskId = (r as any)?.task?.id || '';
         if (newTaskId) {
@@ -253,10 +593,34 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
               try { await createTaskReminder(newTaskId, { createdBy: chatId, target: rm.target, fireAt: rm.fireAtIso }); } catch {}
             }
           }
+          // apply bounty if locked (like Android)
+          if (bountyLocked && bountyRub && bountyRub > 0) {
+            try {
+              await setTaskBounty(newTaskId, chatId, bountyRub);
+            } catch (e) {
+              console.warn('[ios-panel] failed to set bounty', e);
+            }
+          }
+        }
+        // Clear bounty draft after successful creation
+        if (bountyLocked) {
+          try {
+            await clearDraft();
+          } catch {}
         }
         setText('');
         setVoiceFile(null);
         setPendingFiles([]);
+        setDeadlineAt(null);
+        setAcceptConditionState('NONE');
+        setRemindersDraft([]);
+        setComplexity(null);
+        setBountyAmount(0);
+        setBountyRub(null);
+        setBountyLocked(false);
+        setScheduleAt(null);
+        setWeatherCfg(null);
+        setRecurringCfg(null);
         try { onCreated?.(); } catch {}
         onClose();
         return { id: newTaskId, title: baseText };
@@ -430,17 +794,18 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
   const overlay = (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 999999, pointerEvents: 'auto', isolation: 'isolate' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
+      style={{ position: 'fixed', inset: 0, zIndex: walletConnecting ? 1 : 999999, pointerEvents: 'auto', isolation: 'isolate' as any, backfaceVisibility: 'hidden' as any, transform: 'translateZ(0)',
         // darker dim; add blur on non‑iOS only
         background: 'rgba(0,0,0,.8)',
         backdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : 'blur(8px)',
         WebkitBackdropFilter: (typeof navigator !== 'undefined' && /iPad|iPhone|iPod/i.test(navigator.userAgent || '')) ? undefined : ('blur(8px)' as any),
         touchAction: 'none',
-        overscrollBehavior: 'none'
+        overscrollBehavior: 'none',
+        visibility: walletConnecting ? 'hidden' as any : 'visible' as any  // Hide completely when wallet is connecting
       }}
       onClick={() => {
         // Do not close panel while any sub-modal/sheet is open
-        if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+        if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen || robotOpen || scheduleOpen || weatherOpen || recurringOpen || bountyOpen) return;
         if (!arming && !busy) onClose();
       }}
       onTouchStart={(e) => {
@@ -449,7 +814,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
           if (!withinPanel) {
             // ignore while a sub-modal is open
-            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen || robotOpen || scheduleOpen || weatherOpen || recurringOpen || bountyOpen) return;
             e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose();
           }
         } catch {}
@@ -459,7 +824,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           const t = e.target as Node | null;
           const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
           if (!withinPanel) {
-            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen || robotOpen || scheduleOpen || weatherOpen || recurringOpen || bountyOpen) return;
             e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose();
           }
         } catch {}
@@ -469,7 +834,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           const t = e.target as Node | null;
           const withinPanel = !!(t && microRef.current && microRef.current.contains(t));
           if (!withinPanel) {
-            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen) return;
+            if (pickerOpen || deadlineOpen || acceptOpen || remindersOpen || cameraOpen || robotOpen || scheduleOpen || weatherOpen || recurringOpen || bountyOpen) return;
             e.preventDefault(); e.stopPropagation(); if (!arming && !busy) onClose();
           }
         } catch {}
@@ -489,7 +854,7 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           right: 10,
           bottom: 0,
           pointerEvents: arming ? 'none' : 'auto',
-          zIndex: 1000000,
+          zIndex: walletConnecting ? 1 : 1000000, // Lower z-index when wallet modal is open
           // transform managed by useKeyboardDock
           transition: 'none',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -549,28 +914,51 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
 
             {/* bounty inside input (top-left) */}
             <button
-              onClick={() => setToolsOpen(v => !v)}
+              onMouseDownCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+              onTouchStartCapture={(e)=>{ try{ e.preventDefault(); e.stopPropagation(); } catch{}; setModalDockBottom(computeKbLiftNow()); }}
+              onClick={() => { setBountyOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}; setTimeout(()=>setModalDockBottom(0), 300); }}
               title="Вознаграждение"
               style={{ position: 'absolute', left: 55, top: 8, width: 26, height: 26, borderRadius: 999, border: '1px solid #1f2937', background: '#0b1220', color: '#facc15', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}
-            >💰</button>
+            >💵</button>
 
-            {/* send slot (➤) or mic (🎙️) when no text */}
+            {/* send slot: 💾 (save) when editing, ➤ (create) or mic (🎙️) when creating */}
             <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none' }}>
               <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {(text.trim().length > 0 || !!voiceFile || pendingFiles.length > 0) ? (
-                  <IosPostCreateActionsLauncher
-                    label="➤"
+                {isEdit ? (
+                  <button
+                    onClick={doSaveEdit}
                     disabled={busy}
-                    style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1 }}
-                    meChatId={chatId}
-                    members={members}
-                    onMake={async () => {
-                      // Call save and get taskId/title
-                      const result = await save();
-                      if (!result) throw new Error('Task creation failed');
-                      return { taskId: result.id, taskTitle: result.title };
-                    }}
-                  />
+                    title="Сохранить"
+                    style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1, cursor: 'pointer' }}
+                  >
+                    💾
+                  </button>
+                ) : (text.trim().length > 0 || !!voiceFile || pendingFiles.length > 0) ? (
+                  // If robot is configured (schedule/weather/recurring), just save without post-actions
+                  (scheduleAt || weatherCfg || recurringCfg) ? (
+                    <button
+                      onClick={save}
+                      disabled={busy}
+                      title="Создать"
+                      style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1, cursor: 'pointer' }}
+                    >
+                      ➤
+                    </button>
+                  ) : (
+                    <IosPostCreateActionsLauncher
+                      label="➤"
+                      disabled={busy}
+                      style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16, opacity: busy ? 0.6 : 1 }}
+                      meChatId={chatId}
+                      members={members}
+                      onMake={async () => {
+                        // Call save and get taskId/title
+                        const result = await save();
+                        if (!result) throw new Error('Task creation failed');
+                        return { taskId: result.id, taskTitle: result.title };
+                      }}
+                    />
+                  )
                 ) : (
                   <div onMouseDownCapture={ensureCaretFocus} onTouchStartCapture={ensureCaretFocus} style={{ width:'100%', height:'100%' }}>
                     <VoiceRecorder maxSeconds={30} buttonStyle={{ width:'100%', height:'100%' }} onRecorded={(file) => { setVoiceFile(file); setTimeout(() => ensureCaretFocus(), 0); }} />
@@ -589,20 +977,22 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
             >📎</button>
 
             {/* robot button inside input (left overlay, symmetric to send) */}
-            <div style={{ position: 'absolute', left: -6, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
-              <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <button
-                  onMouseDownCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {}; ensureCaretFocus(); }}
-                  onTouchStartCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); } catch {}; ensureCaretFocus(); }}
-                  onClick={() => { setToolsOpen(v => !v); requestAnimationFrame(() => refocusWithCaretStrong()); setTimeout(() => refocusWithCaretStrong(), 80); }}
-                  title="Роботы"
-                  style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16 }}
-                  aria-label="Роботы"
-                >
-                  🤖
-                </button>
+            {!isEdit && !scheduleAt && !weatherCfg && !recurringCfg && (
+              <div style={{ position: 'absolute', left: -6, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, pointerEvents: 'none', zIndex: 1 }}>
+                <div style={{ width: '100%', height: '100%', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <button
+                    onMouseDownCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); setModalDockBottom(computeKbLiftNow()); } catch {}; }}
+                    onTouchStartCapture={(e) => { try { e.preventDefault(); e.stopPropagation(); setModalDockBottom(computeKbLiftNow()); } catch {}; }}
+                    onClick={() => { setRobotOpen(true); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {}; setTimeout(()=>setModalDockBottom(0), 300); }}
+                    title="Роботы"
+                    style={{ width: 36, height: 36, borderRadius: 999, background: '#2563eb', color: '#fff', border: '1px solid transparent', fontSize: 16 }}
+                    aria-label="Роботы"
+                  >
+                    🤖
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
           {/* voice attachment row */}
           {voiceFile && (
@@ -695,11 +1085,58 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                 title="Добавить напоминание"
                 style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
               >⏰</button>
-              <button title="🔘 Предзадача" style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed' }}>🔘</button>
+              <ComplexityToggle
+                value={complexity}
+                onChange={(n)=>{ setComplexity(n); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }}
+                dockBottom={modalDockBottom}
+                onBeforeOpen={() => { setModalDockBottom(computeKbLiftNow()); try { inputRef.current?.blur(); (document.activeElement as any)?.blur?.(); } catch {} }}
+                onAfterClose={() => { setTimeout(()=>setModalDockBottom(0), 300); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+                style={{ width: 40, height: 40, borderRadius: 10, border: '1px solid #2a3346', background: '#121a32', color: '#e8eaed', cursor:'pointer' }}
+              />
             </div>
           </div>
           )}
-          {(deadlineAt || (acceptCondition && acceptCondition !== 'NONE') || remindersDraft.length > 0) && (
+          {/* Robot config banners */}
+          {!isEdit && recurringCfg && (
+            <div style={{ marginTop:6, fontSize:12, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', background:'#1e3a5f', color:'#e0f2fe', border:'1px solid #3b82f6', borderRadius:8, padding:'6px 10px' }}>
+              <span style={{ fontWeight:500 }}>🔂 {recurringInfo}</span>
+              <button onClick={() => { setRecurringCfg(null); setScheduleAt(null); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Сбросить повторение" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer', fontSize:14, fontWeight:600 }}>(x)</button>
+            </div>
+          )}
+          {!isEdit && weatherCfg && (
+            <div style={{ marginTop:6, fontSize:12, display:'flex', alignItems:'center', gap:6, background:'#1e3a5f', color:'#e0f2fe', border:'1px solid #3b82f6', borderRadius:8, padding:'6px 10px' }}>
+              <span style={{ fontWeight:500 }}>{`🌦️ Если ${new Date(weatherCfg.atIso).toLocaleString()} в (${weatherCfg.city}) погода (${weatherCfg.op==='GE'?'>=':'<='}) ${weatherCfg.valueC}°`}</span>
+              <button onClick={() => { setWeatherCfg(null); setScheduleAt(null); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Сбросить погодное условие" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer', fontSize:14, fontWeight:600 }}>(x)</button>
+            </div>
+          )}
+          {!isEdit && !weatherCfg && scheduleInfo && (
+            <div style={{ marginTop:6, fontSize:12, display:'flex', alignItems:'center', gap:6, background:'#1e3a5f', color:'#e0f2fe', border:'1px solid #3b82f6', borderRadius:8, padding:'6px 10px' }}>
+              <span style={{ fontWeight:500 }}>🕒 Создастся: {scheduleInfo.when} • {scheduleInfo.left}</span>
+              <button onClick={() => { setScheduleAt(null); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Сбросить плановую дату" style={{ background:'transparent', border:'none', color:'#93c5fd', cursor:'pointer', fontSize:14, fontWeight:600 }}>(x)</button>
+            </div>
+          )}
+          {/* Bounty banner (like Android) */}
+          {(bountyLocked || bountyAmount > 0) && (
+            <div style={{ marginTop:6, fontSize:12, display:'flex', alignItems:'center', gap:6, background:'#facc15', color:'#000', border:'1px solid #eab308', borderRadius:8, padding:'6px 10px', fontWeight:500 }}>
+              <span>💵 Вознаграждение: {bountyRub ? `${bountyRub}₽` : `${bountyAmount.toFixed(2)} TON`}{bountyLocked ? ' (оплачено)' : ''}</span>
+              {bountyLocked ? (
+                <button onClick={async () => {
+                  try {
+                    await refund(bountyAmount);
+                    setBountyAmount(0);
+                    setBountyRub(null);
+                    setBountyLocked(false);
+                    try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {}
+                  } catch (e: any) {
+                    alert(e?.message || 'Не удалось вернуть средства');
+                  }
+                }} title="Вернуть средства" style={{ background:'transparent', border:'none', color:'#000', cursor:'pointer', fontSize:14, fontWeight:600 }}>↩️ Вернуть</button>
+              ) : (
+                <button onClick={() => { setBountyAmount(0); setBountyRub(null); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Убрать вознаграждение" style={{ background:'transparent', border:'none', color:'#000', cursor:'pointer', fontSize:14, fontWeight:600 }}>(x)</button>
+              )}
+            </div>
+          )}
+          {(deadlineAt || (acceptCondition && acceptCondition !== 'NONE') || remindersDraft.length > 0 || (complexity !== null && complexity > 0)) && (
             <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:6 }}>
               {deadlineAt ? (
                 <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
@@ -719,6 +1156,12 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
                   <button onClick={() => { setRemindersDraft(prev => prev.filter((_, i) => i !== idx)); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Убрать напоминание" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
                 </div>
               ))}
+              {(complexity !== null && complexity > 0) ? (
+                <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'#0b1220', color:'#e8eaed', border:'1px solid #2a3346', borderRadius:999, padding:'4px 10px' }}>
+                  <span>🔘 Сложность: {complexity}</span>
+                  <button onClick={() => { setComplexity(null); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); } catch {} }} title="Убрать сложность" style={{ background:'transparent', border:'none', color:'#e8eaed', cursor:'pointer', fontSize:14, lineHeight:1 }}>✕</button>
+                </div>
+              ) : null}
             </div>
           )}
         {/* hidden pickers always mounted to avoid iOS unmount race */}
@@ -805,6 +1248,114 @@ export default function IosQuickCreatePanel({ open, onClose, chatId, defaultGrou
           onClose={() => { setCameraOpen(false); ensureCaretFocus(); }}
           onCapture={(file) => { setPendingFiles(prev => [...prev, file]); ensureCaretFocus(); }}
         />
+        {/* Robot modals - wrapped in high zIndex container for iOS */}
+        {robotOpen && createPortal(
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000010 }}>
+            <RobotPicker
+              open={robotOpen}
+              onClose={() => { setRobotOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+              onPickSchedule={() => { setRobotOpen(false); setScheduleOpen(true); }}
+              onPickWeather={() => { setRobotOpen(false); setWeatherOpen(true); }}
+              onPickRecurring={() => { setRobotOpen(false); setRecurringOpen(true); }}
+            />
+          </div>,
+          document.body
+        )}
+        <DeadlinePicker
+          open={scheduleOpen}
+          value={scheduleAt}
+          title="Плановое создание"
+          icon="🕒"
+          centered={true}
+          dockBottom={modalDockBottom}
+          onChange={(v) => {
+            if (!v) { setScheduleAt(null); return; }
+            const dt = new Date(v);
+            if (Number.isNaN(dt.getTime()) || dt.getTime() <= Date.now()) {
+              alert('Нельзя выбрать прошлое время');
+              return;
+            }
+            setScheduleAt(v);
+          }}
+          onClose={() => { setScheduleOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+        />
+        {weatherOpen && createPortal(
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000010 }}>
+            <WeatherScheduleModal
+              open={weatherOpen}
+              onClose={() => { setWeatherOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+              onApply={(p) => { setWeatherOpen(false); setWeatherCfg(p); setScheduleAt(p.atIso); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+            />
+          </div>,
+          document.body
+        )}
+        {recurringOpen && createPortal(
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000010 }}>
+            <RecurringScheduleModal
+              open={recurringOpen}
+              onClose={() => { setRecurringOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+              onApply={(cfg) => {
+                setRecurringOpen(false);
+                setRecurringCfg(cfg);
+                try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {}
+              }}
+            />
+          </div>,
+          document.body
+        )}
+        {/* Bounty picker (iOS style - above keyboard when open) - hide when wallet is connecting */}
+        {bountyOpen && !walletConnecting && createPortal(
+          <div style={{ position: 'fixed', inset: 0, zIndex: 1000005, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingBottom: `calc(env(safe-area-inset-bottom, 0px) + ${Math.max(0, modalDockBottom)}px)` }}>
+            <BountyPicker
+              open={bountyOpen && !walletConnecting}
+              initial={bountyAmount}
+              initialRub={bountyRub}
+              onApply={async (amountTon, approxRub) => {
+                const rubAmount = approxRub ?? null;
+                if (!bountyLocked) {
+                  // Start payment flow
+                  try {
+                    setWalletConnecting(true); // hide BountyPicker while wallet modal is opening
+                    await startPayment(amountTon, rubAmount);
+                    // Payment successful, now update state and close
+                    setBountyAmount(amountTon);
+                    setBountyRub(rubAmount);
+                    setBountyLocked(true);
+                    setBountyOpen(false);
+                    setWalletConnecting(false);
+                    try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {}
+                  } catch (e: any) {
+                    // If wallet connection is needed, close entire iOS panel so TON Connect modal is visible
+                    const msg = String(e?.message || '');
+                    if (/подключите.*кошел/i.test(msg)) {
+                      // Wallet modal is now open - close the entire panel to let user see it
+                      // User should connect wallet, then reopen panel to retry payment
+                      setWalletConnecting(false);
+                      setBountyOpen(false);
+                      onClose(); // Close the entire iOS panel
+                      return;
+                    } else {
+                      // Other error - show alert and close
+                      setWalletConnecting(false);
+                      alert(msg || 'Не удалось выполнить оплату');
+                      setBountyOpen(false);
+                    }
+                  }
+                } else {
+                  // Just update display
+                  setBountyAmount(amountTon);
+                  setBountyRub(rubAmount);
+                  setBountyOpen(false);
+                  try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {}
+                }
+              }}
+              onClose={() => { setBountyOpen(false); try { refocusWithCaretStrong(); setTimeout(()=>refocusWithCaretStrong(),80); setTimeout(()=>refocusWithCaretStrong(),160); } catch {} }}
+            />
+          </div>,
+          document.body
+        )}
+        {/* Hidden TonConnect initializer while panel is open (like Android) */}
+        {open && (<div style={{ display: 'none' }}><TonWalletConnect chatId={chatId} /></div>)}
       </div>
     </div>
   );
@@ -837,9 +1388,9 @@ function RemindersSheet({ onClose, onPick, dockBottom = 0 }: { onClose: () => vo
             </label>
           ))}
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-          <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={{ width:'100%', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px', fontSize:16 }} />
-          <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={{ width:'100%', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:10, padding:'8px 10px', fontSize:16 }} />
+        <div style={{ display:'flex', flexDirection:'column', gap:8, paddingLeft:4, paddingRight:4 }}>
+          <input type="date" value={dateStr} min={nowMinDate} onChange={(e)=>setDateStr(e.target.value)} style={{ width:'calc(100% - 8px)', maxWidth:'calc(100% - 8px)', minWidth:0, boxSizing:'border-box', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:10, padding:'6px 8px', fontSize:14 }} />
+          <input type="time" value={timeStr} onChange={(e)=>setTimeStr(e.target.value)} style={{ width:'calc(100% - 8px)', maxWidth:'calc(100% - 8px)', minWidth:0, boxSizing:'border-box', background:'#0b1220', color:'#e8eaed', border:'1px solid #1f2937', borderRadius:10, padding:'6px 8px', fontSize:14 }} />
         </div>
         {error ? <div style={{ color:'salmon', fontSize:12, marginTop:6 }}>{error}</div> : null}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginTop:10 }}>

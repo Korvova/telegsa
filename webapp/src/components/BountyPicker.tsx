@@ -71,12 +71,14 @@ export default function BountyPicker({ open, initial = 0, initialRub = null, onA
   const tonFmt = (v: number) => v.toFixed(4);
   const approxTon = (rub: number) => (tonRub ? (rub / tonRub) : null);
 
-  const apply = () => {
+  const apply = async () => {
     if (!tonRub || rubValue <= 0) { onClose(); return; }
     // Ограничим точность до 9 знаков после запятой (nanoTON)
     const amountClamped = Math.floor(amountTon * 1e9) / 1e9;
-    onApply(amountClamped, rubValue);
-    onClose();
+    // Call onApply (which may be async) and DON'T close immediately
+    // Let the parent decide when to close based on payment success
+    await onApply(amountClamped, rubValue);
+    // Don't close here - parent will close after successful payment
   };
 
   return (

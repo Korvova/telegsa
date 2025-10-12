@@ -51,13 +51,13 @@ export default function RemindersModal({
             </label>
           </div>
 
-          <div>
+          <div style={{ paddingLeft: 4, paddingRight: 4 }}>
             <input
               type="datetime-local"
               value={local}
               min={minAttr}
               onChange={(e) => setLocal(e.target.value)}
-              style={{ background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 10, padding: '8px 10px', width: '100%' }}
+              style={{ background: '#0b1220', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 10, padding: '6px 8px', fontSize: 14, width: 'calc(100% - 8px)', maxWidth: 'calc(100% - 8px)', minWidth: 0, boxSizing: 'border-box' }}
             />
             {error ? <div style={{ color: 'salmon', fontSize: 12, marginTop: 6 }}>{error}</div> : null}
           </div>

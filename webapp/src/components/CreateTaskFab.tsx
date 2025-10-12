@@ -165,6 +165,7 @@ export default function CreateTaskFab({
           chatId={_chatId}
           defaultGroupId={(overrideGroupId !== null ? overrideGroupId : _defaultGroupId) || undefined}
           onCreated={onCreated}
+          initialEdit={editInit || undefined}
         />
       ) : (
         <CreateTaskModal
