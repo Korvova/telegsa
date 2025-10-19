@@ -40,7 +40,7 @@ export default function TextComposer({
   return (
     <div style={{ position: 'relative', flex: 1, minWidth: 0, paddingRight: 52 }}>
       {firstAudio && !text.trim() ? (
-        <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ display: 'grid', gap: 6, position: 'relative', zIndex: 10 }}>
           <audio controls src={audioPreviewUrl ?? undefined} style={{ width: '100%', outline: 'none' }} />
           <div style={{ display: 'flex', gap: 8 }}>
             <button

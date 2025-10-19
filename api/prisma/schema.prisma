@@ -249,7 +249,7 @@ model User {
 // === User quota for creations (tasks + events + pretasks)
 model UserQuota {
   chatId        String   @id
-  totalCapacity Int      @default(100)
+  totalCapacity Int      @default(5000)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -822,4 +822,74 @@ model UserPayoutMethod {
   phone     String
   bankCode  String?
   updatedAt DateTime @updatedAt
+}
+
+/**
+ * -------------------- FORMS (конструктор форм для внешних сайтов) --------------------
+ * Каждый пользователь может создать формы для сбора заявок,
+ * которые автоматически создают задачи в его группах.
+ */
+
+enum FormSuccessType {
+  PAGE      // показать страницу успеха с WYSIWYG контентом
+  REDIRECT  // перенаправить на внешний URL
+}
+
+model Form {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerChatId String   // владелец формы
+  title       String   // название формы (для списка)
+  description String   @db.Text // WYSIWYG контент описания формы
+
+  // Поля формы: [{id, label, type, required, visible, placeholder, order}]
+  // type: 'text' | 'email' | 'phone' | 'textarea' | 'checkbox' | 'select'
+  fields      Json
+
+  // Настройки страницы успеха
+  successType    FormSuccessType @default(PAGE)
+  successContent String?         @db.Text // WYSIWYG контент для PAGE
+  redirectUrl    String?                  // URL для REDIRECT
+
+  // Настройки создания задачи
+  groupId         String?  // в какую группу создавать задачу
+  assigneeChatId  String?  // кому назначить задачу
+  labelId         String?  // какой ярлык присвоить
+  status          String   @default("Inbox") // статус задачи (Inbox, Doing, etc)
+  observerChatId  String?  // кто будет наблюдателем
+
+  allowSubmitterWatch Boolean @default(false) // разрешить отправителю следить за задачей
+
+  // Настройки оформления
+  backgroundColor String  @default("#1b2030") // цвет фона формы
+
+  isActive    Boolean  @default(true) // активна ли форма
+
+  submissions FormSubmission[] // отправки формы
+
+  @@index([ownerChatId])
+  @@index([isActive])
+}
+
+/// История отправок форм (для статистики и отладки)
+model FormSubmission {
+  id        String   @id @default(cuid())
+  formId    String
+  form      Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  data      Json     // данные из полей формы
+  taskId    String?  // ID созданной задачи
+
+  ip        String?  // IP адрес отправителя
+  userAgent String?  @db.Text // User-Agent браузера
+
+  submitterToken String? @unique // уникальный токен для отправителя (для наблюдения за задачей)
+
+  createdAt DateTime @default(now())
+
+  @@index([formId])
+  @@index([createdAt])
+  @@index([submitterToken])
 }

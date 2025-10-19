@@ -129,3 +129,93 @@ html.ios-modal-open, body.ios-modal-open {
 .process-topbar button {
   white-space: nowrap;
 }
+
+/* --- Tiptap Editor Styles --- */
+.tiptap {
+  outline: none;
+  min-height: 100px;
+  color: #e8eaed;
+}
+
+.tiptap p {
+  margin: 0.5em 0;
+}
+
+.tiptap h1, .tiptap h2, .tiptap h3 {
+  margin: 0.75em 0 0.5em;
+  font-weight: 600;
+}
+
+.tiptap ul, .tiptap ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tiptap a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.tiptap code {
+  background: #2a3346;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.tiptap pre {
+  background: #1b2030;
+  border: 1px solid #2a3346;
+  border-radius: 8px;
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.tiptap pre code {
+  background: transparent;
+  padding: 0;
+}
+
+/* Tiptap Table Styles */
+.tiptap table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  overflow: hidden;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.tiptap table td,
+.tiptap table th {
+  border: 1px solid #2a3346;
+  box-sizing: border-box;
+  min-width: 1em;
+  padding: 8px;
+  position: relative;
+  vertical-align: top;
+}
+
+.tiptap table th {
+  background-color: #1b2030;
+  font-weight: 600;
+  text-align: left;
+}
+
+.tiptap table td {
+  background-color: #0f1419;
+}
+
+.tiptap table .selectedCell {
+  background-color: #2a3346;
+}
+
+/* Tiptap Image Styles */
+.tiptap img {
+  max-width: 100% !important;
+  width: 100%;
+  height: auto !important;
+  border-radius: 8px;
+  margin: 0.5em 0;
+  display: block;
+  object-fit: contain;
+}
