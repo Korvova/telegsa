@@ -9,7 +9,7 @@ export default function TonWalletConnect({ chatId }: { chatId: string }) {
 
   async function refresh() {
     try {
-      const r = await fetch(`/telegsar-api/wallet/ton/status?chatId=${encodeURIComponent(me)}`);
+      const r = await fetch(`/api/wallet/ton/status?chatId=${encodeURIComponent(me)}`);
       const j = await r.json();
       setStatus(j);
     } catch {}
@@ -33,8 +33,8 @@ export default function TonWalletConnect({ chatId }: { chatId: string }) {
       const walletApp = wallet.device?.appName || 'wallet';
       try {
         // start + verify (MVP without real proof)
-        await fetch(`/telegsar-api/wallet/ton/connect-start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: me }) });
-        await fetch(`/telegsar-api/wallet/ton/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: me, address, network, walletApp, signature: 'via-tonconnect' }) });
+        await fetch(`/api/wallet/ton/connect-start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: me }) });
+        await fetch(`/api/wallet/ton/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: me, address, network, walletApp, signature: 'via-tonconnect' }) });
       } catch {}
       await refresh();
     });
@@ -48,14 +48,24 @@ export default function TonWalletConnect({ chatId }: { chatId: string }) {
 
   const connect = async () => {
     setLoading(true);
-    try { await tcRef.current?.openModal(); } catch (e:any) { alert(e?.message || 'Ошибка TonConnect'); }
-    finally { setLoading(false); }
+    try {
+      // Сначала отключаем если уже подключен
+      const currentWallet = tcRef.current?.wallet;
+      if (currentWallet) {
+        await tcRef.current?.disconnect();
+      }
+      await tcRef.current?.openModal();
+    } catch (e:any) {
+      alert(e?.message || 'Ошибка TonConnect');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const disconnect = async () => {
     setLoading(true);
     try {
-      await fetch(`/telegsar-api/wallet/ton/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: me }) });
+      await fetch(`/api/wallet/ton/disconnect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: me }) });
       await refresh();
     } catch {} finally { setLoading(false); }
   };

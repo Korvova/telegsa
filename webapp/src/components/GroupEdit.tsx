@@ -1,6 +1,7 @@
 // src/components/GroupEdit.tsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import WebApp from '@twa-dev/sdk';
+import { getGroupLabels, createGroupLabel, updateGroupLabel, deleteGroupLabel, type GroupLabel } from '../api';
 
 type Group = {
   id: string;
@@ -25,6 +26,7 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
   const [isPublic, setIsPublic] = useState(!!group.isPublic);
   const [permOpen, setPermOpen] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
+  const [labelsOpen, setLabelsOpen] = useState(false);
 
   const save = async () => {
     if (!isOwner) return;
@@ -214,6 +216,22 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
           </button>
 
           <button
+            onClick={() => setLabelsOpen(true)}
+            disabled={!isOwner || busy}
+            title="Ярлыки группы"
+            style={{
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: '#202840',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              cursor: isOwner && !busy ? 'pointer' : 'not-allowed',
+            }}
+          >
+            🏷️ Ярлыки
+          </button>
+
+          <button
             onClick={togglePublic}
             disabled={!isOwner || busy}
             title={isOwner ? (isPublic ? 'Сделать приватной' : 'Сделать публичной') : 'Только владелец'}
@@ -254,6 +272,10 @@ export default function GroupEdit({ group, chatId, onClose, onRenamed, onDeleted
 
       {permOpen && (
         <PermissionsModal groupId={group.id} chatId={chatId} onClose={() => setPermOpen(false)} />
+      )}
+
+      {labelsOpen && (
+        <GroupLabelsModal groupId={group.id} chatId={chatId} onClose={() => setLabelsOpen(false)} />
       )}
 
       {descOpen && (
@@ -414,6 +436,351 @@ function GroupDescriptionModal({ groupId, chatId, onClose }: { groupId: string; 
             <button onClick={onClose} disabled={busy} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid #2a3346', background:'#202840', color:'#e8eaed' }}>Отмена</button>
             <button onClick={save} disabled={busy} style={{ padding:'8px 12px', borderRadius:10, border:'1px solid transparent', background:'#2563eb', color:'#fff', opacity: busy?0.6:1 }}>Сохранить</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GroupLabelsModal({ groupId, chatId, onClose }: { groupId: string; chatId: string; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [labels, setLabels] = useState<GroupLabel[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+
+  useEffect(() => {
+    loadLabels();
+  }, [groupId]);
+
+  const loadLabels = async () => {
+    setBusy(true);
+    try {
+      const result = await getGroupLabels(groupId);
+      setLabels(result);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка загрузки ярлыков');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = (label: GroupLabel) => {
+    setEditingId(label.id);
+    setEditingTitle(label.title);
+  };
+
+  const saveEdit = async () => {
+    if (!editingId || !editingTitle.trim()) return;
+    setBusy(true);
+    try {
+      const updated = await updateGroupLabel(groupId, editingId, { chatId, title: editingTitle.trim() });
+      setLabels(labels.map((l) => (l.id === updated.id ? updated : l)));
+      setEditingId(null);
+      setEditingTitle('');
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось переименовать');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeLabel = async (labelId: string) => {
+    if (!confirm('Удалить ярлык? Он будет удалён со всех задач.')) return;
+    setBusy(true);
+    try {
+      await deleteGroupLabel(groupId, labelId, chatId);
+      setLabels(labels.filter((l) => l.id !== labelId));
+      if (editingId === labelId) {
+        setEditingId(null);
+        setEditingTitle('');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createLabel = async () => {
+    if (!newTitle.trim()) return;
+    setBusy(true);
+    try {
+      const created = await createGroupLabel(groupId, { chatId, title: newTitle.trim() });
+      setLabels([...labels, created].sort((a, b) => a.order - b.order));
+      setNewTitle('');
+      setCreating(false);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось создать');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,.5)',
+        zIndex: 10000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(520px, 92vw)',
+          maxHeight: '80vh',
+          overflow: 'auto',
+          background: '#1b2030',
+          border: '1px solid #2a3346',
+          borderRadius: 16,
+          padding: 16,
+          color: '#e8eaed',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontWeight: 700 }}>🏷️ Ярлыки группы</div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#9ca3af',
+              fontSize: 18,
+              cursor: 'pointer',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ color: '#fecaca', marginBottom: 12, padding: 8, background: '#3a1f1f', borderRadius: 8 }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 12 }}>
+          Создавайте ярлыки для организации задач в группе. Ярлыки можно присваивать задачам.
+        </div>
+
+        {/* Список ярлыков */}
+        <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+          {labels.map((label) => (
+            <div
+              key={label.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: 10,
+                background: '#121722',
+                border: '1px solid #2a3346',
+                borderRadius: 10,
+              }}
+            >
+              {editingId === label.id ? (
+                <>
+                  <input
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEdit();
+                      if (e.key === 'Escape') {
+                        setEditingId(null);
+                        setEditingTitle('');
+                      }
+                    }}
+                    autoFocus
+                    style={{
+                      flex: 1,
+                      padding: '6px 10px',
+                      borderRadius: 8,
+                      background: '#0b1220',
+                      color: '#e8eaed',
+                      border: '1px solid #2a3346',
+                    }}
+                  />
+                  <button
+                    onClick={saveEdit}
+                    disabled={busy}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      background: '#2563eb',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: busy ? 'default' : 'pointer',
+                      opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    ✓
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingId(null);
+                      setEditingTitle('');
+                    }}
+                    disabled={busy}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      background: '#374151',
+                      color: '#e8eaed',
+                      border: 'none',
+                      cursor: busy ? 'default' : 'pointer',
+                      opacity: busy ? 0.6 : 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span style={{ flex: 1, fontSize: 14 }}>🏷️ {label.title}</span>
+                  <button
+                    onClick={() => startEdit(label)}
+                    disabled={busy}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      background: '#202840',
+                      color: '#e8eaed',
+                      border: '1px solid #2a3346',
+                      cursor: busy ? 'default' : 'pointer',
+                      fontSize: 12,
+                    }}
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={() => removeLabel(label.id)}
+                    disabled={busy}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      background: '#3a1f1f',
+                      color: '#ffd7d7',
+                      border: '1px solid #472a2a',
+                      cursor: busy ? 'default' : 'pointer',
+                      fontSize: 12,
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+
+          {labels.length === 0 && !creating && (
+            <div style={{ textAlign: 'center', padding: 20, opacity: 0.6, fontSize: 14 }}>
+              Ярлыков пока нет. Создайте первый ярлык!
+            </div>
+          )}
+        </div>
+
+        {/* Создание нового ярлыка */}
+        {creating ? (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') createLabel();
+                if (e.key === 'Escape') {
+                  setCreating(false);
+                  setNewTitle('');
+                }
+              }}
+              placeholder="Название ярлыка"
+              autoFocus
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: 10,
+                background: '#121722',
+                color: '#e8eaed',
+                border: '1px solid #2a3346',
+              }}
+            />
+            <button
+              onClick={createLabel}
+              disabled={busy || !newTitle.trim()}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 10,
+                background: '#2563eb',
+                color: '#fff',
+                border: 'none',
+                cursor: busy || !newTitle.trim() ? 'default' : 'pointer',
+                opacity: busy || !newTitle.trim() ? 0.6 : 1,
+              }}
+            >
+              Создать
+            </button>
+            <button
+              onClick={() => {
+                setCreating(false);
+                setNewTitle('');
+              }}
+              disabled={busy}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 10,
+                background: '#374151',
+                color: '#e8eaed',
+                border: 'none',
+                cursor: busy ? 'default' : 'pointer',
+              }}
+            >
+              Отмена
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setCreating(true)}
+            disabled={busy}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 10,
+              background: '#203025',
+              color: '#b7ffb7',
+              border: '1px solid #2a4a2a',
+              cursor: busy ? 'default' : 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            + Создать ярлык
+          </button>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 10,
+              background: '#202840',
+              color: '#e8eaed',
+              border: '1px solid #2a3346',
+              cursor: 'pointer',
+            }}
+          >
+            Закрыть
+          </button>
         </div>
       </div>
     </div>

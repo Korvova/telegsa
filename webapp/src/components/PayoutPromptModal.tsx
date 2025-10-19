@@ -50,7 +50,7 @@ export default function PayoutPromptModal({
                 onClick={async () => {
                   try {
                     setBusy(true);
-                    const r = await fetch('/telegsar-api/bounty/release-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ taskId }) });
+                    const r = await fetch('/api/bounty/release-request', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ taskId }) });
                     const j = await r.json().catch(()=>({ ok:false, error:'internal' }));
                     if (!r.ok || !j?.ok) {
                       if (String(j?.error || '').includes('needs_wallet')) {

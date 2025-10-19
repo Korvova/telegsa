@@ -40,7 +40,7 @@ export default function BountyPicker({ open, initial = 0, initialRub = null, onA
     // fetch rates
     (async () => {
       try {
-        const r = await fetch('/telegsar-api/bounty/rates');
+        const r = await fetch('/api/bounty/rates');
         const j = await r.json().catch(()=>({}));
         if (j?.ok && Number.isFinite(j.tonRub)) setTonRub(Number(j.tonRub));
         else setTonRub(null);
