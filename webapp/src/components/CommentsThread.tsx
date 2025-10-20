@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useKeyboardInsets } from '../hooks/useKeyboardInsets';
 import WebApp from '@twa-dev/sdk';
-import { addComment, deleteComment, listComments, type TaskComment, getCommentLikes, likeComment, unlikeComment } from '../api';
+import { addComment, deleteComment, listComments, type TaskComment, getCommentLikes, likeComment, unlikeComment, uploadCommentMedia } from '../api';
 import RankName from './RankName';
 import { useMyRankIcon } from '../hooks/useMyRankIcon';
 
@@ -23,6 +23,8 @@ export default function CommentsThread({
   const [busy, setBusy] = useState(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [likes, setLikes] = useState<Record<string, { count: number; me: boolean }>>({});
   const [likeBusy, setLikeBusy] = useState<Record<string, boolean>>({});
   const myRankIcon = useMyRankIcon(meChatId);
@@ -87,13 +89,22 @@ export default function CommentsThread({
 
   const send = async () => {
     const val = text.trim();
-    if (!val || busy) return;
+    if ((!val && !pendingFile) || busy) return;
     setBusy(true);
     try {
-      const r = await addComment(taskId, meChatId, val);
+      const r = await addComment(taskId, meChatId, val || ' ');
       if (r.ok) {
+        // Если есть файл, загружаем его
+        if (pendingFile && r.comment?.id) {
+          try {
+            await uploadCommentMedia(taskId, r.comment.id, meChatId, pendingFile);
+          } catch (e) {
+            console.error('Failed to upload comment media:', e);
+          }
+        }
         // Сразу очищаем поле и подгружаем актуальный список, чтобы комментарий появился
         setText('');
+        setPendingFile(null);
         WebApp?.HapticFeedback?.impactOccurred?.('light');
         await load();
         // Вернуть фокус и прокрутить, чтобы инпут и последний коммент были видны
@@ -158,6 +169,22 @@ export default function CommentsThread({
 
   const [badImg, setBadImg] = useState<Record<string, boolean>>({});
 
+  // Функция для превращения URL в кликабельные ссылки
+  const linkify = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{ color: '#8aa0ff', wordBreak: 'break-all' }}>
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
   return (
     <div
       ref={wrapRef}
@@ -185,26 +212,39 @@ export default function CommentsThread({
               </div>
               {(() => {
                 const txt = String(c.text || '');
-                const hasFile = txt.startsWith('/files/') || txt.includes('/files/');
-                if (!hasFile) return (<div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>{c.text}</div>);
-                const src = `${(import.meta as any).env.VITE_API_BASE}${txt}`;
-                if (badImg[src]) {
-                  return (
-                    <div style={{ marginTop: 6 }}>
-                      <a href={src} target="_blank" rel="noreferrer" style={{ color: '#8aa0ff' }}>📎 Открыть файл</a>
-                    </div>
-                  );
-                }
+                const lines = txt.split('\n');
+                const textLines = lines.filter(l => !l.startsWith('/files/'));
+                const fileLines = lines.filter(l => l.startsWith('/files/'));
+
                 return (
-                  <div style={{ marginTop: 6 }}>
-                    <img
-                      src={src}
-                      alt="Вложение"
-                      style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
-                      onLoad={() => { try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {} }}
-                      onError={() => setBadImg((prev) => ({ ...prev, [src]: true }))}
-                    />
-                  </div>
+                  <>
+                    {textLines.length > 0 && (
+                      <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflowWrap: 'break-word' }}>
+                        {linkify(textLines.join('\n'))}
+                      </div>
+                    )}
+                    {fileLines.map((fileLine, idx) => {
+                      const src = `${(import.meta as any).env.VITE_API_BASE}${fileLine}`;
+                      if (badImg[src]) {
+                        return (
+                          <div key={idx} style={{ marginTop: 6 }}>
+                            <a href={src} target="_blank" rel="noreferrer" style={{ color: '#8aa0ff' }}>📎 Открыть файл</a>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={idx} style={{ marginTop: 6 }}>
+                          <img
+                            src={src}
+                            alt="Вложение"
+                            style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #2a3346' }}
+                            onLoad={() => { try { boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight }); } catch {} }}
+                            onError={() => setBadImg((prev) => ({ ...prev, [src]: true }))}
+                          />
+                        </div>
+                      );
+                    })}
+                  </>
                 );
               })()}
               <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -228,6 +268,18 @@ export default function CommentsThread({
         )}
       </div>
 
+      {pendingFile && (
+        <div style={{ marginTop: 8, padding: 8, background: 'rgba(0,0,0,.1)', borderRadius: 8, fontSize: 12 }}>
+          📎 {pendingFile.name}
+          <button
+            onClick={() => setPendingFile(null)}
+            style={{ marginLeft: 8, background: 'transparent', border: 'none', color: '#ff6b6b', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div style={{
         ...inputRow,
         position: 'relative',
@@ -244,7 +296,26 @@ export default function CommentsThread({
           placeholder="Напишите комментарий…"
           style={input}
         />
-        <button onClick={send} disabled={busy || !text.trim()} style={sendBtn}>⌲</button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) setPendingFile(file);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+          }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+          style={{ ...sendBtn, fontSize: 18 }}
+          title="Прикрепить фото"
+        >
+          📎
+        </button>
+        <button onClick={send} disabled={busy || (!text.trim() && !pendingFile)} style={sendBtn}>⌲</button>
       </div>
     </div>
   );
@@ -282,22 +353,27 @@ const itemRow: React.CSSProperties = {
 
 // removed avatar circle with initial letter
 
-const inputRow: React.CSSProperties = { display: 'flex', gap: 8 };
+const inputRow: React.CSSProperties = { display: 'flex', gap: 8, width: '100%' };
 const input: React.CSSProperties = {
   flex: 1,
+  minWidth: 0,
   padding: '10px 12px',
   borderRadius: 12,
   background: 'transparent',
   color: 'inherit',
   border: '1px solid #3a435a',
+  boxSizing: 'border-box',
 };
 const sendBtn: React.CSSProperties = {
-  padding: '10px 14px',
+  padding: '10px 10px',
   borderRadius: 12,
   background: 'transparent',
   color: 'inherit',
   border: '1px solid #3a435a',
   cursor: 'pointer',
+  flexShrink: 0,
+  minWidth: 'auto',
+  boxSizing: 'border-box',
 };
 const delBtn: React.CSSProperties = {
   padding: '6px 10px',

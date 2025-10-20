@@ -32,6 +32,7 @@ import { expensesRouter } from './routes/expenses.js';
 import { rankRouter } from './routes/rank.js';
 import { ratingRouter } from './routes/rating.js';
 import { apiV1Router } from './routes/api-v1.js';
+import { groupAutomationRouter, executeAutomation } from './routes/group-automation.js';
 
 
 import { execa } from 'execa';
@@ -43,6 +44,10 @@ import path from 'node:path';
 
  import { labelsRouter } from './routes/labels.js';
 import { aiProcessRouter } from './routes/ai-process.js';
+import { formsRouter } from './routes/forms.js';
+import { publicFormsRouter } from './routes/public-forms.js';
+import uploadRouter from './routes/upload.js';
+import { feedbackRouter } from './routes/feedback.js';
 
 
 const prisma = new PrismaClient();
@@ -414,6 +419,9 @@ app.use(deadlineRouter);
 app.use(ratingRouter);
 app.use(rankRouter);
 
+// Group automation
+app.use(groupAutomationRouter);
+
 // External API v1
 app.use('/api/v1', apiV1Router);
 
@@ -434,9 +442,14 @@ app.use(labelsRouter);
 
 /* ---------- AI Process ---------- */
 
-app.use(aiProcessRouter({ prisma })); 
+app.use(aiProcessRouter({ prisma }));
 
+/* ---------- Forms (конструктор форм) ---------- */
 
+app.use(formsRouter);
+app.use(publicFormsRouter);
+app.use(uploadRouter);
+app.use('/feedback', feedbackRouter);
 
 /* ---------- helper: имена ответственных в колонках ---------- */
 async function enrichColumnsWithAssignees(columnsRaw) {
@@ -1293,6 +1306,18 @@ app.patch('/tasks/:id/move', async (req, res) => {
       } catch (e) { console.warn('[auto-refund:cancel]', e); }
     })().catch(()=>{});
 
+    // Автоматизация при смене статуса (асинхронно, неблокирующе)
+    ;(async () => {
+      try {
+        const newColumnName = String(toCol?.name || '');
+        const parts = newColumnName.split('::');
+        const newStatus = parts.length > 1 ? parts[1] : newColumnName;
+        await executeAutomation(taskId, 'status', newStatus);
+      } catch (e) {
+        console.warn('[automation:status] Error:', e);
+      }
+    })().catch(() => {});
+
     res.json({ ok: true, task: result });
     // reevaluate pretasks depending on this task (async, non-blocking)
     ;(async () => { try { await reevaluatePreTasksByTaskId(prisma, tg, taskId); } catch {} })();
@@ -1594,6 +1619,19 @@ app.patch('/tasks/:id', async (req, res) => {
     } catch (e) {
       console.error('notify task accepted error', e);
     }
+
+    // Автоматизация при смене assignee (асинхронно, неблокирующе)
+    ;(async () => {
+      try {
+        const was = before?.assigneeChatId ? String(before.assigneeChatId) : null;
+        const now = updated?.assigneeChatId ? String(updated.assigneeChatId) : null;
+        if (was !== now && now) {
+          await executeAutomation(id, 'assignee', now);
+        }
+      } catch (e) {
+        console.warn('[automation:assignee] Error:', e);
+      }
+    })().catch(() => {});
 
     res.json({ ok: true, task: updated });
   } catch (e) {
@@ -1971,6 +2009,128 @@ app.post('/invites/accept', async (req, res) => {
 
 
 
+
+// POST /tasks/:taskId/comments/:commentId/media?chatId=<number>
+// multipart: field name="file" - загрузка медиа в комментарий
+app.post('/tasks/:taskId/comments/:commentId/media', async (req, res) => {
+  try {
+    const taskId = String(req.params.taskId);
+    const commentId = String(req.params.commentId);
+    const chatId = String(req.query.chatId || '').trim();
+    if (!chatId) return res.status(400).json({ ok: false, error: 'chatId_required' });
+
+    // Проверим, что комментарий существует
+    const comment = await prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) return res.status(404).json({ ok: false, error: 'comment_not_found' });
+    if (comment.taskId !== taskId) return res.status(400).json({ ok: false, error: 'task_mismatch' });
+
+    const bb = Busboy({ headers: req.headers });
+    let fileBufs = [];
+    let fileName = '';
+    let mimeType = '';
+
+    bb.on('file', (_name, file, info) => {
+      fileName = info?.filename || 'file.bin';
+      mimeType = info?.mimeType || 'application/octet-stream';
+      file.on('data', (d) => fileBufs.push(d));
+    });
+
+    bb.on('finish', async () => {
+      try {
+        const buf = Buffer.concat(fileBufs);
+        if (!buf.length) return res.status(400).json({ ok: false, error: 'empty_file' });
+
+        // Готовим multipart на сторону Telegram
+        const form = new FormData();
+        form.append('chat_id', chatId);
+
+        const isPhoto = /^image\//i.test(mimeType);
+        if (isPhoto) {
+          form.append('photo', new Blob([buf], { type: mimeType }), fileName || 'photo.jpg');
+        } else {
+          form.append('document', new Blob([buf], { type: mimeType }), fileName);
+        }
+
+        const method = isPhoto ? 'sendPhoto' : 'sendDocument';
+        const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/${method}`;
+        const r = await fetch(url, { method: 'POST', body: form });
+        const data = await r.json();
+
+        if (!data?.ok) {
+          console.error('[comment media upload] Telegram error:', data);
+          return res.status(502).json({ ok: false, error: 'telegram_error', details: data?.description || '' });
+        }
+
+        // Достаём file_id и метадату
+        let payloadForDb = null;
+        if (isPhoto) {
+          const sizes = data.result?.photo || [];
+          const p = sizes[sizes.length - 1] || sizes[0];
+          payloadForDb = {
+            taskId,
+            kind: 'photo',
+            tgFileId: p.file_id,
+            tgUniqueId: p.file_unique_id,
+            width: p.width,
+            height: p.height,
+            fileSize: p.file_size || null,
+            fileName: fileName || null,
+            mimeType: mimeType || null,
+          };
+        } else {
+          const d = data.result?.document;
+          payloadForDb = {
+            taskId,
+            kind: 'document',
+            tgFileId: d.file_id,
+            tgUniqueId: d.file_unique_id,
+            fileSize: d.file_size || null,
+            fileName: d.file_name || fileName || null,
+            mimeType: d.mime_type || mimeType || null,
+          };
+        }
+
+        const saved = await prisma.taskMedia.create({ data: payloadForDb });
+
+        // По возможности удалим "временное" сообщение у пользователя
+        try {
+          const msgId = data.result?.message_id;
+          if (msgId) await tg('deleteMessage', { chat_id: chatId, message_id: msgId });
+        } catch {}
+
+        // Обновляем текст комментария с путём к файлу
+        const mediaPath = `/files/${saved.id}`;
+        const newText = comment.text ? `${comment.text}\n${mediaPath}` : mediaPath;
+        await prisma.comment.update({
+          where: { id: commentId },
+          data: { text: newText }
+        });
+
+        return res.json({
+          ok: true,
+          media: {
+            id: saved.id,
+            kind: saved.kind,
+            url: mediaPath,
+            fileName: saved.fileName,
+            mimeType: saved.mimeType,
+            width: saved.width,
+            height: saved.height,
+            fileSize: saved.fileSize,
+          }
+        });
+      } catch (e) {
+        console.error('[comment media upload] finish handler error', e);
+        return res.status(500).json({ ok: false, error: 'internal' });
+      }
+    });
+
+    req.pipe(bb);
+  } catch (e) {
+    console.error('POST /tasks/:taskId/comments/:commentId/media error', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
 
 // POST /tasks/:id/media?chatId=<number>
 // multipart: field name="file"

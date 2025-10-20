@@ -1271,6 +1271,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
             endAt={task.endAt ?? null}
             chatId={meChatId}
             isOrganizer={Boolean((task as any)?.meIsOrganizer)}
+            eventTitle={text || 'Событие'}
           />
         )}
 

@@ -1,7 +1,7 @@
 import { useEffect,  useState } from 'react';
 
 import WebApp from '@twa-dev/sdk';
-import { createEvent, listGroups, setMyEventReminders, createEventInvite, type Group } from '../api';
+import { createEvent, listGroups, setMyEventReminders, type Group } from '../api';
 
 
 export default function EventCreateModal({
@@ -24,7 +24,6 @@ export default function EventCreateModal({
   const [title, setTitle] = useState('');
 
 
-const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
   
   const [startAt, setStartAt] = useState<string>(initialStart.toISOString());
   const [endAt, setEndAt] = useState<string>(initialEnd.toISOString());
@@ -83,23 +82,6 @@ const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
       await setMyEventReminders(r.event.id, byChatId, reminders.slice().sort((a,b)=>a-b));
     }
 
-    // ✅ сразу открыть приглашение (t.me/share) после создания
-    if (openInviteAfterCreate) {
-      try {
-        const inv = await createEventInvite(r.event.id, byChatId);
-        if (inv?.ok && (inv.link || inv.shareText)) {
-          const url = `https://t.me/share/url?url=${encodeURIComponent(inv.link || '')}&text=${encodeURIComponent(inv.shareText || 'Присоединяйся к событию')}`;
-          // в миниапп лучше открывать телеграмный диалог
-          if ((WebApp as any)?.openTelegramLink) {
-            (WebApp as any).openTelegramLink(url);
-          } else {
-            WebApp.openLink?.(url, { try_instant_view: false });
-          }
-        }
-      } catch (e) {
-        console.warn('[EventCreateModal] invite open failed', e);
-      }
-    }
 
     WebApp?.HapticFeedback?.notificationOccurred?.('success');
     onCreated(r.event.id);  // откроется карточка события
@@ -182,22 +164,6 @@ const [openInviteAfterCreate, setOpenInviteAfterCreate] = useState(true);
             </button>
           ))}
         </div>
-
-
-
-
-<div style={{ marginTop: 10 }}>
-  <label style={{ display: 'inline-flex', gap: 8, alignItems: 'center', fontSize: 13, opacity: .9 }}>
-    <input
-      type="checkbox"
-      checked={openInviteAfterCreate}
-      onChange={e => setOpenInviteAfterCreate(e.target.checked)}
-    />
-    Открыть приглашение после создания
-  </label>
-</div>
-
-
 
 
 

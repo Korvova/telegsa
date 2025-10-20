@@ -206,10 +206,35 @@ router.get('/:id/participants', async (req, res) => {
     if (!event || event.type !== 'EVENT') {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
-    const participants = await prisma.eventParticipant.findMany({
+    const rawParticipants = await prisma.eventParticipant.findMany({
       where: { eventId },
       orderBy: { createdAt: 'asc' },
     });
+
+    // Загружаем имена пользователей из таблицы User
+    const chatIds = rawParticipants.map(p => p.chatId);
+    const users = await prisma.user.findMany({
+      where: { chatId: { in: chatIds } },
+      select: { chatId: true, firstName: true, lastName: true, username: true },
+    });
+    const userMap = new Map(users.map(u => [u.chatId, u]));
+
+    // Формируем имя как в задачах
+    const participants = rawParticipants.map(p => {
+      const u = userMap.get(p.chatId);
+      let name = p.chatId;
+      if (u) {
+        const fn = (u.firstName || '').trim();
+        const ln = (u.lastName || '').trim();
+        name = [fn, ln].filter(Boolean).join(' ') || u.username || p.chatId;
+      }
+      return {
+        chatId: p.chatId,
+        role: p.role,
+        name,
+      };
+    });
+
     res.json({ ok: true, participants });
   } catch (e) {
     console.error('GET /events/:id/participants error:', e);

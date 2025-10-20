@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import WebApp from '@twa-dev/sdk';
 import BottomNav, { type TabKey } from './BottomNav';
 import GroupEdit from './components/GroupEdit';
+import GroupAutomationPage from './components/GroupAutomationPage';
 import WriteAccessGate from './WriteAccessGate';
 
 import GroupMembers from './components/GroupMembers';
@@ -63,6 +64,10 @@ import SettingsTheme from './components/SettingsTheme';
 import SettingsKeyboardTest from './components/SettingsKeyboardTest';
 import SettingsAITokens from './components/SettingsAITokens';
 import SettingsAPI from './components/SettingsAPI';
+import SettingsForms from './components/SettingsForms';
+import FormsSettingsPage from './components/FormsSettingsPage';
+import SettingsFeedback from './components/SettingsFeedback';
+import FormEditor from './components/FormEditor';
 import { useMyRankIcon } from './hooks/useMyRankIcon';
 
 /* ---------------- helpers ---------------- */
@@ -91,25 +96,27 @@ function getTaskIdFromURL() {
 
 // заменить parseStartParam на:
 function parseStartParam(sp: string) {
-  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask' | 'watch'; id: string; token?: string };
+  if (!sp) return null as null | { type: 'assign' | 'join' | 'event' | 'task' | 'newtask' | 'newtaskfull' | 'watch' | 'formwatch'; id: string; token?: string };
 
   // 1) Полный вид
-  let m = sp.match(/^(assign|join|event|newtask|watch)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
+  let m = sp.match(/^(assign|join|event|newtask|newtaskfull|watch|formwatch)__([a-z0-9]+)__([-A-Za-z0-9_]{10,})$/i);
   if (m) return { type: m[1] as any, id: m[2], token: m[3] };
 
   // 2) task_<id>
   m = sp.match(/^task_([a-z0-9]+)$/i);
   if (m) return { type: 'task', id: m[1] };
 
-  // 3) Компактный assign/join/event/newtask
-  const head = sp.startsWith('assign')
+  // 3) Компактный assign/join/event/newtask/newtaskfull
+  const head = sp.startsWith('newtaskfull')
+    ? 'newtaskfull'
+    : sp.startsWith('newtask')
+    ? 'newtask'
+    : sp.startsWith('assign')
     ? 'assign'
     : sp.startsWith('join')
     ? 'join'
     : sp.startsWith('event')
     ? 'event'
-    : sp.startsWith('newtask')
-    ? 'newtask'
     : sp.startsWith('watch')
     ? 'watch'
     : null;
@@ -390,6 +397,7 @@ export default function App() {
 
 
   const [tab, setTab] = useState<TabKey>('home');
+  const [formsEditId, setFormsEditId] = useState<string | null>(null);
 
   const [groupTab, setGroupTab] = useState<'kanban' | 'process' | 'members'>('kanban');
   // removed group process states
@@ -435,6 +443,7 @@ export default function App() {
   }, []);
 
   const [showGroupEdit, setShowGroupEdit] = useState(false);
+  const [showGroupAutomation, setShowGroupAutomation] = useState(false);
   const [groupsPage, setGroupsPage] = useState<'list' | 'detail'>('list');
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -534,12 +543,12 @@ export default function App() {
   // системная кнопка назад (Telegram)
   useEffect(() => {
     if (taskId) return; // TaskView сам рулит back
-    if ((tab === 'groups' && groupsPage === 'detail') || tab === 'notifications') {
+    if ((tab === 'groups' && groupsPage === 'detail') || tab === 'notifications' || tab === 'forms') {
       WebApp?.BackButton?.show?.();
     } else {
       WebApp?.BackButton?.hide?.();
     }
-  }, [tab, groupsPage, taskId]);
+  }, [tab, groupsPage, taskId, formsEditId]);
 
   const reloadGroups = () => listGroups(chatId).then((r) => { if (r.ok) setGroups(r.groups); });
 
@@ -700,10 +709,58 @@ export default function App() {
       }).catch(() => {});
     }
 
-    // 👇 Новое: “Новая задача по ссылке”
+    // 📝 Новое: "Наблюдение за задачей из формы"
+    if (parsed.type === 'formwatch') {
+      console.log('[DEEPLINK] formwatch processing:', { token: parsed.token, chatId: me });
+
+      fetch(`${import.meta.env.VITE_API_BASE}/public/forms/watch/${parsed.token}?chatId=${me}`, {
+        method: 'POST',
+      })
+        .then((r) => r.json())
+        .then((r) => {
+          console.log('[DEEPLINK] formwatch response:', r);
+          if (r?.ok && r.taskId) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('task', r.taskId);
+            window.history.replaceState(null, '', url.toString());
+            setTaskId(r.taskId);
+            console.log('[DEEPLINK] formwatch activated, opening task:', r.taskId);
+          } else {
+            console.error('[DEEPLINK] formwatch failed:', r);
+          }
+        })
+        .catch((err) => {
+          console.error('[DEEPLINK] formwatch error:', err);
+        });
+    }
+
+    // 👇 Новое: "Новая задача по ссылке"
     if (parsed.type === 'newtask') {
       const url = new URL(window.location.href);
       fetch(`${import.meta.env.VITE_API_BASE}/sharenewtask/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatId: me,
+          taskId: parsed.id,
+          token: parsed.token,
+        }),
+      })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r?.ok && r.taskId) {
+            url.searchParams.set('task', r.taskId);
+            window.history.replaceState(null, '', url.toString());
+            setTaskId(r.taskId);
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 👇 Новое: "Новая задача по ссылке со связями" (с рекурсивным копированием предзадач)
+    if (parsed.type === 'newtaskfull') {
+      const url = new URL(window.location.href);
+      fetch(`${import.meta.env.VITE_API_BASE}/sharenewtask/accept-with-pretasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -747,6 +804,19 @@ export default function App() {
 
       // если мы на экране уведомлений — возвращаемся в Настройки
       if (tab === 'notifications') {
+        setTab('settings');
+        WebApp?.BackButton?.hide?.();
+        return;
+      }
+
+      // если мы на экране форм
+      if (tab === 'forms') {
+        // если открыт редактор формы — закрываем его
+        if (formsEditId) {
+          setFormsEditId(null);
+          return;
+        }
+        // иначе возвращаемся в Настройки
         setTab('settings');
         WebApp?.BackButton?.hide?.();
         return;
@@ -1061,21 +1131,38 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{title}</h1>
                 {tab === 'groups' && groupsPage === 'detail' && isOwnerOfSelected ? (
-                  <button
-                    title="Переименовать группу"
-                    onClick={() => setShowGroupEdit(true)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#8aa0ff',
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      padding: 2,
-                      lineHeight: 1,
-                    }}
-                  >
-                    ✏️
-                  </button>
+                  <>
+                    <button
+                      title="Переименовать группу"
+                      onClick={() => setShowGroupEdit(true)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#8aa0ff',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        padding: 2,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      title="Автоматизация"
+                      onClick={() => setShowGroupAutomation(true)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#8aa0ff',
+                        cursor: 'pointer',
+                        fontSize: 16,
+                        padding: 2,
+                        lineHeight: 1,
+                      }}
+                    >
+                      🦾
+                    </button>
+                  </>
                 ) : null}
               </div>
             </div>
@@ -1245,6 +1332,12 @@ export default function App() {
               {/* External API */}
               <SettingsAPI chatId={chatId} />
 
+              {/* Forms Constructor */}
+              <SettingsForms chatId={chatId} onOpenForms={() => setTab('forms' as any)} />
+
+              {/* Обратная связь */}
+              <SettingsFeedback chatId={chatId} />
+
               {/* тут можно добавить другие пункты настроек позже */}
               <button
                 onClick={() => setSettingsPage('kbtest')}
@@ -1266,22 +1359,38 @@ export default function App() {
             )
           ) : tab === 'notifications' ? (
             <NotificationsView chatId={chatId} />
+          ) : tab === 'forms' ? (
+            formsEditId !== null ? (
+              <FormEditor
+                chatId={chatId}
+                formId={formsEditId === 'new' ? null : formsEditId}
+                onBack={() => setFormsEditId(null)}
+              />
+            ) : (
+              <FormsSettingsPage
+                chatId={chatId}
+                onBack={() => setTab('settings')}
+                onEdit={(formId) => setFormsEditId(formId || 'new')}
+              />
+            )
           ) : (
             <TabPlaceholder tab={tab} />
           )}
 
-          <CreateTaskFab
-            defaultGroupId={resolvedGroupId ?? null}
-            chatId={chatId}
-            groups={groups}
-            onCreated={() => {
-              if (tab === 'home') {
-                setFeedReloadKey((k) => k + 1);
-              } else {
-                reloadBoard();
-              }
-            }}
-          />
+          {tab !== 'forms' && (
+            <CreateTaskFab
+              defaultGroupId={resolvedGroupId ?? null}
+              chatId={chatId}
+              groups={groups}
+              onCreated={() => {
+                if (tab === 'home') {
+                  setFeedReloadKey((k) => k + 1);
+                } else {
+                  reloadBoard();
+                }
+              }}
+            />
+          )}
 
           {/* Нижняя панель */}
           <BottomNav
@@ -1334,6 +1443,15 @@ export default function App() {
                 setGroupsPage('list');
                 setSelectedGroupId('');
               }}
+            />
+          ) : null}
+
+          {/* 🦾 Модалка автоматизации группы */}
+          {showGroupAutomation && selectedGroup ? (
+            <GroupAutomationPage
+              groupId={selectedGroup.id}
+              chatId={chatId}
+              onClose={() => setShowGroupAutomation(false)}
             />
           ) : null}
 
