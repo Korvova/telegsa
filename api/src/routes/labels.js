@@ -1,6 +1,8 @@
 // routes/labels.js
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { executeAutomation } from './group-automation.js';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -214,6 +216,29 @@ await prisma.$transaction(
       orderBy: [{ label: { order: 'asc' } }, { label: { title: 'asc' } }],
     });
 
+    // Автоматизация при добавлении ярлыка (асинхронно, неблокирующе)
+    ;(async () => {
+      try {
+        // Вызываем автоматизацию для каждого добавленного ярлыка
+        for (const labelId of labelIds) {
+          await executeAutomation(taskId, 'label', labelId);
+        }
+      } catch (e) {
+        console.warn('[automation:label] Error:', e);
+      }
+    })().catch(() => {});
+
+    // Логируем добавление ярлыков
+    ;(async () => {
+      try {
+        for (const label of labels) {
+          await logTaskHistory(taskId, 'label_added', String(chatId), null, label.title);
+        }
+      } catch (e) {
+        console.error('[labels] history logging error:', e);
+      }
+    })().catch(() => {});
+
     res.json({
       ok: true,
       labels: attached.map(a => ({
@@ -245,7 +270,22 @@ router.delete('/tasks/:taskId/labels/:labelId', async (req, res) => {
     const editOk = await canEditField(String(chatId), taskGroupId, 'labels');
     if (!editOk) return res.status(403).json({ ok: false, error: 'no_rights' });
 
+    // Получаем название ярлыка перед удалением
+    const labelToDelete = await prisma.groupLabel.findUnique({ where: { id: labelId }, select: { title: true } });
+
     await prisma.taskLabel.delete({ where: { taskId_labelId: { taskId, labelId } } });
+
+    // Логируем удаление ярлыка
+    ;(async () => {
+      try {
+        if (labelToDelete) {
+          await logTaskHistory(taskId, 'label_removed', String(chatId), labelToDelete.title, null);
+        }
+      } catch (e) {
+        console.error('[labels] history logging error:', e);
+      }
+    })().catch(() => {});
+
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /tasks/:id/labels/:labelId error', e);

@@ -1,6 +1,7 @@
 // api/src/routes/public-forms.js
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -196,6 +197,15 @@ router.post('/public/forms/:id/submit', async (req, res) => {
         fromProcess: false
       }
     });
+
+    // Логируем создание задачи из формы
+    ;(async () => {
+      try {
+        await logTaskHistory(task.id, 'task_created', form.ownerChatId, null, taskText, { source: 'public_form', formId: form.id });
+      } catch (e) {
+        console.error('[public-forms] history logging error:', e);
+      }
+    })().catch(() => {});
 
     // Добавляем ярлык если указан
     if (form.labelId) {

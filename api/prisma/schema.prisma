@@ -152,6 +152,9 @@ model Task {
   // Ссылки предзадач, которые зависят от этой задачи
   preTaskLinks PreTaskLink[]
 
+  // История изменений задачи
+  history TaskHistory[]
+
   // Затраты по задаче (в рублях)
   expenses Int?
 
@@ -892,4 +895,56 @@ model FormSubmission {
   @@index([formId])
   @@index([createdAt])
   @@index([submitterToken])
+}
+
+/**
+ * -------------------- GROUP AUTOMATION (автоматизация действий в группах) --------------------
+ * Правила автоматизации для групп: "когда X меняется на Y, то изменить Z на W"
+ * Например: "когда статус меняется на Done, то изменить ярлык на Completed"
+ */
+
+model GroupAutomation {
+  id        String   @id @default(cuid())
+  groupId   String
+
+  // Триггер (КОГДА меняется)
+  triggerType   String  // "label" | "assignee" | "status"
+  triggerValue  String  // ID ярлыка | chatId ответственного | название статуса
+
+  // Действие (ТО изменить)
+  actionType    String  // "label" | "assignee" | "status" | "group"
+  actionValue   String  // ID ярлыка | chatId | название статуса | ID группы
+
+  order         Int      @default(0)  // Порядок выполнения (первое подходящее)
+  isActive      Boolean  @default(true) // false если триггер/действие удалены
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([groupId])
+  @@index([groupId, isActive])
+}
+
+/**
+ * -------------------- TASK HISTORY (логирование всех действий с задачей) --------------------
+ */
+
+model TaskHistory {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  actorChatId String?  // кто совершил действие
+  action      String   // тип действия: status_changed, assignee_changed, label_added, etc.
+
+  oldValue    String?  // старое значение (JSON для сложных объектов)
+  newValue    String?  // новое значение
+
+  metadata    Json?    // дополнительные данные (например, для комментариев)
+
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@index([createdAt])
+  @@index([taskId, createdAt])
 }

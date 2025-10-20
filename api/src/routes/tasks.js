@@ -64,6 +64,33 @@ function fmtCommentText({ authorName, comment }) {
   return `${who}\n𓂃✍︎\n${comment}`;
 }
 
+// === TASK HISTORY HELPER ===
+/**
+ * Логирует действие в историю задачи
+ * @param {string} taskId - ID задачи
+ * @param {string} action - тип действия (status_changed, assignee_changed, etc.)
+ * @param {string|null} actorChatId - кто совершил действие
+ * @param {string|null} oldValue - старое значение
+ * @param {string|null} newValue - новое значение
+ * @param {object|null} metadata - дополнительные данные
+ */
+async function logTaskHistory(taskId, action, actorChatId, oldValue = null, newValue = null, metadata = null) {
+  try {
+    await prisma.taskHistory.create({
+      data: {
+        taskId: String(taskId),
+        action: String(action),
+        actorChatId: actorChatId ? String(actorChatId) : null,
+        oldValue: oldValue ? String(oldValue) : null,
+        newValue: newValue ? String(newValue) : null,
+        metadata: metadata || undefined,
+      },
+    });
+  } catch (e) {
+    console.error('[logTaskHistory] error:', e);
+  }
+}
+
 // ---- TG group aware notification helpers ----
 async function resolveTaskGroup(task) {
   try {
@@ -300,7 +327,7 @@ router.post('/:id/comments', async (req, res) => {
         })
       : null;
 
-    await prisma.comment.create({
+    const created = await prisma.comment.create({
       data: { taskId: id, authorChatId: author || '', text: commentText },
     });
 
@@ -311,7 +338,16 @@ router.post('/:id/comments', async (req, res) => {
       text: commentText,
     });
 
-    res.json({ ok: true });
+    // Логируем добавление комментария
+    ;(async () => {
+      try {
+        await logTaskHistory(id, 'comment_added', author, null, null, { commentId: created.id, text: commentText });
+      } catch (e) {
+        console.error('[POST /tasks/:id/comments] history logging error:', e);
+      }
+    })();
+
+    res.json({ ok: true, comment: created });
   } catch (e) {
     console.error('POST /tasks/:id/comments error:', e);
     res.status(500).json({ ok: false, error: 'internal' });
@@ -360,6 +396,16 @@ router.delete('/:id/comments/:cid', async (req, res) => {
     }
 
     await prisma.comment.delete({ where: { id: cid } });
+
+    // Логируем удаление комментария
+    ;(async () => {
+      try {
+        await logTaskHistory(taskId, 'comment_deleted', actor, null, null, { commentId: cid, text: c.text });
+      } catch (e) {
+        console.error('[DELETE /tasks/:id/comments/:cid] history logging error:', e);
+      }
+    })();
+
     res.json({ ok: true });
   } catch (e) {
     console.error('DELETE /tasks/:id/comments/:cid error:', e);
@@ -589,6 +635,40 @@ router.patch('/:id', async (req, res) => {
       (req.user && req.user.chatId) ||
       (req.body && (req.body.chatId || req.body.actorChatId)) ||
       null;
+
+    // === LOG TASK HISTORY ===
+    ;(async () => {
+      try {
+        // Логируем изменение текста
+        if ('text' in patch && String(before.text) !== String(updated.text)) {
+          await logTaskHistory(id, 'text_changed', actorChatId, before.text, updated.text);
+        }
+
+        // Логируем изменение статуса (смена колонки)
+        if ('columnId' in patch && String(before.columnId) !== String(updated.columnId)) {
+          const oldCol = await prisma.column.findUnique({ where: { id: before.columnId }, select: { name: true } });
+          const newCol = await prisma.column.findUnique({ where: { id: updated.columnId }, select: { name: true } });
+          const oldStatus = oldCol?.name?.split(GROUP_SEP).pop() || oldCol?.name || '';
+          const newStatus = newCol?.name?.split(GROUP_SEP).pop() || newCol?.name || '';
+          await logTaskHistory(id, 'status_changed', actorChatId, oldStatus, newStatus);
+        }
+
+        // Логируем изменение ответственного (assigneeChatId ИЛИ responsibleId)
+        if (('assigneeChatId' in patch || 'responsibleId' in req.body) && String(before.assigneeChatId || '') !== String(updated.assigneeChatId || '')) {
+          const oldUser = before.assigneeChatId ? await prisma.user.findUnique({ where: { chatId: String(before.assigneeChatId) } }) : null;
+          const newUser = updated.assigneeChatId ? await prisma.user.findUnique({ where: { chatId: String(updated.assigneeChatId) } }) : null;
+          await logTaskHistory(
+            id,
+            'assignee_changed',
+            actorChatId,
+            oldUser ? joinName(oldUser) : null,
+            newUser ? joinName(newUser) : null
+          );
+        }
+      } catch (e) {
+        console.error('[PATCH /tasks/:id] history logging error:', e);
+      }
+    })();
 
     await maybeNotifyTaskAccepted({
       taskBefore: before,
@@ -1166,3 +1246,46 @@ router.get('/:id/graph', async (req, res) => {
     res.status(500).json({ ok: false, error: 'internal' });
   }
 });
+
+/* ==================== TASK HISTORY ==================== */
+
+// GET /tasks/:id/history - получить историю изменений задачи
+router.get('/:id/history', async (req, res) => {
+  try {
+    const id = String(req.params.id);
+
+    const task = await prisma.task.findUnique({ where: { id } });
+    if (!task) return res.status(404).json({ ok: false, error: 'task_not_found' });
+
+    const history = await prisma.taskHistory.findMany({
+      where: { taskId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Получаем имена всех участников
+    const actorIds = Array.from(new Set(history.map(h => h.actorChatId).filter(Boolean)));
+    const users = await prisma.user.findMany({
+      where: { chatId: { in: actorIds } },
+      select: { chatId: true, firstName: true, lastName: true, username: true },
+    });
+    const userMap = new Map(users.map(u => [String(u.chatId), joinName(u)]));
+
+    const result = history.map(h => ({
+      id: h.id,
+      action: h.action,
+      actorChatId: h.actorChatId,
+      actorName: h.actorChatId ? (userMap.get(String(h.actorChatId)) || String(h.actorChatId)) : 'Система',
+      oldValue: h.oldValue,
+      newValue: h.newValue,
+      metadata: h.metadata,
+      createdAt: h.createdAt,
+    }));
+
+    res.json({ ok: true, history: result });
+  } catch (e) {
+    console.error('GET /tasks/:id/history error:', e);
+    res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+export default router;

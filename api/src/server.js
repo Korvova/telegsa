@@ -48,6 +48,8 @@ import { formsRouter } from './routes/forms.js';
 import { publicFormsRouter } from './routes/public-forms.js';
 import uploadRouter from './routes/upload.js';
 import { feedbackRouter } from './routes/feedback.js';
+import { logTaskHistory } from './services/taskHistory.js';
+import { adminRouter } from './routes/admin.js';
 
 
 const prisma = new PrismaClient();
@@ -450,6 +452,9 @@ app.use(formsRouter);
 app.use(publicFormsRouter);
 app.use(uploadRouter);
 app.use('/feedback', feedbackRouter);
+
+/* ---------- Admin (статистика для владельца) ---------- */
+app.use('/admin', adminRouter);
 
 /* ---------- helper: имена ответственных в колонках ---------- */
 async function enrichColumnsWithAssignees(columnsRaw) {
@@ -2810,6 +2815,15 @@ app.post('/tasks', async (req, res) => {
     const task = await prisma.task.create({
       data: { chatId: boardChatId, text: text.trim(), order: nextOrder, columnId: inbox.id, createdByChatId: caller, complexity },
     });
+
+    // Логируем создание задачи
+    ;(async () => {
+      try {
+        await logTaskHistory(task.id, 'task_created', caller, null, text.trim(), { source: 'webapp', groupId });
+      } catch (e) {
+        console.error('[POST /tasks] history logging error:', e);
+      }
+    })().catch(() => {});
 
     try {
       // Если это Telegram-группа — публикуем в саму группу

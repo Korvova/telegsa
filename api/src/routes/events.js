@@ -1,6 +1,7 @@
 // api/src/routes/events.js
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -124,6 +125,15 @@ router.post('/', async (req, res) => {
         role: 'ORGANIZER',
       },
     });
+
+    // Логируем создание события
+    ;(async () => {
+      try {
+        await logTaskHistory(event.id, 'task_created', caller, null, String(title).trim());
+      } catch (e) {
+        console.error('[events] history logging error:', e);
+      }
+    })().catch(() => {});
 
     res.status(201).json({ ok: true, event });
   } catch (e) {

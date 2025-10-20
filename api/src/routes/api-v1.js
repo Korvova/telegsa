@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -300,6 +301,15 @@ router.get('/tasks/create', authenticateToken, async (req, res) => {
     const task = await prisma.task.create({
       data: taskData
     });
+
+    // Логируем создание задачи через API
+    ;(async () => {
+      try {
+        await logTaskHistory(task.id, 'task_created', req.apiUser.chatId, null, String(text), { source: 'api_v1', groupId });
+      } catch (e) {
+        console.error('[api-v1] history logging error:', e);
+      }
+    })().catch(() => {});
 
     // Add label if provided
     if (labelId) {

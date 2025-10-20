@@ -1,6 +1,7 @@
 // api/src/routes/accept.js
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -58,6 +59,19 @@ router.patch('/tasks/:id/accept-condition', async (req, res) => {
     }
 
     const updated = await prisma.task.update({ where: { id }, data: { acceptCondition: cond } });
+
+    // Логируем изменение условий приёма
+    ;(async () => {
+      try {
+        const oldCond = task.acceptCondition || 'NONE';
+        if (oldCond !== cond) {
+          await logTaskHistory(id, 'accept_condition_changed', chatId, oldCond, cond);
+        }
+      } catch (e) {
+        console.error('[accept] history logging error:', e);
+      }
+    })().catch(() => {});
+
     res.json({ ok: true, task: updated });
   } catch (e) {
     console.error('PATCH /tasks/:id/accept-condition error', e);

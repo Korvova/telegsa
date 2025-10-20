@@ -50,6 +50,7 @@ export type Group = {
   id: string;
   title: string;
   kind: 'own' | 'member';
+  ownerChatId: string;
   isTelegramGroup?: boolean;
   isPublic?: boolean;
   ownerName?: string | null;
@@ -736,7 +737,15 @@ export async function uploadTaskMedia(taskId: string, chatId: string, file: File
   return r.json() as Promise<{ ok: boolean; media?: TaskMedia }>;
 }
 
-
+export async function uploadCommentMedia(taskId: string, commentId: string, chatId: string, file: File) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/comments/${encodeURIComponent(commentId)}/media?chatId=${encodeURIComponent(chatId)}`, {
+    method: 'POST',
+    body: form,
+  });
+  return r.json() as Promise<{ ok: boolean; media?: TaskMedia }>;
+}
 
 
 export type TaskFeedItem = {
@@ -1408,6 +1417,28 @@ export async function regenerateAPIToken(chatId: string): Promise<APITokenInfo> 
   if (!r.ok) {
     const data = await r.json().catch(() => ({}));
     throw new Error(data.message || data.error || `Failed to regenerate token: ${r.status}`);
+  }
+  return await r.json();
+}
+
+/* ==================== TASK HISTORY ==================== */
+
+export type TaskHistoryItem = {
+  id: string;
+  action: string;
+  actorChatId: string | null;
+  actorName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  metadata: any;
+  createdAt: string;
+};
+
+export async function getTaskHistory(taskId: string): Promise<{ ok: boolean; history: TaskHistoryItem[] }> {
+  const r = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/history`);
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to get task history: ${r.status}`);
   }
   return await r.json();
 }

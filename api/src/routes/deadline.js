@@ -1,6 +1,7 @@
 // api/src/routes/deadline.js
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -79,6 +80,26 @@ router.patch('/tasks/:id/deadline', async (req, res) => {
       where: { id },
       data: { deadlineAt },
     });
+
+    // Логируем изменение дедлайна
+    ;(async () => {
+      try {
+        const oldDeadline = task.deadlineAt ? task.deadlineAt.toISOString() : null;
+        const newDeadline = deadlineAt ? deadlineAt.toISOString() : null;
+
+        if (oldDeadline !== newDeadline) {
+          if (newDeadline && !oldDeadline) {
+            await logTaskHistory(id, 'deadline_set', chatId, null, newDeadline);
+          } else if (!newDeadline && oldDeadline) {
+            await logTaskHistory(id, 'deadline_removed', chatId, oldDeadline, null);
+          } else {
+            await logTaskHistory(id, 'deadline_changed', chatId, oldDeadline, newDeadline);
+          }
+        }
+      } catch (e) {
+        console.error('[deadline] history logging error:', e);
+      }
+    })().catch(() => {});
 
     return res.json({ ok: true, task: updated });
   } catch (e) {

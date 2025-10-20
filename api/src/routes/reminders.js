@@ -1,6 +1,7 @@
 // api/src/routes/reminders.js
 import express from 'express';
 import { scheduleTaskReminder, cancelTaskReminder } from '../scheduler.js';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 export function remindersRouter({ prisma, tg }) {
   const router = express.Router();
@@ -69,6 +70,16 @@ export function remindersRouter({ prisma, tg }) {
       });
 
       try { await scheduleTaskReminder(prisma, tg, created.id); } catch {}
+
+      // Логируем создание напоминания
+      ;(async () => {
+        try {
+          await logTaskHistory(id, 'reminder_added', me, null, at.toISOString(), { target: t, reminderId: created.id });
+        } catch (e) {
+          console.error('[reminders] history logging error:', e);
+        }
+      })().catch(() => {});
+
       res.json({ ok: true, reminder: created });
     } catch (e) {
       console.error('[reminders] create error', e);
@@ -101,12 +112,26 @@ export function remindersRouter({ prisma, tg }) {
         }
       } catch {}
 
+      // Получаем данные напоминания перед удалением для логирования
+      const reminderToDelete = await prisma.taskReminder.findUnique({ where: { id: rid } });
+
       await prisma.taskReminder.delete({ where: { id: rid } }).catch(async () => {
         // При несоответствии — безопасно вернуть ok=false
         const ex = await prisma.taskReminder.findUnique({ where: { id: rid } });
         if (!ex) return; else throw new Error('delete_failed');
       });
       try { cancelTaskReminder(rid); } catch {}
+
+      // Логируем удаление напоминания
+      ;(async () => {
+        try {
+          if (reminderToDelete) {
+            await logTaskHistory(id, 'reminder_removed', me, reminderToDelete.fireAt.toISOString(), null, { target: reminderToDelete.target, reminderId: rid });
+          }
+        } catch (e) {
+          console.error('[reminders] history logging error:', e);
+        }
+      })().catch(() => {});
 
       res.json({ ok: true });
     } catch (e) {

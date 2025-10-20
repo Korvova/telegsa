@@ -1,7 +1,7 @@
 // src/components/ShareNewTaskMenu.tsx
 import { useEffect, useState } from 'react';
 import WebApp from '@twa-dev/sdk';
-import { createShareLink } from '../api/sharenewtask';
+import { createShareLink, createShareLinkWithPretasks } from '../api/sharenewtask';
 
 type Props = {
   taskId: string;
@@ -12,12 +12,15 @@ type Props = {
   onOpenAccept?: () => void;     // 👈 открыть условия
   onOpenDeadline?: () => void;   // 👈 открыть дедлайн
   onOpenReminders?: () => void;  // 👈 открыть напоминания
+  onOpenHistory?: () => void;    // 👈 открыть историю
 };
 
-export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, meChatId = '', initialExpenses = null, onOpenAccept, onOpenDeadline, onOpenReminders }: Props) {
+export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, meChatId = '', initialExpenses = null, onOpenAccept, onOpenDeadline, onOpenReminders, onOpenHistory }: Props) {
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState<string | null>(null);
+  const [linkFull, setLinkFull] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyFull, setBusyFull] = useState(false);
   const [expDraft, setExpDraft] = useState('');
   const [expBusy, setExpBusy] = useState(false);
 
@@ -47,6 +50,22 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
     }
   }
 
+  async function makeLinkFull() {
+    if (busyFull) return;
+    setBusyFull(true);
+    try {
+      const r = await createShareLinkWithPretasks(taskId);
+      if (!r.ok) throw new Error(r.error || 'failed');
+      setLinkFull(r.link);
+      WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    } catch {
+      WebApp?.HapticFeedback?.notificationOccurred?.('error');
+      alert('Не удалось создать ссылку со связями');
+    } finally {
+      setBusyFull(false);
+    }
+  }
+
   const copy = async () => {
     if (!link) return;
     try {
@@ -54,6 +73,16 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
       WebApp?.showPopup?.({ message: 'Ссылка скопирована' });
     } catch {
       alert(link);
+    }
+  };
+
+  const copyFull = async () => {
+    if (!linkFull) return;
+    try {
+      await navigator.clipboard.writeText(linkFull);
+      WebApp?.showPopup?.({ message: 'Ссылка со связями скопирована' });
+    } catch {
+      alert(linkFull);
     }
   };
 
@@ -147,7 +176,7 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
 
           <div style={{ height: 8 }} />
 
-          {/* Действия: условия / дедлайн / напоминание */}
+          {/* Действия: условия / дедлайн / напоминание / лог */}
           <div style={{ display:'grid', gap: 6 }}>
             <button
               onClick={() => { setOpen(false); onOpenAccept?.(); }}
@@ -168,6 +197,13 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
               title="Создать напоминание"
             >
               ⏰ Напомнить
+            </button>
+            <button
+              onClick={() => { setOpen(false); onOpenHistory?.(); }}
+              style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', color: '#e8eaed', border: '1px solid #2a3346', borderRadius: 8, cursor: 'pointer' }}
+              title="Посмотреть историю задачи"
+            >
+              📋 Лог
             </button>
           </div>
 
@@ -190,6 +226,30 @@ export default function ShareNewTaskMenu({ taskId, onDelete, isEvent = false, me
                 style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#131a2a', color: '#e8eaed' }}
               />
               <button onClick={copy} style={{ marginTop: 6, width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}>
+                Копировать
+              </button>
+            </div>
+          )}
+
+          <div style={{ height: 8 }} />
+
+          <button
+            onClick={makeLinkFull}
+            disabled={busyFull}
+            style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: 'transparent', color: '#e8eaed', border: 'none', cursor: 'pointer' }}
+          >
+            Задача по ссылке со связями
+          </button>
+
+          {linkFull && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                readOnly
+                value={linkFull}
+                onFocus={(e) => e.currentTarget.select()}
+                style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#131a2a', color: '#e8eaed' }}
+              />
+              <button onClick={copyFull} style={{ marginTop: 6, width: '100%', maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #2a3346', background: '#202840', color: '#e8eaed' }}>
                 Копировать
               </button>
             </div>

@@ -1,6 +1,7 @@
 // api/src/routes/assign.js
 import express from 'express';
 import crypto from 'crypto';
+import { logTaskHistory, joinName } from '../services/taskHistory.js';
 
 export function assignRouter({ prisma }) {
   const router = express.Router();
@@ -39,6 +40,23 @@ export function assignRouter({ prisma }) {
         where: { id: String(taskId) },
         data: { assigneeChatId: String(chatId) },
       });
+
+      // Логируем изменение ответственного
+      ;(async () => {
+        try {
+          const oldUser = task.assigneeChatId ? await prisma.user.findUnique({ where: { chatId: String(task.assigneeChatId) } }) : null;
+          const newUser = await prisma.user.findUnique({ where: { chatId: String(chatId) } });
+          await logTaskHistory(
+            String(taskId),
+            'assignee_changed',
+            String(chatId),
+            oldUser ? joinName(oldUser) : null,
+            newUser ? joinName(newUser) : null
+          );
+        } catch (e) {
+          console.error('[assign.self] history logging error:', e);
+        }
+      })().catch(() => {});
 
       // (опционально: можно уведомлять здесь,
       // но у тебя уже есть триггеры в другом месте — не трогаем)
@@ -212,6 +230,23 @@ export function assignRouter({ prisma }) {
         where: { id: String(taskId) },
         data: { assigneeChatId: null },
       });
+
+      // Логируем удаление ответственного
+      ;(async () => {
+        try {
+          const oldUser = task.assigneeChatId ? await prisma.user.findUnique({ where: { chatId: String(task.assigneeChatId) } }) : null;
+          await logTaskHistory(
+            String(taskId),
+            'assignee_changed',
+            String(chatId),
+            oldUser ? joinName(oldUser) : null,
+            null
+          );
+        } catch (e) {
+          console.error('[assign.unassign] history logging error:', e);
+        }
+      })().catch(() => {});
+
       return res.json({ ok: true, task: { id: updated.id, assigneeChatId: updated.assigneeChatId } });
     } catch (e) {
       console.error('[assign.unassign] error', e);

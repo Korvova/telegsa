@@ -39,6 +39,7 @@ import ShareNewTaskMenu from './components/ShareNewTaskMenu';
 import RankName from './components/RankName';
 import TaskLabelDrawer from './components/TaskLabelDrawer';
 import RemindersModal from './components/RemindersModal';
+import TaskHistoryModal from './components/TaskHistoryModal';
 import { listTaskReminders, createTaskReminder, deleteTaskReminder, type TaskReminder as TReminder } from './api/reminders';
 
 type Props = {
@@ -139,6 +140,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [reminders, setReminders] = useState<TReminder[]>([]);
   const [remBusy, setRemBusy] = useState(false);
   // панель наблюдателей: свёрнута/развёрнута
@@ -650,6 +652,7 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
               onOpenAccept={() => setAcceptPickerOpen(true)}
               onOpenDeadline={() => setDeadlineOpen(true)}
               onOpenReminders={() => setRemindersOpen(true)}
+              onOpenHistory={() => setHistoryOpen(true)}
             />
           ) : null}
         </div>
@@ -1558,6 +1561,11 @@ export default function TaskView({ taskId, onClose, onChanged, meChatId: meProp,
           finally { setRemindersOpen(false); }
         }}
       />
+
+      {/* История задачи */}
+      {historyOpen && (
+        <TaskHistoryModal taskId={taskId} onClose={() => setHistoryOpen(false)} />
+      )}
 
       {/* Плавающая круглая кнопка "назад" как в оверлеях комментариев */}
       <button

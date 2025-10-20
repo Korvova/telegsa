@@ -1,6 +1,7 @@
 // api/src/routes/expenses.js
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { logTaskHistory } from '../services/taskHistory.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -71,6 +72,20 @@ router.patch('/tasks/:id/expenses', async (req, res) => {
     }
 
     const updated = await prisma.task.update({ where: { id }, data: { expenses } });
+
+    // Логируем изменение затрат
+    ;(async () => {
+      try {
+        const oldExpenses = task.expenses !== null ? String(task.expenses) : null;
+        const newExpenses = expenses !== null ? String(expenses) : null;
+
+        if (oldExpenses !== newExpenses) {
+          await logTaskHistory(id, 'expenses_changed', chatId, oldExpenses, newExpenses);
+        }
+      } catch (e) {
+        console.error('[expenses] history logging error:', e);
+      }
+    })().catch(() => {});
 
     return res.json({ ok: true, task: updated });
   } catch (e) {

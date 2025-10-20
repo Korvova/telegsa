@@ -1,5 +1,6 @@
 // api/src/routes/watchers.js
 import express from 'express';
+import { logTaskHistory, joinName } from '../services/taskHistory.js';
 
 export function watchersRouter({ prisma }) {
   const router = express.Router();
@@ -60,11 +61,23 @@ export function watchersRouter({ prisma }) {
           }
         }
       } catch {}
-      await prisma.taskWatcher.upsert({
+      const result = await prisma.taskWatcher.upsert({
         where: { taskId_chatId: { taskId: id, chatId } },
         update: {},
         create: { taskId: id, chatId },
       });
+
+      // Логируем добавление наблюдателя
+      ;(async () => {
+        try {
+          const user = await prisma.user.findUnique({ where: { chatId }, select: { chatId: true, firstName: true, lastName: true, username: true } });
+          const userName = user ? joinName(user) : chatId;
+          await logTaskHistory(id, 'watcher_added', chatId, null, userName);
+        } catch (e) {
+          console.error('[watchers] history logging error:', e);
+        }
+      })().catch(() => {});
+
       res.json({ ok: true });
     } catch (e) {
       console.error('[watchers] subscribe error', e);
@@ -104,7 +117,21 @@ export function watchersRouter({ prisma }) {
         }
       } catch {}
 
+      // Получаем имя наблюдателя перед удалением
+      const user = await prisma.user.findUnique({ where: { chatId: targetChatId }, select: { chatId: true, firstName: true, lastName: true, username: true } });
+      const userName = user ? joinName(user) : targetChatId;
+
       await prisma.taskWatcher.deleteMany({ where: { taskId: id, chatId: targetChatId } });
+
+      // Логируем удаление наблюдателя
+      ;(async () => {
+        try {
+          await logTaskHistory(id, 'watcher_removed', actor, userName, null);
+        } catch (e) {
+          console.error('[watchers] history logging error:', e);
+        }
+      })().catch(() => {});
+
       res.json({ ok: true });
     } catch (e) {
       console.error('[watchers] unsubscribe error', e);
